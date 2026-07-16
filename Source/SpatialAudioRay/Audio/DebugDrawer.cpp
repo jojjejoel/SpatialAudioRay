@@ -85,7 +85,7 @@ namespace {
 void USpatialAudioComponent::DrawDebugVisualization(float DeltaTime, const USpatialAudioSettings& Settings) {
 	TickReplayDebug(DeltaTime, Settings);
 
-	if (Settings.SteeringPredictionLeadTime > 0.f) {
+	if (bShowSteeringPrediction && Settings.SteeringPredictionLeadTime > 0.f) {
 		// Live steering-prediction targets (sweeps capture their own snapshot of these at start).
 		// Only drawn while the lead is meaningful, so stationary scenes stay clean. One sphere
 		// per mover, at the signed aim point sweeps actually use — blue when leading forward,
@@ -129,7 +129,9 @@ void USpatialAudioComponent::DrawDebugVisualization(float DeltaTime, const USpat
 			DrawDebugSphere(GetWorld(), SlotPos, bFadingOut ? 12.f : 20.f, 8, Color, false, -1.f, 0, 2.f);
 			DrawDebugLine(GetWorld(), ActorLoc, SlotPos, Color, false, -1.f, 0, 0.5f);
 		}
+	}
 
+	if (bShowEdgePoints) {
 		for (const FCachedEdgePoint& EP : CachedEdgePoints) {
 			DrawDebugSphere(GetWorld(), EP.EdgePoint, 18.f, 8, FColor::Yellow, false, -1.f, 0, 2.f);
 			if (EP.bRelayed) {

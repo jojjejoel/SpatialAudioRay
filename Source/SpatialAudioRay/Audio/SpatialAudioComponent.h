@@ -11,6 +11,7 @@
 
 class UAudioBus;
 class UAudioComponent;
+class USoundBase;
 class USoundWave;
 class FAsyncCastManager;
 class FEdgeCache;
@@ -67,6 +68,15 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Parameters")
 	FName AudioBusParameterName = TEXT("AudioBus");
 
+	/** Plays a runtime one-shot through this source's spatial pipeline: the component is
+	 *  attached to the owner, writes into the shared diffraction bus, and receives the live
+	 *  Occlusion parameter every frame until it finishes (auto-destroys). The sound's MetaSound
+	 *  must expose the same AudioBus and Occlusion inputs as the persistent source graph.
+	 *  Attenuation range overrides are applied to it; it does NOT widen the ray range — the
+	 *  persistent tagged sources define AttenuationInnerRadius/MaxRayDistance. */
+	UFUNCTION(BlueprintCallable, Category = "Spatial Audio")
+	UAudioComponent* PlaySoundThroughSpatialBus(USoundBase* Sound);
+
 	/** Per-source override of the attenuation shape's inner radius (cm). 0 = keep the assigned
 	 *  attenuation's value. Applied at BeginPlay to the Source component AND the virtual voice
 	 *  template (so pooled voices inherit it); every other attenuation setting stays exactly as
@@ -86,7 +96,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Debug")
 	bool bDrawDebugRays = false;
 
-	/** Show LoS rays (green) and the virtual source / actor spheres. */
+	/** Show the virtual emitter spheres: magenta sphere at the source actor plus one colored
+	 *  sphere + line per audible virtual voice (pool slot). Emitters only — cached edges live
+	 *  under bShowEdgePoints and the steering-prediction spheres under bShowSteeringPrediction. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Debug",
 		meta = (EditCondition = "bDrawDebugRays"))
 	bool bShowVirtualSourceRays = true;
@@ -173,7 +185,8 @@ public:
 	bool bShowDiffractionPaths = true;
 
 	/** Show edge detection results: green backtracked-edge spheres per ray,
-	 *  yellow stored-path recheck lines, and LoS state spheres at source/listener. */
+	 *  yellow stored-path recheck lines, LoS state spheres at source/listener, and the
+	 *  yellow cached-edge spheres (+ relay legs) from the live cache. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Debug",
 		meta = (EditCondition = "bDrawDebugRays"))
 	bool bShowEdgePoints = true;
@@ -233,6 +246,17 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Debug",
 		meta = (EditCondition = "bDrawDebugRays"))
 	FKey ToggleShortestPathsKey = EKeys::Zero;
+
+	/** Show the live steering-prediction aim spheres (blue = forward lead, orange = retro
+	 *  window after LoS loss), drawn while SteeringPredictionLeadTime > 0. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Debug",
+		meta = (EditCondition = "bDrawDebugRays"))
+	bool bShowSteeringPrediction = true;
+
+	/** Key that toggles bShowSteeringPrediction at runtime. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Debug",
+		meta = (EditCondition = "bDrawDebugRays"))
+	FKey ToggleSteeringPredictionKey = EKeys::P;
 
 	/** Force the source audio component to silence — use to confirm whether pops come from source vs virtual. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Debug")
@@ -356,6 +380,7 @@ private:
 
 	void CacheAudioComponents();
 	void ApplyAttenuationOverrides();
+	void ApplyAttenuationOverridesTo(UAudioComponent* AC) const;
 	void CreateAndAssignAudioBus();
 	void CreateVirtualVoicePool();
 	void ApplyWaveParameterOverride() const;
@@ -365,7 +390,12 @@ private:
 	void UpdateVelocityScaling(float DeltaTime, bool bInRange, const APawn* Pawn);
 	void UpdateGeometryBurstAndIdleState(float DeltaTime, bool bInRange, const APawn* Pawn);
 
-	TWeakObjectPtr<UAudioComponent> CachedAudioComponentSource;
+	/** Every component tagged AudioComponentSource on the owner, plus any live bus one-shots
+	 *  from PlaySoundThroughSpatialBus. Co-located sounds share ONE spatial pipeline (bus,
+	 *  occlusion, edge cache, virtual pool) — all of them write the bus and receive the same
+	 *  occlusion parameter. Finished one-shots auto-destroy; their stale entries are pruned in
+	 *  the per-frame occlusion write. */
+	TArray<TWeakObjectPtr<UAudioComponent>> CachedAudioComponentSources;
 	TWeakObjectPtr<UAudioComponent> CachedAudioComponentVirtual;
 
 	// UPROPERTY keeps the runtime-created bus alive: nothing else holds a UObject
@@ -559,7 +589,7 @@ private:
 	/**
 	 * Full paths of rays that contributed to the virtual source position in the last full cast.
 	 * Each entry is [source, wallHit0, wallHit1, ..., listener].
-	 * Rebuilt by FinalizeAsyncCast; drawn every tick when bShowVirtualSourceRays.
+	 * Rebuilt by FinalizeAsyncCast; drawn every tick when bShowDiffractionPaths.
 	 */
 	TArray<TArray<FVector>> LoSDiffractionPaths;
 

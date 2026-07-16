@@ -34,5 +34,5 @@ private:
 	bool bShowGlobalDebugText = true;
 	bool bPrevToggleKeyDown = false;
 	bool bPrevCycleKeyDown = false;
-	bool bPrevSubModeKeyDown[10] = {};
+	bool bPrevSubModeKeyDown[11] = {};
 };

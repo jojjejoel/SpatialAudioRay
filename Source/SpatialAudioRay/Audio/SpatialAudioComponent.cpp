@@ -84,8 +84,14 @@ void USpatialAudioComponent::EndPlay(const EEndPlayReason::Type EndPlayReason) {
 }
 
 void USpatialAudioComponent::CacheAudioComponents() {
+	CachedAudioComponentSources.Reset();
 	if (AActor* Owner = GetOwner()) {
-		CachedAudioComponentSource = Owner->FindComponentByTag<UAudioComponent>(TEXT("AudioComponentSource"));
+		// ALL tagged components, not just the first: co-located sounds share one spatial
+		// pipeline, so an object plays its whole sound set through this one component.
+		for (UActorComponent* C : Owner->GetComponentsByTag(UAudioComponent::StaticClass(),
+		                                                    TEXT("AudioComponentSource"))) {
+			CachedAudioComponentSources.Add(CastChecked<UAudioComponent>(C));
+		}
 		CachedAudioComponentVirtual = Owner->FindComponentByTag<UAudioComponent>(TEXT("AudioComponentVirtual"));
 	}
 }
@@ -97,8 +103,10 @@ void USpatialAudioComponent::CreateAndAssignAudioBus() {
 	DiffractionBus = NewObject<UAudioBus>(this);
 	DiffractionBus->AudioBusChannels = EAudioBusChannels::Mono;
 
-	if (UAudioComponent* AC = CachedAudioComponentSource.Get()) {
-		AC->SetObjectParameter(AudioBusParameterName, DiffractionBus);
+	for (const TWeakObjectPtr<UAudioComponent>& Src : CachedAudioComponentSources) {
+		if (UAudioComponent* AC = Src.Get()) {
+			AC->SetObjectParameter(AudioBusParameterName, DiffractionBus);
+		}
 	}
 	// The virtual template never plays — only the pool components created from it read the bus.
 }
@@ -143,66 +151,108 @@ void USpatialAudioComponent::CreateVirtualVoicePool() {
 
 void USpatialAudioComponent::ApplyWaveParameterOverride() const {
 	if (SoundWaveOverride) {
-		if (UAudioComponent* AC = CachedAudioComponentSource.Get()) {
-			AC->SetWaveParameter(WaveParameterName, SoundWaveOverride);
+		// Every tagged source gets the injection; graphs without the wave parameter ignore it.
+		for (const TWeakObjectPtr<UAudioComponent>& Src : CachedAudioComponentSources) {
+			if (UAudioComponent* AC = Src.Get()) {
+				AC->SetWaveParameter(WaveParameterName, SoundWaveOverride);
+			}
 		}
 	}
+}
+
+void USpatialAudioComponent::ApplyAttenuationOverridesTo(UAudioComponent* AC) const {
+	if (!AC || (OverrideAttenuationInnerRadius <= 0.f && OverrideAttenuationFalloffDistance <= 0.f)) {
+		return;
+	}
+	// Start from the component's current effective settings so every other attenuation
+	// property keeps the assigned asset's (or pre-existing override's) value.
+	FSoundAttenuationSettings Effective;
+	if (AC->bOverrideAttenuation) {
+		Effective = AC->AttenuationOverrides;
+	}
+	else if (AC->AttenuationSettings) {
+		Effective = AC->AttenuationSettings->Attenuation;
+	}
+	if (OverrideAttenuationInnerRadius > 0.f) {
+		Effective.AttenuationShapeExtents.X = OverrideAttenuationInnerRadius;
+	}
+	if (OverrideAttenuationFalloffDistance > 0.f) {
+		Effective.FalloffDistance = OverrideAttenuationFalloffDistance;
+	}
+	AC->AttenuationOverrides = Effective;
+	AC->bOverrideAttenuation = true;
 }
 
 void USpatialAudioComponent::ApplyAttenuationOverrides() {
-	if (OverrideAttenuationInnerRadius <= 0.f && OverrideAttenuationFalloffDistance <= 0.f) {
-		return;
+	// Sources and the virtual template get the same range: the virtual voices stand in for the
+	// source at the diffraction edges, so an audible-range override that only touched the
+	// sources would make occluded playback reach farther/shorter than direct playback.
+	for (const TWeakObjectPtr<UAudioComponent>& Src : CachedAudioComponentSources) {
+		ApplyAttenuationOverridesTo(Src.Get());
+	}
+	ApplyAttenuationOverridesTo(CachedAudioComponentVirtual.Get());
+}
+
+UAudioComponent* USpatialAudioComponent::PlaySoundThroughSpatialBus(USoundBase* Sound) {
+	AActor* Owner = GetOwner();
+	if (!Sound || !Owner || !DiffractionBus) {
+		return nullptr;
 	}
 
-	auto Apply = [this](UAudioComponent* AC) {
-		if (!AC) {
-			return;
-		}
-		// Start from the component's current effective settings so every other attenuation
-		// property keeps the assigned asset's (or pre-existing override's) value.
-		FSoundAttenuationSettings Effective;
-		if (AC->bOverrideAttenuation) {
-			Effective = AC->AttenuationOverrides;
-		}
-		else if (AC->AttenuationSettings) {
-			Effective = AC->AttenuationSettings->Attenuation;
-		}
-		if (OverrideAttenuationInnerRadius > 0.f) {
-			Effective.AttenuationShapeExtents.X = OverrideAttenuationInnerRadius;
-		}
-		if (OverrideAttenuationFalloffDistance > 0.f) {
-			Effective.FalloffDistance = OverrideAttenuationFalloffDistance;
-		}
-		AC->AttenuationOverrides = Effective;
-		AC->bOverrideAttenuation = true;
-	};
+	UAudioComponent* Comp = NewObject<UAudioComponent>(Owner);
+	Comp->bAutoActivate = false;
+	// One-shots free themselves on finish; the stale weak entry is pruned by the per-frame
+	// occlusion write in UpdateDualModeAudio.
+	Comp->bAutoDestroy = true;
+	Comp->SetSound(Sound);
+	Comp->RegisterComponent();
+	if (USceneComponent* Root = Owner->GetRootComponent()) {
+		Comp->AttachToComponent(Root, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
+	}
+	ApplyAttenuationOverridesTo(Comp);
+	// Both parameters must land before Play so MetaSound initialization picks them up; the
+	// occlusion value refreshes every frame afterwards via the cached-sources loop.
+	Comp->SetObjectParameter(AudioBusParameterName, DiffractionBus);
+	Comp->SetFloatParameter(GetSettings().OcclusionParamName, AudioDiag.CurvedOcclusion);
+	Comp->Play();
 
-	// Both components get the same range: the virtual voices stand in for the source at the
-	// diffraction edges, so an audible-range override that only touched the source would make
-	// occluded playback reach farther/shorter than direct playback.
-	Apply(CachedAudioComponentSource.Get());
-	Apply(CachedAudioComponentVirtual.Get());
+	CachedAudioComponentSources.Add(Comp);
+	return Comp;
 }
 
 void USpatialAudioComponent::ReadAttenuationSettings() {
-	UAudioComponent* AC = CachedAudioComponentSource.Get();
-	if (!AC) {
-		return;
+	// With several co-located sounds, the widest-range one defines the acoustic identity: rays
+	// and the LoS sphere must cover the longest-range sound; shorter-range sounds just fall
+	// silent earlier through their own engine attenuation.
+	const FSoundAttenuationSettings* Widest = nullptr;
+	float WidestRange = 0.f;
+	for (const TWeakObjectPtr<UAudioComponent>& Src : CachedAudioComponentSources) {
+		const UAudioComponent* AC = Src.Get();
+		if (!AC) {
+			continue;
+		}
+		const FSoundAttenuationSettings* AttenuationSettings = nullptr;
+		if (AC->bOverrideAttenuation) {
+			AttenuationSettings = &AC->AttenuationOverrides;
+		}
+		else if (AC->AttenuationSettings) {
+			AttenuationSettings = &AC->AttenuationSettings->Attenuation;
+		}
+		if (AttenuationSettings && AttenuationSettings->bAttenuate) {
+			const float Range = AttenuationSettings->AttenuationShapeExtents.X
+				+ AttenuationSettings->FalloffDistance;
+			if (!Widest || Range > WidestRange) {
+				Widest = AttenuationSettings;
+				WidestRange = Range;
+			}
+		}
 	}
 
-	const FSoundAttenuationSettings* AttenuationSettings = nullptr;
-	if (AC->bOverrideAttenuation) {
-		AttenuationSettings = &AC->AttenuationOverrides;
-	}
-	else if (AC->AttenuationSettings) {
-		AttenuationSettings = &AC->AttenuationSettings->Attenuation;
-	}
-
-	if (AttenuationSettings && AttenuationSettings->bAttenuate) {
-		AttenuationInnerRadius = AttenuationSettings->AttenuationShapeExtents.X;
+	if (Widest) {
+		AttenuationInnerRadius = Widest->AttenuationShapeExtents.X;
 
 		if (GetSettings().bAutoMaxDistance) {
-			MaxRayDistance = AttenuationInnerRadius + AttenuationSettings->FalloffDistance;
+			MaxRayDistance = WidestRange;
 			UE_LOG(LogSpatialAudio, Log,
 			       TEXT("SpatialAudioComponent: MaxRayDistance set to %.0f cm from attenuation asset."),
 			       MaxRayDistance);

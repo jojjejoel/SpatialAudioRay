@@ -109,6 +109,7 @@ void USpatialAudioDebugSubsystem::Tick(float DeltaTime) {
 		ApplyToggle(First->ToggleLoSChecksKey, bPrevSubModeKeyDown[7], &USpatialAudioComponent::bShowLoSChecks);
 		ApplyToggle(First->ToggleOffsetLoSChecksKey, bPrevSubModeKeyDown[8], &USpatialAudioComponent::bShowOffsetLoSChecks);
 		ApplyToggle(First->ToggleShortestPathsKey, bPrevSubModeKeyDown[9], &USpatialAudioComponent::bShowShortestPaths);
+		ApplyToggle(First->ToggleSteeringPredictionKey, bPrevSubModeKeyDown[10], &USpatialAudioComponent::bShowSteeringPrediction);
 
 		const bool bDown = First->ToggleGlobalDebugTextKey.IsValid()
 			&& PC->IsInputKeyDown(First->ToggleGlobalDebugTextKey);

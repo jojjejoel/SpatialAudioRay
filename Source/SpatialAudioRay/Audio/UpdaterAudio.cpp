@@ -52,9 +52,15 @@ void FUpdater::UpdateDualModeAudio(USpatialAudioComponent& Component, const floa
 	Component.AudioDiag.CurvedOcclusion = CurvedOcclusion;
 	Component.AudioDiag.SourceCrossfade = 1.f;
 
-	if (UAudioComponent* Ac = Component.CachedAudioComponentSource.Get()) {
-		Ac->SetFloatParameter(Settings.OcclusionParamName, CurvedOcclusion);
-		Ac->SetVolumeMultiplier(Component.bDebugSilenceSource ? 0.f : 1.f);
+	for (int32 i = Component.CachedAudioComponentSources.Num() - 1; i >= 0; --i) {
+		if (UAudioComponent* Ac = Component.CachedAudioComponentSources[i].Get()) {
+			Ac->SetFloatParameter(Settings.OcclusionParamName, CurvedOcclusion);
+			Ac->SetVolumeMultiplier(Component.bDebugSilenceSource ? 0.f : 1.f);
+		}
+		else {
+			// Finished bus one-shots auto-destroy; drop their stale entries here.
+			Component.CachedAudioComponentSources.RemoveAt(i);
+		}
 	}
 
 	AActor* OwnerActor = Component.GetOwner();
