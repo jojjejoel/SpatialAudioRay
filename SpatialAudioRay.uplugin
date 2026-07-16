@@ -1,0 +1,24 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "1.0",
+	"FriendlyName": "Spatial Audio Ray",
+	"Description": "Spatial audio ray-casting for 3D occlusion and diffraction: casts rays from sound sources, bounces them around geometry, and places a virtual source at confirmed diffraction edges.",
+	"Category": "Audio",
+	"CreatedBy": "Joel Schultz",
+	"CreatedByURL": "",
+	"DocsURL": "",
+	"MarketplaceURL": "",
+	"SupportURL": "",
+	"CanContainContent": true,
+	"IsBetaVersion": false,
+	"IsExperimentalVersion": false,
+	"Installed": false,
+	"Modules": [
+		{
+			"Name": "SpatialAudioRay",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		}
+	]
+}

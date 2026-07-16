@@ -1,0 +1,617 @@
+// Copyright Epic Games, Inc. All Rights Reserved.
+
+#include "Audio/SpatialAudioComponent.h"
+#include "Audio/Math.h"
+
+#include "SpatialAudioRayModule.h"
+
+#include "Components/AudioComponent.h"
+#include "Sound/AudioBus.h"
+#include "Sound/SoundAttenuation.h"
+#include "DrawDebugHelpers.h"
+#include "Engine/Engine.h"
+#include "Engine/World.h"
+#include "WorldCollision.h"
+#include "GameFramework/Actor.h"
+#include "GameFramework/PlayerController.h"
+#include "GameFramework/Pawn.h"
+#include "Framework/Application/SlateApplication.h"
+
+#include "Audio/AsyncCastManager.h"
+#include "Audio/EdgeCache.h"
+#include "Audio/SpatialAudioDebugSubsystem.h"
+
+
+#include "Audio/Updater.h"
+
+DECLARE_CYCLE_STAT(TEXT("SpatialAudio Update Cast"), STAT_SpatialAudio_UpdateCast, STATGROUP_Game);
+
+using namespace Math;
+
+USpatialAudioComponent::USpatialAudioComponent() {
+	PrimaryComponentTick.bCanEverTick = true;
+	CurrentOcclusion = 1.f;
+	TargetOcclusion = 1.f;
+
+}
+
+bool USpatialAudioComponent::TraceLine(const UWorld* World, FHitResult& Hit,
+                                       const FVector& Start, const FVector& End) const {
+	++TraceDiag.FrameCount;
+	return World->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility, TraceQueryParams);
+}
+
+FTraceHandle USpatialAudioComponent::SubmitAsyncTrace(UWorld* World, const FVector& Start, const FVector& End) const {
+	++TraceDiag.FrameCount;
+	return World->AsyncLineTraceByChannel(EAsyncTraceType::Single, Start, End, ECC_Visibility, TraceQueryParams);
+}
+
+void USpatialAudioComponent::BeginPlay() {
+	Super::BeginPlay();
+
+	CacheAudioComponents();
+	// Before CreateVirtualVoicePool (the pool clones the template's attenuation fields) and
+	// before the owning actor's Play() call (the active sound captures attenuation at start).
+	ApplyAttenuationOverrides();
+	CreateAndAssignAudioBus();
+	CreateVirtualVoicePool();
+	ApplyWaveParameterOverride();
+
+	if (AActor* Owner = GetOwner()) {
+		TargetVirtualSourceLocation = Owner->GetActorLocation();
+		CurrentVirtualSourceLocation = Owner->GetActorLocation();
+		TraceQueryParams.AddIgnoredActor(Owner);
+	}
+	TraceQueryParams.bTraceComplex = false;
+
+	MaxRayDistance = GetSettings().MaxRayDistance;
+	ReadAttenuationSettings();
+	PerformStartupLoSCheck();
+
+	FUpdater::UpdateAudioParameters(*this, 0.0f, GetSettings());
+	FAsyncCastManager::StartAsyncFullCast(*this, GetSettings());
+
+	if (USpatialAudioDebugSubsystem* DebugSub = GetWorld() ? GetWorld()->GetSubsystem<USpatialAudioDebugSubsystem>() : nullptr) {
+		DebugSub->Register(this);
+	}
+}
+
+void USpatialAudioComponent::EndPlay(const EEndPlayReason::Type EndPlayReason) {
+	if (USpatialAudioDebugSubsystem* DebugSub = GetWorld() ? GetWorld()->GetSubsystem<USpatialAudioDebugSubsystem>() : nullptr) {
+		DebugSub->Unregister(this);
+	}
+	Super::EndPlay(EndPlayReason);
+}
+
+void USpatialAudioComponent::CacheAudioComponents() {
+	if (AActor* Owner = GetOwner()) {
+		CachedAudioComponentSource = Owner->FindComponentByTag<UAudioComponent>(TEXT("AudioComponentSource"));
+		CachedAudioComponentVirtual = Owner->FindComponentByTag<UAudioComponent>(TEXT("AudioComponentVirtual"));
+	}
+}
+
+void USpatialAudioComponent::CreateAndAssignAudioBus() {
+	// A unique transient bus per instance lets one MetaSound pair serve every source;
+	// object parameters must be set before the owning actor calls Play() to be picked
+	// up at MetaSound initialization, which BeginPlay ordering guarantees here.
+	DiffractionBus = NewObject<UAudioBus>(this);
+	DiffractionBus->AudioBusChannels = EAudioBusChannels::Mono;
+
+	if (UAudioComponent* AC = CachedAudioComponentSource.Get()) {
+		AC->SetObjectParameter(AudioBusParameterName, DiffractionBus);
+	}
+	// The virtual template never plays — only the pool components created from it read the bus.
+}
+
+void USpatialAudioComponent::CreateVirtualVoicePool() {
+	UAudioComponent* Template = CachedAudioComponentVirtual.Get();
+	AActor* Owner = GetOwner();
+	if (!Template || !Owner) {
+		return;
+	}
+
+	// The tagged virtual component is only a config carrier (MetaSound + attenuation) — it
+	// never plays. Pool is 2x MaxVirtualVoices so every audible voice can hand off to a new
+	// position while its old slot fades out.
+	const int32 VoiceCount = FMath::Max(1, GetSettings().MaxVirtualVoices);
+	const int32 PoolSize = 2 * VoiceCount;
+	VirtualVoices.SetNum(VoiceCount);
+	VirtualSlots.SetNum(PoolSize);
+	VirtualSlotComponents.Reserve(PoolSize);
+
+	for (int32 i = 0; i < PoolSize; ++i) {
+		UAudioComponent* Comp = NewObject<UAudioComponent>(Owner);
+		Comp->bAutoActivate = false;
+		Comp->SetSound(Template->Sound);
+		Comp->AttenuationSettings = Template->AttenuationSettings;
+		Comp->bOverrideAttenuation = Template->bOverrideAttenuation;
+		Comp->AttenuationOverrides = Template->AttenuationOverrides;
+		Comp->RegisterComponent();
+		if (USceneComponent* Root = Owner->GetRootComponent()) {
+			Comp->AttachToComponent(Root, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
+		}
+		if (DiffractionBus) {
+			Comp->SetObjectParameter(AudioBusParameterName, DiffractionBus);
+		}
+		// Slots play silently from the start so a handoff never pays MetaSound generator
+		// startup latency — fading a voice in only raises VirtualGain.
+		Comp->SetFloatParameter(FName("VirtualGain"), 0.f);
+		Comp->Play();
+		VirtualSlotComponents.Add(Comp);
+	}
+}
+
+void USpatialAudioComponent::ApplyWaveParameterOverride() const {
+	if (SoundWaveOverride) {
+		if (UAudioComponent* AC = CachedAudioComponentSource.Get()) {
+			AC->SetWaveParameter(WaveParameterName, SoundWaveOverride);
+		}
+	}
+}
+
+void USpatialAudioComponent::ApplyAttenuationOverrides() {
+	if (OverrideAttenuationInnerRadius <= 0.f && OverrideAttenuationFalloffDistance <= 0.f) {
+		return;
+	}
+
+	auto Apply = [this](UAudioComponent* AC) {
+		if (!AC) {
+			return;
+		}
+		// Start from the component's current effective settings so every other attenuation
+		// property keeps the assigned asset's (or pre-existing override's) value.
+		FSoundAttenuationSettings Effective;
+		if (AC->bOverrideAttenuation) {
+			Effective = AC->AttenuationOverrides;
+		}
+		else if (AC->AttenuationSettings) {
+			Effective = AC->AttenuationSettings->Attenuation;
+		}
+		if (OverrideAttenuationInnerRadius > 0.f) {
+			Effective.AttenuationShapeExtents.X = OverrideAttenuationInnerRadius;
+		}
+		if (OverrideAttenuationFalloffDistance > 0.f) {
+			Effective.FalloffDistance = OverrideAttenuationFalloffDistance;
+		}
+		AC->AttenuationOverrides = Effective;
+		AC->bOverrideAttenuation = true;
+	};
+
+	// Both components get the same range: the virtual voices stand in for the source at the
+	// diffraction edges, so an audible-range override that only touched the source would make
+	// occluded playback reach farther/shorter than direct playback.
+	Apply(CachedAudioComponentSource.Get());
+	Apply(CachedAudioComponentVirtual.Get());
+}
+
+void USpatialAudioComponent::ReadAttenuationSettings() {
+	UAudioComponent* AC = CachedAudioComponentSource.Get();
+	if (!AC) {
+		return;
+	}
+
+	const FSoundAttenuationSettings* AttenuationSettings = nullptr;
+	if (AC->bOverrideAttenuation) {
+		AttenuationSettings = &AC->AttenuationOverrides;
+	}
+	else if (AC->AttenuationSettings) {
+		AttenuationSettings = &AC->AttenuationSettings->Attenuation;
+	}
+
+	if (AttenuationSettings && AttenuationSettings->bAttenuate) {
+		AttenuationInnerRadius = AttenuationSettings->AttenuationShapeExtents.X;
+
+		if (GetSettings().bAutoMaxDistance) {
+			MaxRayDistance = AttenuationInnerRadius + AttenuationSettings->FalloffDistance;
+			UE_LOG(LogSpatialAudio, Log,
+			       TEXT("SpatialAudioComponent: MaxRayDistance set to %.0f cm from attenuation asset."),
+			       MaxRayDistance);
+		}
+	}
+	else if (GetSettings().bAutoMaxDistance) {
+		UE_LOG(LogSpatialAudio, Warning,
+		       TEXT("SpatialAudioComponent: bAutoMaxDistance is true but no attenuation found. Using %.0f cm."),
+		       MaxRayDistance);
+	}
+}
+
+void USpatialAudioComponent::PerformStartupLoSCheck() {
+	UWorld* World = GetWorld();
+	AActor* Owner = GetOwner();
+	if (!World || !Owner) {
+		return;
+	}
+
+	APlayerController* PC = World->GetFirstPlayerController();
+	if (!PC || !PC->GetPawn()) {
+		return;
+	}
+
+	const FVector SourcePos = Owner->GetActorLocation();
+	const FVector ListenerPos = PC->GetPawn()->GetActorLocation();
+	const FVector ToListener = (ListenerPos - SourcePos).GetSafeNormal();
+
+	FHitResult Hit;
+	if (TraceLine(World, Hit, SourcePos + ToListener * 5.f, ListenerPos)) {
+		CurrentOcclusion = 1.f;
+		TargetOcclusion = 1.f;
+	}
+}
+
+void USpatialAudioComponent::TickComponent(const float DeltaTime, const ELevelTick TickType,
+                                           FActorComponentTickFunction* ThisTickFunction) {
+	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+	TraceDiag.FrameCount = 0;
+
+	if (Finalize.bPending) {
+		FAsyncCastManager::ReadbackFinalizeBatch(*this, GetSettings());
+	}
+
+	const bool bWasAsyncActive = bAsyncCastActive;
+	if (bAsyncCastActive) {
+		FAsyncCastManager::TickAsyncCast(*this, GetSettings());
+	}
+	TraceDiag.AsyncFrameTraces = TraceDiag.FrameCount;
+
+	if (bWasAsyncActive) {
+		TraceDiag.SweepTraceAccum += TraceDiag.AsyncFrameTraces;
+		++TraceDiag.SweepFrameAccum;
+		if (!bAsyncCastActive) {
+			TraceDiag.LastSweepTraces = TraceDiag.SweepTraceAccum;
+			TraceDiag.LastSweepFrames = TraceDiag.SweepFrameAccum;
+			TraceDiag.LastSweepAsyncRays = TraceDiag.SweepAsyncRayAccum;
+		}
+	}
+
+	UWorld* TickWorld = GetWorld();
+	APlayerController* TickPC = TickWorld ? TickWorld->GetFirstPlayerController() : nullptr;
+	APawn* TickPawn = TickPC ? TickPC->GetPawn() : nullptr;
+	const bool bInRange = TickPawn && GetOwner() &&
+		FVector::DistSquared(GetOwner()->GetActorLocation(), TickPawn->GetActorLocation())
+		<= FMath::Square(MaxRayDistance);
+
+	int32 ScaledRayCount;
+	GetEffectiveRayCounts(ScaledRayCount, CurrentPriority);
+
+	UpdateVelocityScaling(DeltaTime, bInRange, TickPawn);
+	UpdateGeometryBurstAndIdleState(DeltaTime, bInRange, TickPawn);
+
+	FEdgeCache::TickCachedEdgeEviction(*this, DeltaTime, GetSettings());
+
+	const float EffFullSweepInterval = ComputeEffectiveSweepInterval();
+	StoredEffFullSweepInterval = EffFullSweepInterval;
+
+	// Held at zero while direct/offset LoS exists and occlusion is low (sweeps are LoS-gated):
+	// losing LoS then starts a fresh interval instead of firing instantly off an accumulated
+	// timer — the LoS-break sweep below handles the immediate response to a break. In the
+	// pre-sweep band the timer runs so pre-warm sweeps can pace normally.
+	TimeSinceFullCast = bHasDirectLoS && !IsPreSweepActive() ? 0.f : TimeSinceFullCast + DeltaTime;
+
+	TickMovementSweepTrigger(DeltaTime, bInRange, TickPawn);
+
+	const bool bPrevHadDirectLoS = bHasDirectLoS;
+	const int32 PreUpdateCount = TraceDiag.FrameCount;
+	const int32 CycleCount = FMath::Max(1, GetSettings().FullSweepCycleCount);
+	const float SubInterval = EffFullSweepInterval / CycleCount;
+	if (bReplayDebug && !Replay.Paths.IsEmpty()) {
+		TargetOcclusion = 1.f;
+
+		if (bInRange && TickPawn && GetOwner() && TickWorld) {
+			const FVector SrcPt = GetOwner()->GetActorLocation();
+			const FVector LisPt = TickPawn->GetActorLocation();
+			const FVector SrcDir = (LisPt - SrcPt).GetSafeNormal();
+			FHitResult DirHit;
+			bHasDirectLoS = !TraceLine(TickWorld, DirHit, SrcPt + SrcDir * 5.f, LisPt);
+			LastDirectLoSFraction = bHasDirectLoS ? 1.f : 0.f;
+			if (bHasDirectLoS) {
+				TargetOcclusion = 0.f;
+				TargetVirtualSourceLocation = SrcPt;
+
+				CachedEdgePoints.Reset();
+				CachedEdgeDirs.Reset();
+			}
+		}
+	}
+	else {
+		FUpdater::TickDirectLoSSampling(*this, DeltaTime, GetSettings());
+
+		// Full sweeps may not start until one complete ring rotation has confirmed no-LoS
+		// (NoLoSSampleStreak resets on any clear sample). While moving, bHasDirectLoS drops on
+		// the first blocked sample, which would otherwise fire the expensive sweep pipeline for
+		// what may be a brief occluder flicker; the LoS-break sweep below still fires instantly
+		// so the virtual source is seeded for the transition. The pre-sweep band bypasses the
+		// rotation gate: partial LoS is exactly when pre-warm sweeps are supposed to run.
+		const int32 RingSteps = FMath::Clamp(GetSettings().OffsetRingRotationSteps, 1, 8);
+		const bool bPreSweep = IsPreSweepActive();
+		if (!bAsyncCastActive && !Finalize.bPending && bInRange &&
+			(bPreSweep || (!bHasDirectLoS && NoLoSSampleStreak >= RingSteps)) &&
+			(TimeSinceFullCast >= SubInterval || SweepScheduling.bMovementRequested)) {
+			FUpdater::PerformUpdateRayCast(*this, GetSettings());
+			if (!bHasDirectLoS || bPreSweep) {
+				const bool bMovementTriggered = SweepScheduling.bMovementRequested;
+				TimeSinceFullCast = 0.f;
+				SweepScheduling.bMovementRequested = false;
+				SweepScheduling.bStationaryIdleMode = false;
+				if (bMovementTriggered) {
+					StaggeredCycleIndex = 0;
+					SweepScheduling.CacheFillSweepsRemaining = GetSettings().MovementCacheFillMaxSweeps;
+					// Rebase "new": only edges discovered after this trigger satisfy the burst —
+					// entries surviving from the previous position must not end the re-survey.
+					for (FCachedEdgePoint& EP : CachedEdgePoints) {
+						EP.bNewSinceFillArm = false;
+					}
+				}
+				CycleAccum.Index = StaggeredCycleIndex;
+				TraceDiag.SweepStartTime = GetWorld()->GetTimeSeconds();
+				TraceDiag.LastSweepInterval = SubInterval;
+				FAsyncCastManager::StartAsyncFullCast(*this, GetSettings());
+			}
+		}
+		else if (!bAsyncCastActive && !Finalize.bPending) {
+			FUpdater::PerformUpdateRayCast(*this, GetSettings());
+		}
+	}
+	TraceDiag.UpdateFrameTraces = TraceDiag.FrameCount - PreUpdateCount;
+
+	if (!bReplayDebug && bPrevHadDirectLoS && !bHasDirectLoS && LoSBreakSweepCooldown <= 0.f) {
+		FUpdater::PerformLoSBreakSweep(*this, GetSettings());
+		LoSBreakSweepCooldown = GetSettings().LoSBreakSweepCooldownTime;
+		SweepScheduling.bMovementRequested = true;
+	}
+	LoSBreakSweepCooldown = FMath::Max(0.f, LoSBreakSweepCooldown - DeltaTime);
+
+	DirectLoSConfirmedDuration = bHasDirectLoS ? DirectLoSConfirmedDuration + DeltaTime : 0.f;
+	TimeSinceHadDirectLoS = bHasDirectLoS ? 0.f : TimeSinceHadDirectLoS + DeltaTime;
+	const bool bConfirmedDirectLoS = DirectLoSConfirmedDuration >= GetSettings().DirectLoSConfirmTime;
+
+	auto TimeToBlendSpeed = [](const float Seconds) -> float { return Seconds > 0.f ? 1.f / Seconds : 1000.f; };
+
+	float OccBlendSpeed;
+	if (bHasDirectLoS) {
+		OccBlendSpeed = TimeToBlendSpeed(GetSettings().OcclusionClearTime);
+		// Not in the pre-sweep band: pre-warm sweeps are filling the cache while partial LoS
+		// remains, so confirmed-LoS clearing must wait until occlusion drops back below the
+		// threshold (source comfortably visible again).
+		if (bConfirmedDirectLoS && !IsPreSweepActive()) {
+			CachedEdgePoints.Empty();
+			CachedEdgeDirs.Empty();
+			// The occlusion episode is over; the next one re-arms via its own movement trigger
+			// (LoS break sets bMovementRequested), so don't let a half-spent budget leak into it.
+			SweepScheduling.CacheFillSweepsRemaining = 0;
+		}
+	}
+	else if (TargetOcclusion > CurrentOcclusion) {
+		OccBlendSpeed = TimeToBlendSpeed(GetSettings().OcclusionAttackTime);
+	}
+	else if (TargetOcclusion >= 1.f) {
+		OccBlendSpeed = TimeToBlendSpeed(GetSettings().OcclusionFullBlockTime);
+	}
+	else {
+		OccBlendSpeed = TimeToBlendSpeed(GetSettings().OcclusionBlendTime);
+	}
+
+	CurrentOcclusion = FMath::FInterpConstantTo(CurrentOcclusion, TargetOcclusion, DeltaTime, OccBlendSpeed);
+	CurrentPathAttenuation = FMath::FInterpTo(CurrentPathAttenuation, TargetPathAttenuation, DeltaTime,
+	                                          TimeToBlendSpeed(GetSettings().PathAttenuationBlendTime));
+	const float EffVirtualBlendSpeed = bConfirmedDirectLoS
+		                                   ? TimeToBlendSpeed(GetSettings().VirtualSourceSnapTime)
+		                                   : TimeToBlendSpeed(GetSettings().VirtualSourceMoveTime);
+	CurrentVirtualSourceLocation = FMath::VInterpTo(CurrentVirtualSourceLocation, TargetVirtualSourceLocation,
+	                                                DeltaTime, EffVirtualBlendSpeed);
+	for (FVirtualVoice& Voice : VirtualVoices) {
+		if (Voice.bActive) {
+			Voice.SmoothedPosition = FMath::VInterpTo(Voice.SmoothedPosition, Voice.TargetPosition,
+			                                          DeltaTime, EffVirtualBlendSpeed);
+		}
+	}
+
+	if (DeltaTime > 0.f) {
+		TraceDiag.SmoothedFrameTraces = FMath::FInterpTo(TraceDiag.SmoothedFrameTraces, static_cast<float>(TraceDiag.FrameCount),
+		                                                 DeltaTime, 4.f);
+		TraceDiag.SmoothedAsyncTraces = FMath::FInterpTo(TraceDiag.SmoothedAsyncTraces, static_cast<float>(TraceDiag.AsyncFrameTraces),
+		                                                 DeltaTime, 4.f);
+		TraceDiag.SmoothedUpdateTraces = FMath::FInterpTo(TraceDiag.SmoothedUpdateTraces, static_cast<float>(TraceDiag.UpdateFrameTraces),
+		                                                  DeltaTime, 4.f);
+
+		TraceDiag.AccumBucket += TraceDiag.FrameCount;
+		TraceDiag.SnapshotTimer += DeltaTime;
+		if (TraceDiag.SnapshotTimer >= 1.f) {
+			TraceDiag.SnapshotTracesPerSec = TraceDiag.AccumBucket / TraceDiag.SnapshotTimer;
+			TraceDiag.SnapshotTimer = 0.f;
+			TraceDiag.AccumBucket = 0;
+			TraceDiag.SnapshotFrameTraces = TraceDiag.SmoothedFrameTraces;
+			TraceDiag.SnapshotAsyncTraces = TraceDiag.SmoothedAsyncTraces;
+			TraceDiag.SnapshotUpdateTraces = TraceDiag.SmoothedUpdateTraces;
+
+			TraceDiag.History[TraceDiag.HistoryHead] = TraceDiag.SnapshotTracesPerSec;
+			TraceDiag.HistoryHead = (TraceDiag.HistoryHead + 1) % TraceDiag.HistoryLen;
+			if (TraceDiag.HistoryCount < TraceDiag.HistoryLen) {
+				++TraceDiag.HistoryCount;
+			}
+			// Walk backward from the newest entry: the 10s window is the most recent Avg10Len
+			// snapshots of the shared 60-entry ring, not the whole buffer.
+			float Sum10 = 0.f;
+			float Sum60 = 0.f;
+			for (int32 k = 0; k < TraceDiag.HistoryCount; ++k) {
+				const int32 Idx = (TraceDiag.HistoryHead - 1 - k + TraceDiag.HistoryLen) % TraceDiag.HistoryLen;
+				Sum60 += TraceDiag.History[Idx];
+				if (k < TraceDiag.Avg10Len) {
+					Sum10 += TraceDiag.History[Idx];
+				}
+			}
+			const int32 Count10 = FMath::Min(TraceDiag.HistoryCount, TraceDiag.Avg10Len);
+			TraceDiag.Avg10Sec = Count10 > 0 ? Sum10 / Count10 : 0.f;
+			TraceDiag.Avg60Sec = TraceDiag.HistoryCount > 0 ? Sum60 / TraceDiag.HistoryCount : 0.f;
+		}
+	}
+
+	if (bDrawDebugRays) {
+		DrawDebugVisualization(DeltaTime, GetSettings());
+	}
+
+	FUpdater::UpdateAudioParameters(*this, DeltaTime, GetSettings());
+}
+
+
+float USpatialAudioComponent::ComputeEffectiveSweepInterval() const {
+	if (GetSettings().IsRateThrottlingDisabled()) {
+		return GetSettings().FullSweepInterval;
+	}
+
+	const bool bBothStationary = VelocityScaling.SweepMultiplier > 0.95f && VelocityScaling.EdgeMultiplier > 0.95f;
+
+	float Interval = FMath::Lerp(
+			GetSettings().MaxFullSweepInterval, GetSettings().FullSweepInterval, CurrentPriority)
+		* FMath::Min(VelocityScaling.SweepMultiplier, VelocityScaling.EdgeMultiplier);
+
+	if (GetSettings().bCacheEdgePoints) {
+		if (SweepScheduling.GeometryBurstTimer > 0.f && bBothStationary) {
+			Interval *= GetSettings().GeometryChangeBurstMultiplier;
+		}
+		// Post-movement cache fill: velocity scaling stops accelerating the moment movement
+		// stops, but the sweeps it triggered may not have found anything yet — keep burst pace
+		// until enough NEW edges (found since the trigger; carried-over entries don't satisfy
+		// the re-survey) exist or the sweep budget runs out. Sits above idle mode so an
+		// unfilled burst can never idle-crawl.
+		else if (bBothStationary && SweepScheduling.CacheFillSweepsRemaining > 0
+			&& CountCacheFillEdges() < GetSettings().MovementCacheFillRequiredEdges) {
+			Interval *= GetSettings().GeometryChangeBurstMultiplier;
+		}
+		else if (bBothStationary && SweepScheduling.bStationaryIdleMode) {
+			Interval *= GetSettings().StationaryIdleMultiplier;
+		}
+	}
+	return Interval;
+}
+
+FVector USpatialAudioComponent::ComputeSteeringLead(const FVector& SmoothedVelocity,
+                                                    const USpatialAudioSettings& Settings) const {
+	const float Lead = Settings.SteeringPredictionLeadTime;
+	// Freshly-occluded sweeps (pre-sweep band, LoS-break, first sweeps after loss) aim at the
+	// PAST position: the corner just crossed sits between there and the source, and forward
+	// prediction would aim deeper into the shadow, away from the edge carrying the sound.
+	// "Fresh" = the position Lead seconds ago still fell inside the LoS era.
+	const bool bRetro = TimeSinceHadDirectLoS <= Lead;
+	return SmoothedVelocity * (bRetro ? -Lead : Lead);
+}
+
+int32 USpatialAudioComponent::CountCacheFillEdges() const {
+	int32 Count = 0;
+	for (const FCachedEdgePoint& EP : CachedEdgePoints) {
+		if (EP.bNewSinceFillArm && !EP.bRelayed && !EP.bEvicting) {
+			++Count;
+		}
+	}
+	return Count;
+}
+
+void USpatialAudioComponent::TickMovementSweepTrigger(const float DeltaTime, const bool bInRange, const APawn* Pawn) {
+	SweepScheduling.MovementCooldownTimer += DeltaTime;
+	if (!bInRange || bHasDirectLoS || !Pawn || !GetOwner() || GetSettings().IsRateThrottlingDisabled()) {
+		return;
+	}
+
+	const FVector LisPos = Pawn->GetActorLocation();
+	const float TriggerDist = GetSettings().MovementSweepTriggerDist;
+	if (TriggerDist <= 0.f) {
+		return;
+	}
+
+	if (!SweepScheduling.bTriggerPosSet) {
+		SweepScheduling.bTriggerPosSet = true;
+		SweepScheduling.LastTriggerListenerPos = LisPos;
+	}
+	else if (SweepScheduling.MovementCooldownTimer >= GetSettings().MovementSweepCooldown * CurrentVelocityIntervalMultiplier &&
+		FVector::DistSquared(LisPos, SweepScheduling.LastTriggerListenerPos) > FMath::Square(TriggerDist)) {
+		SweepScheduling.bMovementRequested = true;
+		SweepScheduling.LastTriggerListenerPos = LisPos;
+		SweepScheduling.MovementCooldownTimer = 0.f;
+	}
+}
+
+
+void USpatialAudioComponent::GetEffectiveRayCounts(int32& OutFull, float& OutPriority) const {
+	OutPriority = 1.f;
+
+	if (!GetSettings().IsRayBudgetScalingDisabled() && GetSettings().bScaleRaysByDistance) {
+		if (const APlayerController* PC = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr; PC && PC->
+			GetPawn() && GetOwner()) {
+			const float Dist = FVector::Dist(GetOwner()->GetActorLocation(), PC->GetPawn()->GetActorLocation());
+			const float FullPriorityDist = AttenuationInnerRadius * 2.f;
+			const float ScaleStart = FullPriorityDist;
+			const float ScaleRange = MaxRayDistance - ScaleStart;
+			const float TLinear = (ScaleRange > 0.f && Dist > ScaleStart)
+				                      ? FMath::Clamp((Dist - ScaleStart) / ScaleRange, 0.f, 1.f)
+				                      : 0.f;
+			const float t = FMath::Pow(TLinear, GetSettings().DistancePriorityExponent);
+			OutPriority = 1.f - t;
+		}
+	}
+
+	const int32 Scaled = FMath::RoundToInt(GetSettings().FullSweepRayCount * OutPriority);
+	OutFull = GetSettings().IsRayBudgetScalingDisabled()
+		? GetSettings().FullSweepRayCount
+		: FMath::Clamp(FMath::Max(Scaled, GetSettings().MinFullSweepRayCount),
+		               0, GetSettings().FullSweepRayCount);
+}
+
+
+void USpatialAudioComponent::UpdateVelocityScaling(const float DeltaTime, const bool bInRange, const APawn* Pawn) {
+	if (bInRange && Pawn && GetOwner() && DeltaTime > 0.f) {
+		const FVector SrcPos = GetOwner()->GetActorLocation();
+		const FVector LisPos = Pawn->GetActorLocation();
+		if (VelocityScaling.bPosSet) {
+			const float SrcSpeed = FVector::Dist(SrcPos, VelocityScaling.LastSourcePos) / DeltaTime;
+			const float LisSpeed = FVector::Dist(LisPos, VelocityScaling.LastListenerPos) / DeltaTime;
+			VelocityScaling.SmoothedSourceSpeed = FMath::FInterpTo(VelocityScaling.SmoothedSourceSpeed, SrcSpeed, DeltaTime, 5.f);
+			VelocityScaling.SmoothedListenerSpeed = FMath::FInterpTo(VelocityScaling.SmoothedListenerSpeed, LisSpeed, DeltaTime, 5.f);
+			VelocityScaling.SmoothedCombinedSpeed = VelocityScaling.SmoothedSourceSpeed + VelocityScaling.SmoothedListenerSpeed;
+			VelocityScaling.SmoothedSourceVelocity = FMath::VInterpTo(
+				VelocityScaling.SmoothedSourceVelocity, (SrcPos - VelocityScaling.LastSourcePos) / DeltaTime, DeltaTime, 5.f);
+			VelocityScaling.SmoothedListenerVelocity = FMath::VInterpTo(
+				VelocityScaling.SmoothedListenerVelocity, (LisPos - VelocityScaling.LastListenerPos) / DeltaTime, DeltaTime, 5.f);
+		}
+		VelocityScaling.bPosSet = true;
+		VelocityScaling.LastSourcePos = SrcPos;
+		VelocityScaling.LastListenerPos = LisPos;
+	}
+	else if (!bInRange) {
+		VelocityScaling.SmoothedSourceSpeed = VelocityScaling.SmoothedListenerSpeed = VelocityScaling.SmoothedCombinedSpeed = 0.f;
+		VelocityScaling.SmoothedSourceVelocity = VelocityScaling.SmoothedListenerVelocity = FVector::ZeroVector;
+	}
+
+	const float MaxSpeed = GetSettings().VelocityScaleMaxSpeed;
+	const float MinScale = FMath::Max(0.05f, GetSettings().VelocityIntervalScale);
+	const float VelocityFraction = MaxSpeed > 0.f ? FMath::Clamp(VelocityScaling.SmoothedCombinedSpeed / MaxSpeed, 0.f, 1.f) : 0.f;
+	const float SourceVelocityFraction = MaxSpeed > 0.f ? FMath::Clamp(VelocityScaling.SmoothedSourceSpeed / MaxSpeed, 0.f, 1.f) : 0.f;
+	const float ListenerVelocityFraction = MaxSpeed > 0.f ? FMath::Clamp(VelocityScaling.SmoothedListenerSpeed / MaxSpeed, 0.f, 1.f) : 0.f;
+	CurrentVelocityIntervalMultiplier = FMath::Lerp(1.f, MinScale, VelocityFraction);
+	VelocityScaling.SweepMultiplier = FMath::Lerp(1.f, MinScale, SourceVelocityFraction);
+	VelocityScaling.EdgeMultiplier = FMath::Lerp(1.f, MinScale, ListenerVelocityFraction);
+	VelocityScaling.OffsetLoSMultiplier = FMath::Lerp(
+		1.f, FMath::Max(0.05f, GetSettings().OffsetLoSVelocityScale), VelocityFraction);
+	CurrentCombinedSpeed = VelocityScaling.SmoothedCombinedSpeed;
+}
+
+void USpatialAudioComponent::UpdateGeometryBurstAndIdleState(const float DeltaTime, const bool bInRange, const APawn* Pawn) {
+	if (SweepScheduling.bGeometryChangeDetected) {
+		if (VelocityScaling.SweepMultiplier > 0.95f && VelocityScaling.EdgeMultiplier > 0.95f && SweepScheduling.GeometryBurstTimer <= 0.f) {
+			SweepScheduling.GeometryBurstTimer = GetSettings().GeometryChangeBurstDuration;
+		}
+		SweepScheduling.bGeometryChangeDetected = false;
+	}
+	SweepScheduling.GeometryBurstTimer = FMath::Max(0.f, SweepScheduling.GeometryBurstTimer - DeltaTime);
+
+	if (GetSettings().IsRateThrottlingDisabled()) {
+		SweepScheduling.bStationaryIdleMode = false;
+	}
+	else if (SweepScheduling.bStationaryIdleMode && bInRange && Pawn && GetOwner()) {
+		const float BreakDistSq = FMath::Square(GetSettings().StationaryIdleBreakDist);
+		if (FVector::DistSquared(GetOwner()->GetActorLocation(), SweepScheduling.StationaryIdleSourcePos) > BreakDistSq ||
+			FVector::DistSquared(Pawn->GetActorLocation(), SweepScheduling.StationaryIdleListenerPos) > BreakDistSq) {
+			SweepScheduling.bStationaryIdleMode = false;
+		}
+	}
+	bIsStationaryIdle = SweepScheduling.bStationaryIdleMode;
+}
+
