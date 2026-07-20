@@ -657,6 +657,19 @@ public:
 	float PathAttenuationStrength = 0.3f;
 
 	/**
+	 * Blends the traveled (bent/crawled) path distance toward the straight-line source→virtual
+	 * distance before computing PathAttenuation. 0 = pure traveled distance (default, matches
+	 * old behavior). 1 = pure straight-line distance.
+	 * A hedge, not a correctness improvement: in genuinely complex geometry the ray sweep can
+	 * fail to find the true shortest path and instead cache a longer substitute, which this
+	 * pulls back toward a more natural attenuation; the same blend also softens genuinely long,
+	 * correctly-found detours, which is the deliberate trade-off.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Path Attenuation",
+		meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float PathAttenuationGeomBlend = 0.f;
+
+	/**
 	 * Seconds for the path attenuation value to follow its target.
 	 * 0 = instant. Roughly how long it takes to reach a new value after the path changes.
 	 */

@@ -258,6 +258,7 @@ void FAsyncCastManager::ReadbackFinalizeBatch(USpatialAudioComponent& Component,
 		AccumIn.DirectDist = FVector::Dist(Component.AsyncSourcePos, Component.AsyncListenerPos);
 		AccumIn.MaxRayDistance = Component.MaxRayDistance;
 		AccumIn.bDirectLoSFound = bDirectLoSFound;
+		AccumIn.SourcePos = Component.AsyncSourcePos;
 		const FRayAccumulatorOutput AccumOut = ComputeAudioFromRayAccumulator(AccumIn, Settings);
 
 		Component.AudioDiag.FullExcessRatio = AccumIn.DirectDist > 0.f
@@ -315,12 +316,16 @@ FAsyncCastManager::FRayAccumulatorOutput FAsyncCastManager::ComputeAudioFromRayA
 		                     ? Math::ComputeOcclusionFromPathRatio(AvgLoSDist, In.DirectDist, Settings)
 		                     : 1.f;
 
-	Out.PathAttenuation = Math::ComputePathAttenuation(AvgLoSDist, In.MaxRayDistance, Settings);
-
 	if (!In.bDirectLoSFound && In.TotalWeight > 0.f) {
 		Out.VirtualSourcePos = In.WeightedPos / In.TotalWeight;
 		Out.bHasVirtualSource = true;
 	}
+
+	// Falls back to AvgLoSDist (a no-op blend) when there's no virtual source position yet —
+	// PathAttenuation is meaningless without one anyway.
+	const float Leg1Geom = Out.bHasVirtualSource
+		? FVector::Dist(In.SourcePos, Out.VirtualSourcePos) : AvgLoSDist;
+	Out.PathAttenuation = Math::ComputePathAttenuation(AvgLoSDist, Leg1Geom, In.MaxRayDistance, Settings);
 
 	return Out;
 }

@@ -65,9 +65,14 @@ namespace Math {
 		return FMath::Clamp(PathExcessRatio / FMath::Max(S.OcclusionExcessPathScale, 0.001f), 0.f, 1.f);
 	}
 	
-	inline float ComputePathAttenuation(float AvgPathDist,
+	// Leg1Geom = straight-line source→virtual-position distance, same basis VirtualPathBend
+	// already blends against (see ComputeVirtualAudioParams) — PathAttenuationGeomBlend applies
+	// the same idea to gain. Blending the distance itself (rather than two separately-computed
+	// attenuation values) keeps this a single pass through the existing formula below.
+	inline float ComputePathAttenuation(float AvgPathDist, float Leg1Geom,
 	                                    float MaxRayDistance, const USpatialAudioSettings& S) {
-		return FMath::Clamp(AvgPathDist / FMath::Max(MaxRayDistance, 1.f) * S.PathAttenuationStrength, 0.f, 1.f);
+		const float BlendedDist = FMath::Lerp(AvgPathDist, Leg1Geom, S.PathAttenuationGeomBlend);
+		return FMath::Clamp(BlendedDist / FMath::Max(MaxRayDistance, 1.f) * S.PathAttenuationStrength, 0.f, 1.f);
 	}
 
 	// Two weights per point. The source-side weight (eviction confidence + geometric falloff

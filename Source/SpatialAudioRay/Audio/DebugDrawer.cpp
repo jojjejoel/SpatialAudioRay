@@ -634,6 +634,7 @@ void USpatialAudioComponent::PerformReplaySweep(const USpatialAudioSettings& Set
 		AccumIn.DirectDist = DirectDist;
 		AccumIn.MaxRayDistance = MaxRayDistance;
 		AccumIn.bDirectLoSFound = false;
+		AccumIn.SourcePos = SourcePos;
 		const FAsyncCastManager::FRayAccumulatorOutput AccumOut = FAsyncCastManager::ComputeAudioFromRayAccumulator(AccumIn, Settings);
 
 		if (AccumOut.bHasVirtualSource) {

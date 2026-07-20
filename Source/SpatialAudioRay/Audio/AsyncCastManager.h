@@ -44,6 +44,9 @@ public:
 		float DirectDist = 0.f;
 		float MaxRayDistance = 0.f;
 		bool bDirectLoSFound = false;
+		/** Needed to derive the straight-line source→virtual distance (Leg1Geom) for
+		 *  PathAttenuationGeomBlend — unused otherwise. */
+		FVector SourcePos = FVector::ZeroVector;
 	};
 
 	struct FRayAccumulatorOutput {

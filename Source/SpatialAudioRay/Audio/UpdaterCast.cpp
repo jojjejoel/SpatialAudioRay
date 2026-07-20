@@ -200,9 +200,14 @@ void FUpdater::TickDirectLoSSampling(USpatialAudioComponent& Component, const fl
 	// Occlusion consumes the smoothed pattern average, softening its quantization steps into a
 	// continuous gradient. Gating (bHasDirectLoS) stays on the raw instant sample — a smoothed
 	// decay must not keep sweeps suppressed after LoS is actually gone.
-	const float DirectLoSFraction = Settings.LoSFractionSmoothingTime > 0.f
+	// Scaled by the same OffsetLoSMultiplier as the check interval itself, so the smoothing
+	// time stays proportional to how often WindowedLoSFraction actually steps to a new value —
+	// movement (shorter interval, faster-arriving samples) shortens it to track genuinely fast
+	// change more closely; standing still relaxes it back to the full baseline softening.
+	const float EffSmoothingTime = Settings.LoSFractionSmoothingTime * Component.VelocityScaling.OffsetLoSMultiplier;
+	const float DirectLoSFraction = EffSmoothingTime > 0.f
 		? FMath::FInterpTo(Component.LastDirectLoSFraction, PatternLoSFraction,
-		                   DeltaTime, 1.f / Settings.LoSFractionSmoothingTime)
+		                   DeltaTime, 1.f / EffSmoothingTime)
 		: PatternLoSFraction;
 
 	// At the LoS boundary the rotating ring alternates between patterns that do and don't
@@ -331,8 +336,9 @@ void FUpdater::PerformUpdateRayCast(USpatialAudioComponent& Component, const USp
 			if (SrcWeightTotal > 0.f) {
 				Component.CurrentSourceToVirtualDistance = WeightedDistSum / SrcWeightTotal;
 			}
+			const float Leg1Geom = FVector::Dist(SourcePos, Component.TargetVirtualSourceLocation);
 			Component.TargetPathAttenuation = Math::ComputePathAttenuation(
-				Component.CurrentSourceToVirtualDistance, Component.MaxRayDistance, Settings);
+				Component.CurrentSourceToVirtualDistance, Leg1Geom, Component.MaxRayDistance, Settings);
 		}
 		else if (Component.bHasDirectLoS && Component.DirectLoSConfirmedDuration >= Settings.DirectLoSConfirmTime) {
 			Component.TargetPathAttenuation = 0.f;
@@ -368,13 +374,15 @@ void FUpdater::SyncVirtualVoicesToClusters(USpatialAudioComponent& Component,
 	TArray<FDesired> Desired;
 
 	if (!Clusters.IsEmpty()) {
+		const FVector ActorPos = Component.GetOwner()->GetActorLocation();
 		float TotalWeight = 0.f;
 		for (const FEdgeCluster& Cluster : Clusters) {
 			TotalWeight += Cluster.TotalWeight;
 		}
 		for (const FEdgeCluster& Cluster : Clusters) {
+			const float Leg1Geom = FVector::Dist(ActorPos, Cluster.Centroid);
 			Desired.Add({Cluster.Centroid, Cluster.PathDist,
-			             Math::ComputePathAttenuation(Cluster.PathDist, Component.MaxRayDistance, Settings),
+			             Math::ComputePathAttenuation(Cluster.PathDist, Leg1Geom, Component.MaxRayDistance, Settings),
 			             Cluster.TotalWeight / FMath::Max(TotalWeight, KINDA_SMALL_NUMBER)});
 		}
 	}
@@ -667,6 +675,7 @@ void FUpdater::PerformLoSBreakSweep(USpatialAudioComponent& Component, const USp
 	AccumIn.DirectDist = DirectDist;
 	AccumIn.MaxRayDistance = Component.MaxRayDistance;
 	AccumIn.bDirectLoSFound = false;
+	AccumIn.SourcePos = SourcePos;
 	const FAsyncCastManager::FRayAccumulatorOutput AccumOut = FAsyncCastManager::ComputeAudioFromRayAccumulator(
 		AccumIn, Settings);
 
