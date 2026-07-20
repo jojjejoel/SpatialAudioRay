@@ -22,7 +22,8 @@ public class SpatialAudioRay : ModuleRules
 		// include both "SpatialAudioTypes.h" and "Audio/SpatialAudioSourceActor.h".
 		PublicIncludePaths.AddRange([
 			ModuleDirectory,
-			ModuleDirectory + "/Audio"
+			ModuleDirectory + "/Audio",
+			ModuleDirectory + "/Voice"
 		]);
 	}
 }
