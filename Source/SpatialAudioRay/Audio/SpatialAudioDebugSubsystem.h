@@ -35,4 +35,9 @@ private:
 	bool bPrevToggleKeyDown = false;
 	bool bPrevCycleKeyDown = false;
 	bool bPrevSubModeKeyDown[11] = {};
+
+	/** World-space name labels at every source, toggled by ToggleActorLabelsKey. Independent of
+	 *  bDrawDebugRays so it's usable purely for scouting/filming without the ray-debug overlay. */
+	bool bShowActorLabels = false;
+	bool bPrevActorLabelsKeyDown = false;
 };

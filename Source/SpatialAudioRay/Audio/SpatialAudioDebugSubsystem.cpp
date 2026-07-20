@@ -2,6 +2,7 @@
 
 #include "Audio/SpatialAudioComponent.h"
 
+#include "DrawDebugHelpers.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
 #include "Framework/Application/SlateApplication.h"
@@ -72,6 +73,30 @@ void USpatialAudioDebugSubsystem::Tick(float DeltaTime) {
 			bAnyDebugRays = CycleDebugRaySource();
 		}
 		bPrevCycleKeyDown = bDown;
+	}
+
+	// Independent of bAnyDebugRays: a lightweight label layer for finding/naming sources while
+	// filming, so it keeps working even with ray debugging fully off.
+	if (PC) {
+		const bool bDown = First->ToggleActorLabelsKey.IsValid()
+			&& PC->IsInputKeyDown(First->ToggleActorLabelsKey);
+		if (bDown && !bPrevActorLabelsKeyDown) {
+			bShowActorLabels = !bShowActorLabels;
+		}
+		bPrevActorLabelsKeyDown = bDown;
+	}
+
+	if (bShowActorLabels) {
+		for (const TWeakObjectPtr<USpatialAudioComponent>& Src : Sources) {
+			if (const USpatialAudioComponent* C = Src.Get()) {
+				if (AActor* Owner = C->GetOwner()) {
+					// DrawDebugString renders as screen-space text at the point's projected
+					// position — camera-facing and not depth-tested against geometry for free.
+					DrawDebugString(GetWorld(), Owner->GetActorLocation(), Owner->GetActorNameOrLabel(),
+					                 nullptr, FColor::White, 0.f, true);
+				}
+			}
+		}
 	}
 
 	// Gated on the master debug switch only, NOT on per-source bShowDebugText — key 3 hides

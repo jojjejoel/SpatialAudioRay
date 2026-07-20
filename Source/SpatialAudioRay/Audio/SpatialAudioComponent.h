@@ -143,6 +143,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Debug")
 	FKey CycleDebugSourceKey = EKeys::N;
 
+	/** Key that toggles world-space name labels at every registered source's location (drawn
+	 *  by USpatialAudioDebugSubsystem via DrawDebugString — camera-facing text, not depth-tested
+	 *  against geometry, so it stays readable through walls). Polled independent of
+	 *  bDrawDebugRays / bAnyDebugRays, so labels work even with ray debugging fully off. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Debug")
+	FKey ToggleActorLabelsKey = EKeys::L;
+
 	/** How long debug lines persist. Matching FullCastInterval avoids visual clutter. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Debug",
 		meta = (EditCondition = "bDrawDebugRays", ClampMin = "0.01"))
