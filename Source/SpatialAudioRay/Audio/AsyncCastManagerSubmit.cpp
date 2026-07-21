@@ -349,7 +349,7 @@ void FAsyncCastManager::TickAsyncCast(USpatialAudioComponent& Component, const U
 		DrainPendingLoSProbes(Component, Ray, World, Component.AsyncListenerPos);
 		if (!bLoSWasFound && Ray.bLoSFound
 			&& Component.bDrawDebugRays && (Component.bShowBounceRays || Component.bShowSurfaceCrawl)) {
-			DrawDebugSphere(World, Ray.LoSOrigin, 10.f, 8, FColor::Green, false, Component.DebugLineDuration, 0, 2.f);
+			DrawDebugSphere(World, Ray.LoSOrigin, 10.f, 8, FColor::Green, false, Settings.DebugLineDuration, SDPG_Foreground, 2.f);
 		}
 
 		if (Ray.bLoSFound) {
@@ -403,9 +403,9 @@ void FAsyncCastManager::TickAsyncCast(USpatialAudioComponent& Component, const U
 
 			if (Component.bDrawDebugRays && (Component.bShowBounceRays || Component.bShowSurfaceCrawl)) {
 				DrawDebugLine(World, Ray.Origin, TurnPoint, FColor::White,
-				              false, Component.DebugLineDuration, 0, 1.f);
+				              false, Settings.DebugLineDuration, 0, 1.f);
 				DrawDebugSphere(World, TurnPoint, 5.f, 6, FColor::White,
-				                false, Component.DebugLineDuration, 0, 1.f);
+				                false, Settings.DebugLineDuration, SDPG_Foreground, 1.f);
 			}
 
 			Ray.CumulativeDistance += Ray.SegSubmitLen;
@@ -427,7 +427,7 @@ void FAsyncCastManager::TickAsyncCast(USpatialAudioComponent& Component, const U
 					Ray.PendingLoSProbes.Add(MoveTemp(TurnProbe));
 					if (Component.bDrawDebugRays && Component.bShowLoSChecks) {
 						DrawDebugLine(World, Ray.Origin, Component.AsyncListenerPos, FColor(160, 0, 255),
-						              false, Component.DebugLineDuration, 0, 0.5f);
+						              false, Settings.DebugLineDuration, 0, 0.5f);
 					}
 				}
 			}
@@ -453,7 +453,7 @@ void FAsyncCastManager::TickAsyncCast(USpatialAudioComponent& Component, const U
 
 				if (Component.bDrawDebugRays && (Component.bShowBounceRays || Component.bShowSurfaceCrawl)) {
 					DrawDebugLine(World, Ray.Origin, Ray.TerminalPoint,
-					              FColor::Red, false, Component.DebugLineDuration, 0, 0.5f);
+					              FColor::Red, false, Settings.DebugLineDuration, 0, 0.5f);
 				}
 
 				if (!Ray.bLoSFound) {
@@ -465,9 +465,9 @@ void FAsyncCastManager::TickAsyncCast(USpatialAudioComponent& Component, const U
 				const FHitResult& TermHit = SegData.OutHits[0];
 				if (Component.bDrawDebugRays && (Component.bShowBounceRays || Component.bShowSurfaceCrawl)) {
 					DrawDebugLine(World, Ray.Origin, TermHit.Location, FColor::White,
-					              false, Component.DebugLineDuration, 0, 1.f);
+					              false, Settings.DebugLineDuration, 0, 1.f);
 					DrawDebugSphere(World, TermHit.Location, 5.f, 6, FColor::White,
-					                false, Component.DebugLineDuration, 0, 1.f);
+					                false, Settings.DebugLineDuration, SDPG_Foreground, 1.f);
 				}
 				if (!Ray.bLoSFound) {
 					const float TermSegLen = FVector::Dist(Ray.Origin, TermHit.Location);
@@ -491,9 +491,9 @@ void FAsyncCastManager::TickAsyncCast(USpatialAudioComponent& Component, const U
 			if (FVector::DotProduct(Hit.Normal, Ray.Dir) > 0.f) {
 				if (Component.bDrawDebugRays && Component.bShowSurfaceCrawl) {
 					DrawDebugSphere(World, Hit.Location, 18.f, 8, FColor::Red,
-					                false, Component.DebugLineDuration * 4.f, 0, 3.f);
+					                false, Settings.DebugLineDuration * 4.f, SDPG_Foreground, 3.f);
 					DrawDebugLine(World, Hit.Location, Hit.Location + Hit.Normal * 40.f,
-					              FColor::Red, false, Component.DebugLineDuration * 4.f, 0, 2.f);
+					              FColor::Red, false, Settings.DebugLineDuration * 4.f, 0, 2.f);
 				}
 				if (!Ray.PendingLoSProbes.IsEmpty()) {
 					Ray.bTerminalLoSPending = true;
@@ -517,9 +517,9 @@ void FAsyncCastManager::TickAsyncCast(USpatialAudioComponent& Component, const U
 
 			if (Component.bDrawDebugRays && (Component.bShowBounceRays || Component.bShowSurfaceCrawl)) {
 				DrawDebugLine(World, Ray.Origin, Hit.Location, FColor::White,
-				              false, Component.DebugLineDuration, 0, 1.f);
+				              false, Settings.DebugLineDuration, 0, 1.f);
 				DrawDebugSphere(World, Hit.Location, 5.f, 6, FColor::White,
-				                false, Component.DebugLineDuration, 0, 1.f);
+				                false, Settings.DebugLineDuration, SDPG_Foreground, 1.f);
 			}
 
 			const bool bDoCrawl = Settings.bEnableSurfaceCrawl && Ray.bNextHitCrawls
@@ -606,7 +606,7 @@ void FAsyncCastManager::TickAsyncCast(USpatialAudioComponent& Component, const U
 				Ray.PendingLoSProbes.Add(MoveTemp(BounceProbe));
 				if (Component.bDrawDebugRays && Component.bShowLoSChecks) {
 					DrawDebugLine(World, Ray.Origin, Component.AsyncListenerPos, FColor(160, 0, 255),
-					              false, Component.DebugLineDuration, 0, 0.5f);
+					              false, Settings.DebugLineDuration, 0, 0.5f);
 				}
 			}
 
@@ -726,7 +726,7 @@ void FAsyncCastManager::ProcessCrawlBatch(USpatialAudioComponent& Component, FSp
 			&& FVector::DotProduct(Component.AsyncListenerPos - SP.StepPos, Ray.CrawlHitNormal) > 0.f) {
 			if (Component.bDrawDebugRays && Component.bShowLoSChecks && World) {
 				DrawDebugLine(World, SP.StepPos, Component.AsyncListenerPos, FColor(160, 0, 255),
-				              false, Component.DebugLineDuration, 0, 0.5f);
+				              false, Settings.DebugLineDuration, 0, 0.5f);
 			}
 			FTraceDatum LSD;
 			World->QueryTraceData(SP.LoSHandle, LSD);
@@ -742,7 +742,7 @@ void FAsyncCastManager::ProcessCrawlBatch(USpatialAudioComponent& Component, FSp
 					Ray.LoSCumulativeDistance = SP.StepCumDist;
 					if (Component.bDrawDebugRays && Component.bShowSurfaceCrawl && World) {
 						DrawDebugSphere(World, SP.StepPos, 10.f, 8, FColor::Green,
-						                false, Component.DebugLineDuration, 0, 2.f);
+						                false, Settings.DebugLineDuration, SDPG_Foreground, 2.f);
 					}
 				}
 			}
@@ -777,7 +777,7 @@ void FAsyncCastManager::ProcessCrawlBatch(USpatialAudioComponent& Component, FSp
 
 	if (Component.bDrawDebugRays && Component.bShowSurfaceCrawl && World) {
 		DrawDebugSphere(World, Ray.CrawlNudgedStart, 6.f, 6, FColor::Cyan,
-		                false, Component.DebugLineDuration, 0, 1.5f);
+		                false, Settings.DebugLineDuration, SDPG_Foreground, 1.5f);
 
 		FVector Prev = Ray.CrawlNudgedStart;
 		const int32 DrawLimit = (FoundAtStep >= 0) ? FoundAtStep + 1 : Limit;
@@ -791,21 +791,21 @@ void FAsyncCastManager::ProcessCrawlBatch(USpatialAudioComponent& Component, FSp
 			const float Radius = bIsEdgeStep ? 12.f : 4.f;
 
 			DrawDebugSphere(World, SP.StepPos, Radius, 6, StepColor,
-			                false, Component.DebugLineDuration, 0, 1.f);
+			                false, Settings.DebugLineDuration, SDPG_Foreground, 1.f);
 			// Cyan = crawl movement, matching the replay sweep's crawl color; flight segments stay white.
 			DrawDebugLine(World, Prev, SP.StepPos, FColor(0, 220, 255),
-			              false, Component.DebugLineDuration, 0, 1.5f);
+			              false, Settings.DebugLineDuration, 0, 1.5f);
 			Prev = SP.StepPos;
 		}
 
 		if (bCrawlSucceeded) {
 			const FColor EdgeColor = bPerpWallHit ? FColor::Orange : FColor::Yellow;
 			DrawDebugLine(World, EdgePoint, EdgePoint + EdgeDir * 40.f,
-			              EdgeColor, false, Component.DebugLineDuration, 0, 2.f);
+			              EdgeColor, false, Settings.DebugLineDuration, 0, 2.f);
 		}
 		else {
 			DrawDebugSphere(World, Ray.CrawlHitLoc, 10.f, 6, FColor(255, 80, 80),
-			                false, Component.DebugLineDuration, 0, 2.f);
+			                false, Settings.DebugLineDuration, SDPG_Foreground, 2.f);
 		}
 	}
 
@@ -849,7 +849,7 @@ void FAsyncCastManager::ProcessCrawlBatch(USpatialAudioComponent& Component, FSp
 		Ray.PendingLoSProbes.Add(MoveTemp(BounceProbe));
 		if (Component.bDrawDebugRays && Component.bShowLoSChecks && World) {
 			DrawDebugLine(World, Ray.Origin, Component.AsyncListenerPos, FColor(160, 0, 255),
-			              false, Component.DebugLineDuration, 0, 0.5f);
+			              false, Settings.DebugLineDuration, 0, 0.5f);
 		}
 	}
 
@@ -998,7 +998,7 @@ void FAsyncCastManager::SubmitSegmentLoSProbes(const USpatialAudioComponent& Com
 		Ray.PendingLoSProbes.Add(MoveTemp(Probe));
 		if (Component.bDrawDebugRays && Component.bShowLoSChecks && World) {
 			DrawDebugLine(World, SamplePt, Component.AsyncListenerPos, FColor(160, 0, 255),
-			              false, Component.DebugLineDuration, 0, 0.5f);
+			              false, Settings.DebugLineDuration, 0, 0.5f);
 		}
 	}
 
@@ -1015,7 +1015,7 @@ void FAsyncCastManager::SubmitSegmentLoSProbes(const USpatialAudioComponent& Com
 			Ray.PendingLoSProbes.Add(MoveTemp(Probe));
 			if (Component.bDrawDebugRays && Component.bShowLoSChecks && World) {
 				DrawDebugLine(World, EndSamplePt, Component.AsyncListenerPos, FColor(160, 0, 255),
-				              false, Component.DebugLineDuration, 0, 0.5f);
+				              false, Settings.DebugLineDuration, 0, 0.5f);
 			}
 		}
 	}

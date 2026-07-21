@@ -150,11 +150,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Debug")
 	FKey ToggleActorLabelsKey = EKeys::L;
 
-	/** How long debug lines persist. Matching FullCastInterval avoids visual clutter. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Debug",
-		meta = (EditCondition = "bDrawDebugRays", ClampMin = "0.01"))
-	float DebugLineDuration = 0.5f;
-
 	/**
 	 * Replay debug mode: performs a dedicated synchronous sweep and animates the ray paths
 	 * slowly over ReplayAnimDuration seconds so you can follow every bounce and surface crawl.
@@ -607,11 +602,20 @@ private:
 	/** Ring basis rotation (radians, wraps at 90°), advanced 90°/OffsetRingRotationSteps per
 	 *  sample so one pattern covers 4×Steps evenly spaced directions, then repeats exactly. */
 	float OffsetRingAngle = 0.f;
-	float LoSCycleSum = 0.f;
-	int32 LoSCycleCount = 0;
-	/** Average of the last COMPLETED ring rotation cycle — the smoothing target that occlusion
-	 *  chases (debug HUD). Published only at cycle boundaries so mid-cycle partial patterns and
-	 *  single-check flickers can't wiggle it check to check. */
+	/** Per-slot cache of the last sampled fraction at each position in the rotation pattern
+	 *  (index = check's position within the OffsetRingRotationSteps cycle). A stationary scene
+	 *  revisits the exact same angle/radius per slot every rotation (see OffsetRingAngle /
+	 *  RadiusScale periodicity in TickDirectLoSSampling), so a slot really is "the value from
+	 *  the last time this exact ray was traced". Sized to the RotationSteps clamp (max 8); only
+	 *  the first RotationSteps entries are read. */
+	float LoSSlotFractions[8] = {};
+	/** Circular index into LoSSlotFractions for the next check. */
+	int32 LoSSlotIndex = 0;
+	/** Average of all RotationSteps slots' most recent values — the smoothing target that
+	 *  occlusion chases (debug HUD). Recomputed every check as soon as one slot refreshes
+	 *  (2026-07-21: was batched once per completed rotation; a stationary ray retraces the
+	 *  identical point each cycle so this only moves on genuine change, aside from rare
+	 *  floating-point flicker on grazing traces, which is accepted). */
 	float WindowedLoSFraction = 0.f;
 	/** Consecutive LoS samples with zero clear points. While stationary, LoS is only declared
 	 *  lost once this spans a full rotation pattern — see the hold logic in the update cast. */

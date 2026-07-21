@@ -26,8 +26,24 @@ private:
 	 *  drawing over them. Returns whether any source is drawing afterwards. */
 	bool CycleDebugRaySource();
 
+	/** While NOT single-source-cycled (see bCycleModeActive) and MaxUncycledDebugSources > 0,
+	 *  suppresses bDrawDebugRays on every originally-enabled source (bEligibleForDebugRays)
+	 *  beyond the closest N to the listener, and restores it as sources move back into range. */
+	void ApplyProximityDebugLimit(const USpatialAudioComponent& First, const APlayerController* PC);
+
 	/** Weak so a component destroyed without unregistering is dropped harmlessly next tick. */
 	TArray<TWeakObjectPtr<USpatialAudioComponent>> Sources;
+
+	/** Snapshot of each Sources[i]'s bDrawDebugRays at registration time — the editor/designer's
+	 *  original intent, independent of later runtime suppression by the proximity limit (which
+	 *  would otherwise be indistinguishable from the user genuinely disabling a source). Parallel
+	 *  to Sources. */
+	TArray<bool> bEligibleForDebugRays;
+
+	/** True from the first N press (a single source selected) until cycling wraps back to OFF.
+	 *  While true, ApplyProximityDebugLimit is skipped entirely so it can't fight the user's
+	 *  explicit single selection. */
+	bool bCycleModeActive = false;
 
 	/** Independent of the per-source bShowDebugText so global-only and per-source-only
 	 *  displays are both possible. Toggled by ToggleGlobalDebugTextKey. */

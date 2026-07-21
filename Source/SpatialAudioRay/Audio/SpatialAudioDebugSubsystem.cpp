@@ -9,7 +9,12 @@
 #include "GameFramework/PlayerController.h"
 
 void USpatialAudioDebugSubsystem::Register(USpatialAudioComponent* Component) {
-	Sources.AddUnique(Component);
+	// Kept in lockstep with Sources (not AddUnique) so bEligibleForDebugRays's index always
+	// lines up — a duplicate registration must add to neither array.
+	if (!Sources.Contains(Component)) {
+		Sources.Add(Component);
+		bEligibleForDebugRays.Add(Component->bDrawDebugRays);
+	}
 	// Two registrations naming the same owner = the orphaned-Blueprint-component duplicate
 	// (stale inherited copy still instantiates alongside the C++ one); fix by reparenting the
 	// Blueprint to AActor and back.
@@ -18,7 +23,12 @@ void USpatialAudioDebugSubsystem::Register(USpatialAudioComponent* Component) {
 }
 
 void USpatialAudioDebugSubsystem::Unregister(USpatialAudioComponent* Component) {
-	Sources.Remove(Component);
+	const int32 Index = Sources.IndexOfByPredicate(
+		[Component](const TWeakObjectPtr<USpatialAudioComponent>& Src) { return Src.Get() == Component; });
+	if (Index != INDEX_NONE) {
+		Sources.RemoveAt(Index);
+		bEligibleForDebugRays.RemoveAt(Index);
+	}
 	UE_LOG(LogTemp, Log, TEXT("SpatialAudioDebugSubsystem: -%s on %s (%d registered)"),
 	       *Component->GetName(), *GetNameSafe(Component->GetOwner()), Sources.Num());
 }
@@ -44,6 +54,7 @@ void USpatialAudioDebugSubsystem::Tick(float DeltaTime) {
 		const USpatialAudioComponent* C = Sources[i].Get();
 		if (!C) {
 			Sources.RemoveAt(i);
+			bEligibleForDebugRays.RemoveAt(i);
 			continue;
 		}
 		++NumSources;
@@ -71,8 +82,24 @@ void USpatialAudioDebugSubsystem::Tick(float DeltaTime) {
 			&& PC->IsInputKeyDown(First->CycleDebugSourceKey);
 		if (bDown && !bPrevCycleKeyDown) {
 			bAnyDebugRays = CycleDebugRaySource();
+			bCycleModeActive = bAnyDebugRays;
 		}
 		bPrevCycleKeyDown = bDown;
+	}
+
+	// Not single-source-cycled (never pressed N, or cycled back around to OFF): cap how many
+	// originally-enabled sources actually draw to the closest N, so a level with several
+	// debug-enabled sources doesn't draw all of them at once before one is picked via N.
+	if (!bCycleModeActive) {
+		ApplyProximityDebugLimit(*First, PC);
+	}
+
+	// Re-derive after the cycle key / proximity limit may have changed which sources draw.
+	bAnyDebugRays = false;
+	for (const TWeakObjectPtr<USpatialAudioComponent>& Src : Sources) {
+		if (const USpatialAudioComponent* C = Src.Get()) {
+			bAnyDebugRays |= C->bDrawDebugRays;
+		}
 	}
 
 	// Independent of bAnyDebugRays: a lightweight label layer for finding/naming sources while
@@ -205,4 +232,41 @@ bool USpatialAudioDebugSubsystem::CycleDebugRaySource() {
 
 	GEngine->AddOnScreenDebugMessage(0, 2.f, FColor::Cyan, TEXT("Debug rays: OFF"));
 	return false;
+}
+
+void USpatialAudioDebugSubsystem::ApplyProximityDebugLimit(const USpatialAudioComponent& First,
+                                                            const APlayerController* PC) {
+	const int32 MaxSources = First.GetSettings().MaxUncycledDebugSources;
+	if (MaxSources <= 0 || !PC || !PC->GetPawn()) {
+		return;
+	}
+	const FVector ListenerPos = PC->GetPawn()->GetActorLocation();
+
+	// Rank only the originally-enabled sources (bEligibleForDebugRays, snapshotted at
+	// registration) — ineligible ones are never touched here, so a source the user genuinely
+	// left off in the editor stays off rather than being pulled in by proximity.
+	TArray<int32> EligibleIndices;
+	for (int32 i = 0; i < Sources.Num(); ++i) {
+		if (bEligibleForDebugRays.IsValidIndex(i) && bEligibleForDebugRays[i] && Sources[i].IsValid()) {
+			EligibleIndices.Add(i);
+		}
+	}
+
+	EligibleIndices.Sort([this, &ListenerPos](const int32 A, const int32 B) {
+		const AActor* OwnerA = Sources[A]->GetOwner();
+		const AActor* OwnerB = Sources[B]->GetOwner();
+		const float DistA = OwnerA ? FVector::DistSquared(OwnerA->GetActorLocation(), ListenerPos)
+		                           : TNumericLimits<float>::Max();
+		const float DistB = OwnerB ? FVector::DistSquared(OwnerB->GetActorLocation(), ListenerPos)
+		                           : TNumericLimits<float>::Max();
+		return DistA < DistB;
+	});
+
+	// Re-derived every tick from live distances, so a suppressed source comes back on as the
+	// player approaches and a drawing one turns off as they move away.
+	for (int32 Rank = 0; Rank < EligibleIndices.Num(); ++Rank) {
+		if (USpatialAudioComponent* C = Sources[EligibleIndices[Rank]].Get()) {
+			C->bDrawDebugRays = Rank < MaxSources;
+		}
+	}
 }

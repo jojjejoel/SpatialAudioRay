@@ -65,7 +65,7 @@ void FAsyncCastManager::ReadbackFinalizeBatch(USpatialAudioComponent& Component,
 		const float PathDistToEdge = RP.BasePathDist;
 
 		if (Component.bDrawDebugRays && Component.bShowEdgePoints && World) {
-			DrawDebugSphere(World, TrueEdge, 14.f, 8, FColor(80, 255, 120), false, Component.DebugLineDuration, 0, 2.f);
+			DrawDebugSphere(World, TrueEdge, 14.f, 8, FColor(80, 255, 120), false, Settings.DebugLineDuration, SDPG_Foreground, 2.f);
 		}
 
 		const float GeomDist = FVector::Dist(Component.AsyncSourcePos, TrueEdge);

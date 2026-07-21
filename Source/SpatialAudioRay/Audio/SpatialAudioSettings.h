@@ -959,6 +959,24 @@ public:
 	int32 ShortestPathRecheckFailures = 2;
 
 
+	// ── Debug ─────────────────────────────────────────────────────────────────
+
+	/**
+	 * Caps how many sources draw at once BEFORE the N key (CycleDebugSourceKey) has collapsed
+	 * the set to a single selection — while more than this many registered sources have
+	 * bDrawDebugRays enabled, only the closest ones to the listener actually draw; the rest are
+	 * suppressed until back in range or the N key takes over entirely. 0 = off (unlimited,
+	 * every enabled source draws).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Debug")
+	int32 MaxUncycledDebugSources = 0;
+
+	/** How long debug lines and spheres persist. Matching FullCastInterval avoids visual clutter. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Debug",
+		meta = (ClampMin = "0.01"))
+	float DebugLineDuration = 0.5f;
+
+
 	// ── Helpers ───────────────────────────────────────────────────────────────
 
 	bool IsRateThrottlingDisabled()    const { return bDisableAllOptimizations || bDisableSweepRateThrottling; }

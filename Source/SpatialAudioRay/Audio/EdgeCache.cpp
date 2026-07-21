@@ -107,7 +107,7 @@ void FEdgeCache::TickPhase0OffsetReadback(USpatialAudioComponent& Component, FCa
 		for (int32 i = 0; i < 4; ++i) {
 			DrawDebugLine(World, EP.Phase0OffsetPts[i], EP.EffectivePoint(),
 			              bClearArr[i] ? FColor::Green : FColor::Red, false,
-			              Component.DebugLineDuration, 0, 0.75f);
+			              Component.GetSettings().DebugLineDuration, 0, 0.75f);
 		}
 	}
 
@@ -428,7 +428,7 @@ void FEdgeCache::TickShortestPathRecheck(USpatialAudioComponent& Component, UWor
 	if (bBlocked) {
 		if (Component.bDrawDebugRays && Component.bShowShortestPaths) {
 			DrawDebugLine(World, BlockedA, BlockedB, FColor::Red, false,
-			              Component.DebugLineDuration * 4.f, 0, 3.f);
+			              Settings.DebugLineDuration * 4.f, 0, 3.f);
 		}
 		// Source-side eviction: the listener leg is typically still clear here, and Phase 0's
 		// clear-restore would resurrect the edge every interval, faster than the fade completes.

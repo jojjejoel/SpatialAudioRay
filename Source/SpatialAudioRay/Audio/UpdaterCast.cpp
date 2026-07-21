@@ -117,10 +117,10 @@ float FUpdater::SyncOffsetLoSFraction(USpatialAudioComponent& Component, UWorld*
 	}
 	if (Clear > 0 && Component.bDrawDebugRays && Component.bShowOffsetLoSChecks) {
 		DrawDebugLine(World, CenterEnd, ListenerPos, bCenterClear ? FColor::Green : FColor::Red,
-		              false, Component.DebugLineDuration, 0, 0.75f);
+		              false, Component.GetSettings().DebugLineDuration, 0, 0.75f);
 		for (int32 i = 0; i < 4; ++i) {
 			DrawDebugLine(World, SrcPts[i], Pts[i], bClearArr[i] ? FColor::Green : FColor::Red,
-			              false, Component.DebugLineDuration, 0, 0.75f);
+			              false, Component.GetSettings().DebugLineDuration, 0, 0.75f);
 		}
 	}
 	return static_cast<float>(Clear) / 5.f;
@@ -161,7 +161,7 @@ void FUpdater::TickDirectLoSSampling(USpatialAudioComponent& Component, const fl
 		// The ladder's period equals the ring-rotation period, so a stationary scene still
 		// resamples identical points. The sphere RADIUS never ladders (the source's extent is
 		// fixed geometry) — only the lateral ring offset walking its listener-facing cap does.
-		const float RadiusScale = FMath::Pow((Component.LoSCycleCount + 1.f) / RotationSteps,
+		const float RadiusScale = FMath::Pow((Component.LoSSlotIndex + 1.f) / RotationSteps,
 		                                     FMath::Max(Settings.OffsetRingRadiusExponent, 0.f));
 		const float OffsetR = Settings.bEnableOffsetLoSChecks
 			                      ? Settings.DirectLoSSampleRadius * RadiusScale
@@ -173,28 +173,37 @@ void FUpdater::TickDirectLoSSampling(USpatialAudioComponent& Component, const fl
 			Component, World, SourcePos, ListenerPos, OffsetR, SourceR, SourceR * RadiusScale,
 			UE_HALF_PI / RotationSteps);
 
-		Component.LoSCycleSum += Component.LastOffsetLoSFraction;
-		if (++Component.LoSCycleCount >= RotationSteps) {
-			Component.WindowedLoSFraction = Component.LoSCycleSum / RotationSteps;
-			Component.LoSCycleSum = 0.f;
-			Component.LoSCycleCount = 0;
+		if (!Component.bLoSFractionSeeded) {
+			// First sample ever: fill every slot so slots not yet traced this rotation don't
+			// drag the average toward "occluded" before a full rotation has had a chance to run.
+			for (float& Slot : Component.LoSSlotFractions) {
+				Slot = Component.LastOffsetLoSFraction;
+			}
+			Component.bLoSFractionSeeded = true;
+			Component.LastDirectLoSFraction = Component.LastOffsetLoSFraction;
+		} else {
+			Component.LoSSlotFractions[Component.LoSSlotIndex] = Component.LastOffsetLoSFraction;
 		}
+		Component.LoSSlotIndex = (Component.LoSSlotIndex + 1) % RotationSteps;
+
+		float SlotSum = 0.f;
+		for (int32 i = 0; i < RotationSteps; ++i) {
+			SlotSum += Component.LoSSlotFractions[i];
+		}
+		Component.WindowedLoSFraction = SlotSum / RotationSteps;
+
 		Component.NoLoSSampleStreak = Component.LastOffsetLoSFraction > 0.f
 			                              ? 0
 			                              : Component.NoLoSSampleStreak + 1;
-
-		if (!Component.bLoSFractionSeeded) {
-			Component.bLoSFractionSeeded = true;
-			Component.LastDirectLoSFraction = Component.LastOffsetLoSFraction;
-			Component.WindowedLoSFraction = Component.LastOffsetLoSFraction;
-		}
 	}
 
-	// Occlusion's smoothing target updates only when a full ring rotation COMPLETES — not as a
-	// sliding window over the last rotation's worth of checks. A sliding mean re-perturbs on
-	// every check that resamples a marginal grazing direction (traces there flicker hit/miss),
-	// pumping occlusion while standing still; batching per completed cycle means the value can
-	// only step once per rotation, on the whole cycle's average.
+	// WindowedLoSFraction is the average of the per-slot cache, recomputed as soon as any ONE
+	// slot refreshes rather than only when a full rotation completes. A stationary scene
+	// retraces the exact same ray per slot every rotation (see OffsetRingAngle/RadiusScale
+	// periodicity above), so a slot's cached value really is "what this exact ray saw last
+	// time" — occlusion can move mid-rotation instead of freezing for a full cycle. A slot can
+	// still occasionally flip from floating-point noise on a grazing trace; accepted (2026-07-21)
+	// rather than gated back to a once-per-cycle batch.
 	const float PatternLoSFraction = Component.WindowedLoSFraction;
 
 	// Occlusion consumes the smoothed pattern average, softening its quantization steps into a
@@ -223,11 +232,11 @@ void FUpdater::TickDirectLoSSampling(USpatialAudioComponent& Component, const fl
 	if (Component.bDrawDebugRays && Component.bShowEdgePoints) {
 		const bool bFullyClear = Component.LastOffsetLoSFraction >= 1.f;
 		const FColor LoSColor = bFullyClear ? FColor::Green : FColor(255, 165, 0);
-		DrawDebugSphere(World, SourcePos, 8.f, 6, LoSColor, false, Component.DebugLineDuration);
-		DrawDebugSphere(World, ListenerPos, 8.f, 6, LoSColor, false, Component.DebugLineDuration);
+		DrawDebugSphere(World, SourcePos, 8.f, 6, LoSColor, false, Settings.DebugLineDuration, SDPG_Foreground);
+		DrawDebugSphere(World, ListenerPos, 8.f, 6, LoSColor, false, Settings.DebugLineDuration, SDPG_Foreground);
 		if (bFullyClear) {
 			DrawDebugLine(World, SourcePos, ListenerPos, FColor::Green, false,
-			              Component.DebugLineDuration, 0, 1.f);
+			              Settings.DebugLineDuration, 0, 1.f);
 		}
 	}
 
@@ -306,7 +315,7 @@ void FUpdater::PerformUpdateRayCast(USpatialAudioComponent& Component, const USp
 			++RaysReached;
 
 			if (Component.bDrawDebugRays && Component.bShowEdgePoints) {
-				DrawDebugLine(World, Ep.EffectivePoint(), ListenerPos, FColor::Cyan, false, Component.DebugLineDuration, 0,
+				DrawDebugLine(World, Ep.EffectivePoint(), ListenerPos, FColor::Cyan, false, Settings.DebugLineDuration, 0,
 				              1.f);
 			}
 		}

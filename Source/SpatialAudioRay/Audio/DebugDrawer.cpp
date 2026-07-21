@@ -97,7 +97,7 @@ void USpatialAudioComponent::DrawDebugVisualization(float DeltaTime, const USpat
 			const FVector LisLead = ComputeSteeringLead(VelocityScaling.SmoothedListenerVelocity, Settings);
 			if (LisLead.SizeSquared() > FMath::Square(10.f)) {
 				const FVector LisNow = PredPawn->GetActorLocation();
-				DrawDebugSphere(GetWorld(), LisNow + LisLead, 16.f, 8, SteerColor, false, -1.f, 0, 1.5f);
+				DrawDebugSphere(GetWorld(), LisNow + LisLead, 16.f, 8, SteerColor, false, -1.f, SDPG_Foreground, 1.5f);
 				DrawDebugLine(GetWorld(), LisNow, LisNow + LisLead, SteerColor, false, -1.f, 0, 1.f);
 			}
 		}
@@ -105,7 +105,7 @@ void USpatialAudioComponent::DrawDebugVisualization(float DeltaTime, const USpat
 			const FVector SrcLead = ComputeSteeringLead(VelocityScaling.SmoothedSourceVelocity, Settings);
 			if (SrcLead.SizeSquared() > FMath::Square(10.f)) {
 				const FVector SrcNow = GetOwner()->GetActorLocation();
-				DrawDebugSphere(GetWorld(), SrcNow + SrcLead, 16.f, 8, SteerColor, false, -1.f, 0, 1.5f);
+				DrawDebugSphere(GetWorld(), SrcNow + SrcLead, 16.f, 8, SteerColor, false, -1.f, SDPG_Foreground, 1.5f);
 				DrawDebugLine(GetWorld(), SrcNow, SrcNow + SrcLead, SteerColor, false, -1.f, 0, 1.f);
 			}
 		}
@@ -113,7 +113,7 @@ void USpatialAudioComponent::DrawDebugVisualization(float DeltaTime, const USpat
 
 	if (bShowVirtualSourceRays) {
 		const FVector ActorLoc = GetOwner()->GetActorLocation();
-		DrawDebugSphere(GetWorld(), ActorLoc, 20.f, 8, FColor::Magenta, false, -1.f, 0, 1.f);
+		DrawDebugSphere(GetWorld(), ActorLoc, 20.f, 8, FColor::Magenta, false, -1.f, SDPG_Foreground, 1.f);
 
 		// One sphere per audible emitter (pool slot); fading-out slots draw small and grey.
 		for (int32 SlotIdx = 0; SlotIdx < VirtualSlots.Num(); ++SlotIdx) {
@@ -126,16 +126,16 @@ void USpatialAudioComponent::DrawDebugVisualization(float DeltaTime, const USpat
 			const FColor Color = bFadingOut
 				                     ? FColor(90, 90, 90)
 				                     : VirtualVoiceDebugColors[SlotIdx % NumVirtualVoiceDebugColors];
-			DrawDebugSphere(GetWorld(), SlotPos, bFadingOut ? 12.f : 20.f, 8, Color, false, -1.f, 0, 2.f);
+			DrawDebugSphere(GetWorld(), SlotPos, bFadingOut ? 12.f : 20.f, 8, Color, false, -1.f, SDPG_Foreground, 2.f);
 			DrawDebugLine(GetWorld(), ActorLoc, SlotPos, Color, false, -1.f, 0, 0.5f);
 		}
 	}
 
 	if (bShowEdgePoints) {
 		for (const FCachedEdgePoint& EP : CachedEdgePoints) {
-			DrawDebugSphere(GetWorld(), EP.EdgePoint, 18.f, 8, FColor::Yellow, false, -1.f, 0, 2.f);
+			DrawDebugSphere(GetWorld(), EP.EdgePoint, 18.f, 8, FColor::Yellow, false, -1.f, SDPG_Foreground, 2.f);
 			if (EP.bRelayed) {
-				DrawDebugSphere(GetWorld(), EP.RelayPoint, 14.f, 8, FColor::Yellow, false, -1.f, 0, 1.f);
+				DrawDebugSphere(GetWorld(), EP.RelayPoint, 14.f, 8, FColor::Yellow, false, -1.f, SDPG_Foreground, 1.f);
 				DrawDebugLine(GetWorld(), EP.EdgePoint, EP.RelayPoint, FColor::Yellow, false, -1.f, 0, 1.f);
 			}
 		}
@@ -153,14 +153,14 @@ void USpatialAudioComponent::DrawDebugVisualization(float DeltaTime, const USpat
 			}
 			for (int32 i = 1; i + 1 < EP.ShortestPath.Num(); ++i) {
 				DrawDebugSphere(GetWorld(), EP.ShortestPath[i], 8.f, 8,
-				                FColor::Magenta, false, -1.f, 0, 1.5f);
+				                FColor::Magenta, false, -1.f, SDPG_Foreground, 1.5f);
 			}
 			// Relay leg extends the stored path: the RelayDist added to this edge's PathDist
 			// is exactly this segment's length.
 			if (EP.bRelayed && !EP.ShortestPath.IsEmpty()) {
 				DrawDebugLine(GetWorld(), EP.ShortestPath.Last(), EP.RelayPoint, FColor::Magenta,
 				              false, -1.f, 0, 2.f);
-				DrawDebugSphere(GetWorld(), EP.RelayPoint, 8.f, 8, FColor::Magenta, false, -1.f, 0, 1.5f);
+				DrawDebugSphere(GetWorld(), EP.RelayPoint, 8.f, 8, FColor::Magenta, false, -1.f, SDPG_Foreground, 1.5f);
 			}
 		}
 	}
@@ -172,7 +172,7 @@ void USpatialAudioComponent::DrawDebugVisualization(float DeltaTime, const USpat
 			}
 
 			for (int32 i = 1; i + 1 < Path.Num(); ++i) {
-				DrawDebugSphere(GetWorld(), Path[i], 8.f, 5, FColor::Cyan, false, -1.f, 0, 1.f);
+				DrawDebugSphere(GetWorld(), Path[i], 8.f, 5, FColor::Cyan, false, -1.f, SDPG_Foreground, 1.f);
 			}
 		}
 	}
@@ -690,10 +690,10 @@ void USpatialAudioComponent::TickReplayDebug(float DeltaTime, const USpatialAudi
 	APawn* Pawn = PC ? PC->GetPawn() : nullptr;
 
 	if (GetOwner()) {
-		DrawDebugSphere(World, GetOwner()->GetActorLocation(), 12.f, 8, FColor::Magenta, false, 0.f, 0, 1.5f);
+		DrawDebugSphere(World, GetOwner()->GetActorLocation(), 12.f, 8, FColor::Magenta, false, 0.f, SDPG_Foreground, 1.5f);
 	}
 	if (Pawn) {
-		DrawDebugSphere(World, Pawn->GetActorLocation(), 12.f, 8, FColor::Yellow, false, 0.f, 0, 1.5f);
+		DrawDebugSphere(World, Pawn->GetActorLocation(), 12.f, 8, FColor::Yellow, false, 0.f, SDPG_Foreground, 1.5f);
 	}
 
 	for (const FReplayRayPath& Path : Replay.Paths) {
@@ -726,7 +726,7 @@ void USpatialAudioComponent::TickReplayDebug(float DeltaTime, const USpatialAudi
 			DrawDebugLine(World, WA.Position, DrawEnd, LineColor, false, 0.f, 0, 1.5f);
 
 			if (t >= SegT1 && !WB.bIsCrawlStep) {
-				DrawDebugSphere(World, WB.Position, 6.f, 6, LineColor, false, 0.f, 0, 1.f);
+				DrawDebugSphere(World, WB.Position, 6.f, 6, LineColor, false, 0.f, SDPG_Foreground, 1.f);
 			}
 
 			if (WB.bIsCrawlStep) {
@@ -742,7 +742,7 @@ void USpatialAudioComponent::TickReplayDebug(float DeltaTime, const USpatialAudi
 			const float LosT = (Path.LoSCumDist / MaxPathDist) * AnimDuration;
 			if (t >= LosT) {
 				DrawDebugLine(World, Path.LoSPoint, Path.ListenerPos, FColor::Green, false, 0.f, 0, 1.5f);
-				DrawDebugSphere(World, Path.LoSPoint, 8.f, 8, FColor::Green, false, 0.f, 0, 1.f);
+				DrawDebugSphere(World, Path.LoSPoint, 8.f, 8, FColor::Green, false, 0.f, SDPG_Foreground, 1.f);
 			}
 		}
 	}
