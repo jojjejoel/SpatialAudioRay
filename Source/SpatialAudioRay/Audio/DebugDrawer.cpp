@@ -126,8 +126,12 @@ void USpatialAudioComponent::DrawDebugVisualization(float DeltaTime, const USpat
 			const FColor Color = bFadingOut
 				                     ? FColor(90, 90, 90)
 				                     : VirtualVoiceDebugColors[SlotIdx % NumVirtualVoiceDebugColors];
-			DrawDebugSphere(GetWorld(), SlotPos, bFadingOut ? 12.f : 20.f, 8, Color, false, -1.f, SDPG_Foreground, 2.f);
+			const float SphereRadius = bFadingOut ? 12.f : 20.f;
+			DrawDebugSphere(GetWorld(), SlotPos, SphereRadius, 8, Color, false, -1.f, SDPG_Foreground, 2.f);
 			DrawDebugLine(GetWorld(), ActorLoc, SlotPos, Color, false, -1.f, 0, 0.5f);
+			DrawDebugString(GetWorld(), SlotPos + FVector(0.f, 0.f, SphereRadius + 4.f),
+			                 FString::Printf(TEXT("%s_%02d"), *GetOwner()->GetActorNameOrLabel(), SlotIdx),
+			                 nullptr, FColor::White, 0.f, false, 1.1f);
 		}
 	}
 
@@ -152,8 +156,10 @@ void USpatialAudioComponent::DrawDebugVisualization(float DeltaTime, const USpat
 				              false, -1.f, 0, 2.f);
 			}
 			for (int32 i = 1; i + 1 < EP.ShortestPath.Num(); ++i) {
+				const bool bVerifiedPoint = i >= EP.ShortestPathVerifiedFrom;
 				DrawDebugSphere(GetWorld(), EP.ShortestPath[i], 8.f, 8,
-				                FColor::Magenta, false, -1.f, SDPG_Foreground, 1.5f);
+				                bVerifiedPoint ? FColor::Magenta : FColor(120, 0, 120),
+				                false, -1.f, SDPG_Foreground, 1.5f);
 			}
 			// Relay leg extends the stored path: the RelayDist added to this edge's PathDist
 			// is exactly this segment's length.

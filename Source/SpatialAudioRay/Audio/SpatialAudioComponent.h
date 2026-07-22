@@ -37,14 +37,16 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio")
 	TObjectPtr<USpatialAudioSettings> _Settings = nullptr;
 
-	/** True in the pre-warm band: some offset point still sees the source, but smoothed
-	 *  occlusion has reached PreSweepOcclusionThreshold. Sweeps run to fill the edge cache
-	 *  before full occlusion hits; cache clearing and sweep-result discards are suspended so
-	 *  the warmed edges survive. The virtual crossfade gate is unaffected. */
+	/** True once the debug-visible occlusion (CurrentOcclusion, the "cur=" value in the on-screen
+	 *  HUD) has reached PreSweepOcclusionThreshold. Sweeps run to fill the edge cache before full
+	 *  occlusion hits; cache clearing and sweep-result discards are suspended so the warmed edges
+	 *  survive. The virtual crossfade gate is unaffected. Deliberately independent of
+	 *  bHasDirectLoS/NoLoSSampleStreak: fast occlusion transitions can drop bHasDirectLoS on a
+	 *  single blocked sample well before a full offset-ring rotation confirms no-LoS, and this
+	 *  band exists precisely to start pre-warm sweeps without waiting on that rotation gate. */
 	bool IsPreSweepActive() const {
 		const USpatialAudioSettings& S = GetSettings();
-		return bHasDirectLoS && S.PreSweepOcclusionThreshold < 1.f
-			&& 1.f - LastDirectLoSFraction >= S.PreSweepOcclusionThreshold;
+		return S.PreSweepOcclusionThreshold < 1.f && CurrentOcclusion >= S.PreSweepOcclusionThreshold;
 	}
 
 	const USpatialAudioSettings& GetSettings() const {

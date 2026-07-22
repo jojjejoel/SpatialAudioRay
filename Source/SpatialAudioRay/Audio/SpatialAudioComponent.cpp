@@ -370,7 +370,10 @@ void USpatialAudioComponent::TickComponent(const float DeltaTime, const ELevelTi
 		// the first blocked sample, which would otherwise fire the expensive sweep pipeline for
 		// what may be a brief occluder flicker; the LoS-break sweep below still fires instantly
 		// so the virtual source is seeded for the transition. The pre-sweep band bypasses the
-		// rotation gate: partial LoS is exactly when pre-warm sweeps are supposed to run.
+		// rotation gate entirely (IsPreSweepActive reads CurrentOcclusion, not bHasDirectLoS):
+		// a fast occlusion jump that drops bHasDirectLoS in a single sample still starts sweeping
+		// the moment the debug-visible occlusion crosses the threshold, without waiting on the
+		// rotation to confirm total loss of LoS.
 		const int32 RingSteps = FMath::Clamp(GetSettings().OffsetRingRotationSteps, 1, 8);
 		const bool bPreSweep = IsPreSweepActive();
 		if (!bAsyncCastActive && !Finalize.bPending && bInRange &&
