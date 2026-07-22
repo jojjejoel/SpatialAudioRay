@@ -128,7 +128,6 @@ void USpatialAudioComponent::DrawDebugVisualization(float DeltaTime, const USpat
 				                     : VirtualVoiceDebugColors[SlotIdx % NumVirtualVoiceDebugColors];
 			const float SphereRadius = bFadingOut ? 12.f : 20.f;
 			DrawDebugSphere(GetWorld(), SlotPos, SphereRadius, 8, Color, false, -1.f, SDPG_Foreground, 2.f);
-			DrawDebugLine(GetWorld(), ActorLoc, SlotPos, Color, false, -1.f, 0, 0.5f);
 			DrawDebugString(GetWorld(), SlotPos + FVector(0.f, 0.f, SphereRadius + 4.f),
 			                 FString::Printf(TEXT("%s_%02d"), *GetOwner()->GetActorNameOrLabel(), SlotIdx),
 			                 nullptr, FColor::White, 0.f, false, 1.1f);
@@ -148,15 +147,17 @@ void USpatialAudioComponent::DrawDebugVisualization(float DeltaTime, const USpat
 	if (bShowShortestPaths) {
 		for (const FCachedEdgePoint& EP : CachedEdgePoints) {
 			for (int32 i = 0; i + 1 < EP.ShortestPath.Num(); ++i) {
-				// Dim = unverified traveled-route prefix (string pull didn't reach the source);
-				// the recheck skips those segments too.
-				const bool bVerified = i >= EP.ShortestPathVerifiedFrom;
+				// Dim = unverified traveled hop (string pull couldn't shortcut past it); the
+				// recheck skips those segments too. Verified/unverified segments can interleave.
+				const bool bVerified = EP.ShortestPathSegmentVerified.IsValidIndex(i)
+					                       && EP.ShortestPathSegmentVerified[i];
 				DrawDebugLine(GetWorld(), EP.ShortestPath[i], EP.ShortestPath[i + 1],
 				              bVerified ? FColor::Magenta : FColor(120, 0, 120),
 				              false, -1.f, 0, 2.f);
 			}
 			for (int32 i = 1; i + 1 < EP.ShortestPath.Num(); ++i) {
-				const bool bVerifiedPoint = i >= EP.ShortestPathVerifiedFrom;
+				const bool bVerifiedPoint = EP.ShortestPathSegmentVerified.IsValidIndex(i)
+					                            && EP.ShortestPathSegmentVerified[i];
 				DrawDebugSphere(GetWorld(), EP.ShortestPath[i], 8.f, 8,
 				                bVerifiedPoint ? FColor::Magenta : FColor(120, 0, 120),
 				                false, -1.f, SDPG_Foreground, 1.5f);

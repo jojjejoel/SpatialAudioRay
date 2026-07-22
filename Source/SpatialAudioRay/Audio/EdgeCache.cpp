@@ -30,7 +30,16 @@ void FEdgeCache::TickPhase0Readback(USpatialAudioComponent& Component, FCachedEd
 
 	EP.bPhase0Pending = false;
 
-	if (!D.OutHits.IsEmpty() && D.OutHits[0].bBlockingHit) {
+	bool bBlocked = !D.OutHits.IsEmpty() && D.OutHits[0].bBlockingHit;
+	// Try shrinking the edge back to its own previous anchor before falling back to the
+	// listener-side workarounds below: if that inner point already sees the listener directly,
+	// it's a strictly better outcome than a fan or a relay — the diffraction it stood in for
+	// isn't needed anymore, so nothing downstream has to keep working around the blocked point.
+	if (bBlocked && !EP.bRelayed && TryPromoteToInnerAnchor(Component, EP, World, LisPos)) {
+		bBlocked = false;
+	}
+
+	if (bBlocked) {
 		if (Settings.bEnableOffsetLoSChecks && Settings.DirectLoSSampleRadius > 0.f) {
 			SubmitPhase0OffsetFan(Component, EP, World, LisPos, Settings.DirectLoSSampleRadius);
 		}
@@ -50,6 +59,34 @@ void FEdgeCache::TickPhase0Readback(USpatialAudioComponent& Component, FCachedEd
 			EP.CapturedListenerPos = LisPos;
 		}
 	}
+}
+
+// Shrinks the cached edge back to the previous point on its own polyline when that point
+// already has direct, unobstructed listener LoS — the listener can see past the recorded edge
+// to an interior anchor, so that anchor is the more accurate (and more robust) presentation
+// point: no diffraction is needed for what's now a direct final leg. PathDist is corrected by
+// removing the trimmed segment's straight-line length, which is exact when that segment was
+// verified and a close estimate otherwise (traveled distance for an unverified hop is usually
+// only slightly longer than the straight cut between its endpoints).
+bool FEdgeCache::TryPromoteToInnerAnchor(USpatialAudioComponent& Component, FCachedEdgePoint& EP, UWorld* World,
+                                         const FVector& LisPos) {
+	if (EP.ShortestPath.Num() < 2) {
+		return false;
+	}
+	const FVector Inner = EP.ShortestPath[EP.ShortestPath.Num() - 2];
+	FHitResult Hit;
+	if (Component.TraceLine(World, Hit, LisPos, Inner) || Component.TraceLine(World, Hit, Inner, LisPos)) {
+		return false;
+	}
+
+	EP.PathDist = FMath::Max(0.f, EP.PathDist - FVector::Dist(Inner, EP.EdgePoint));
+	EP.EdgePoint = Inner;
+	EP.ShortestPath.Pop();
+	if (!EP.ShortestPathSegmentVerified.IsEmpty()) {
+		EP.ShortestPathSegmentVerified.Pop();
+	}
+	EP.GeomDist = FVector::Dist(EP.CapturedSourcePos, EP.EdgePoint);
+	return true;
 }
 
 // Fired only when the center listener→edge trace came back blocked, so the extra traces cost
@@ -354,13 +391,18 @@ void FEdgeCache::TickCachedEdgeEviction(USpatialAudioComponent& Component, const
 	}
 
 	TickShortestPathRecheck(Component, World, SrcPos, DeltaTime, Settings);
+	TickInnerAnchorPromotion(Component, World, LisPos, DeltaTime, Settings);
 }
 
 // Source-side counterpart of Phase 0: re-traces the stored string-pulled polyline PathDist was
 // measured along, catching geometry that closed the source→edge path after discovery (a static
 // source, a door closing — nothing else sees it: Phase 0 watches the listener leg, movement
 // eviction watches source position, and rank hysteresis discards the worse-ranking re-finds a
-// closed path produces). One edge per interval, sync — a handful of traces at most.
+// closed path produces). One edge per interval, sync — a handful of traces at most. Every segment
+// is checked, including unverified ones (a raw crawl/bounce hop the string pull couldn't shortcut
+// past) — a deliberate choice: those were already blocked at discovery, so this will also evict
+// on ordinary multi-corner diffraction paths the moment they're rechecked, not just on genuine
+// geometry change. Enabling ShortestPathRecheckInterval accepts that trade-off.
 void FEdgeCache::TickShortestPathRecheck(USpatialAudioComponent& Component, UWorld* World,
                                          const FVector& SrcPos, const float DeltaTime,
                                          const USpatialAudioSettings& Settings) {
@@ -393,23 +435,23 @@ void FEdgeCache::TickShortestPathRecheck(USpatialAudioComponent& Component, UWor
 	// the straight source→edge segment was the actual flight) fall back to that segment.
 	TArray<FVector> FallbackPath;
 	const TArray<FVector>* Path = &EP.ShortestPath;
-	int32 VerifiedFrom = EP.ShortestPathVerifiedFrom;
 	if (EP.ShortestPath.Num() < 2) {
 		FallbackPath = {EP.CapturedSourcePos, EP.EdgePoint};
 		Path = &FallbackPath;
-		VerifiedFrom = 0;
 	}
 
 	// Segment endpoints sit within ~RaySurfaceBias of geometry, so pull both ends in before
 	// tracing — a trace grazing its own anchor surface is corner clipping, not an obstruction.
-	// Only the verified suffix is traced: prefix segments were never straight clear lines
-	// (unreached string pull keeps the traveled crawl route), so they'd fail forever.
+	// Every segment is traced, verified or not: an unverified segment failing again doesn't
+	// distinguish "still the same corner" from "geometry changed," so this deliberately treats
+	// them the same and evicts on either — a real trade-off, not an oversight (see the eviction
+	// comment below).
 	const float Pull = FMath::Max(Settings.RaySurfaceBias, 1.f);
 	bool bBlocked = false;
 	FVector BlockedA = FVector::ZeroVector;
 	FVector BlockedB = FVector::ZeroVector;
 	FHitResult Hit;
-	for (int32 s = FMath::Max(0, VerifiedFrom); s + 1 < Path->Num() && !bBlocked; ++s) {
+	for (int32 s = 0; s + 1 < Path->Num() && !bBlocked; ++s) {
 		FVector A = (*Path)[s];
 		FVector B = (*Path)[s + 1];
 		const FVector AB = B - A;
@@ -432,11 +474,42 @@ void FEdgeCache::TickShortestPathRecheck(USpatialAudioComponent& Component, UWor
 		}
 		// Source-side eviction: the listener leg is typically still clear here, and Phase 0's
 		// clear-restore would resurrect the edge every interval, faster than the fade completes.
-		if (++EP.PathCheckFailStreak >= FMath::Max(1, Settings.ShortestPathRecheckFailures)) {
-			StartEviction(Component, EP, SrcPos, /*bSourceSide=*/true);
+		StartEviction(Component, EP, SrcPos, /*bSourceSide=*/true);
+	}
+}
+
+// Opportunistic counterpart to TryPromoteToInnerAnchor's use inside TickPhase0Readback: that one
+// only fires as a rescue the moment the edge itself goes blocked, so an edge that's had clear
+// listener LoS since discovery never migrates inward even once a shorter path becomes available
+// (e.g. the listener walked well past the corner). This runs regardless of the edge's current
+// LoS state, one edge per interval (round-robin, independent cursor from the recheck above), and
+// tries only the single point immediately before it — one step per interval, so a long path
+// walks itself back toward the source gradually rather than jumping there in one check.
+void FEdgeCache::TickInnerAnchorPromotion(USpatialAudioComponent& Component, UWorld* World,
+                                          const FVector& LisPos, const float DeltaTime,
+                                          const USpatialAudioSettings& Settings) {
+	if (Settings.ShortestPathPromotionInterval <= 0.f || Component.CachedEdgePoints.IsEmpty()) {
+		return;
+	}
+	Component.ShortestPathPromotionTimer += DeltaTime;
+	if (Component.ShortestPathPromotionTimer < Settings.ShortestPathPromotionInterval) {
+		return;
+	}
+	Component.ShortestPathPromotionTimer = 0.f;
+
+	const int32 Num = Component.CachedEdgePoints.Num();
+	int32 Idx = INDEX_NONE;
+	for (int32 Step = 0; Step < Num; ++Step) {
+		const int32 Candidate = (Component.ShortestPathPromotionCursor + Step) % Num;
+		if (!Component.CachedEdgePoints[Candidate].bEvicting && !Component.CachedEdgePoints[Candidate].bRelayed) {
+			Idx = Candidate;
+			break;
 		}
 	}
-	else {
-		EP.PathCheckFailStreak = 0;
+	if (Idx == INDEX_NONE) {
+		return;
 	}
+	Component.ShortestPathPromotionCursor = (Idx + 1) % Num;
+
+	TryPromoteToInnerAnchor(Component, Component.CachedEdgePoints[Idx], World, LisPos);
 }

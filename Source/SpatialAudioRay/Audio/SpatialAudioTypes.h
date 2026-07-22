@@ -9,7 +9,9 @@ struct FStoredLoSPath {
 	float LoSCumulativeDistance = 0.f;
 	float PathDist = 0.f;
 	TArray<FVector> ShortestPath;
-	int32 ShortestPathVerifiedFrom = 0;
+	/** ShortestPathSegmentVerified[i]: is the segment ShortestPath[i]->ShortestPath[i+1] a
+	 *  HasClearShortcut-verified straight line? Verified and unverified segments can interleave. */
+	TArray<bool> ShortestPathSegmentVerified;
 };
 
 struct FCachedEdgePoint {
@@ -20,11 +22,13 @@ struct FCachedEdgePoint {
 	 *  the path PathDist was measured along. Drawn under bShowShortestPaths and re-traced by the
 	 *  round-robin ShortestPathRecheckInterval validation; never enters gain/position math. */
 	TArray<FVector> ShortestPath;
-	/** Index where the verified chain of ShortestPath begins: segments from here to the edge
-	 *  were straight clear traces at discovery; anything earlier is unverified traveled route
-	 *  (string pull didn't reach the source) and must not be re-traced — those segments were
-	 *  blocked at discovery already, so failing on them says nothing about geometry change. */
-	int32 ShortestPathVerifiedFrom = 0;
+	/** ShortestPathSegmentVerified[i]: was ShortestPath[i]->ShortestPath[i+1] a straight
+	 *  HasClearShortcut trace at discovery? false means unverified traveled route (a raw
+	 *  crawl/bounce hop the string pull couldn't shortcut past) and must not be re-traced —
+	 *  it was blocked at discovery already, so failing on it says nothing about geometry
+	 *  change. Verified and unverified segments can interleave (e.g. two separate corners
+	 *  each contributing one unverified hop, with a verified stretch on either side). */
+	TArray<bool> ShortestPathSegmentVerified;
 	int32 LoSBounces = 0;
 	FVector CapturedSourcePos = FVector::ZeroVector;
 	FVector CapturedListenerPos = FVector::ZeroVector;
@@ -50,10 +54,6 @@ struct FCachedEdgePoint {
 	 *  burst's exit condition counts only edges discovered since the latest trigger, so stale
 	 *  carry-overs can't satisfy the post-movement re-survey. */
 	bool bNewSinceFillArm = false;
-
-	/** Consecutive ShortestPath re-check failures; evicts at ShortestPathRecheckFailures.
-	 *  Reset on any clear check and whenever a sweep rewrites the entry (fresh path). */
-	int32 PathCheckFailStreak = 0;
 
 	/** Most recent listener position whose Phase 0 confirmed LoS to this edge — the anchor
 	 *  for the relay rescue below. Not updated while relayed (it must keep pointing at a spot
@@ -89,8 +89,10 @@ struct FCachedEdgePoint {
 
 	/** Emitter position: EffectivePoint() walked back PullbackDist cm along the arrival path
 	 *  (relay leg first, then the string-pulled polyline toward the source). Stays on traced
-	 *  free-space segments only — the walk stops at ShortestPathVerifiedFrom because unverified
-	 *  prefix segments hug geometry and a point on them can sit inside a wall. An absolute cm
+	 *  free-space segments only — the walk stops at the first unverified segment it meets
+	 *  (working backward from the edge) because unverified segments hug geometry and a point
+	 *  partway along one can sit inside a wall; it does not resume past that gap even if a
+	 *  later stretch is verified again. An absolute cm
 	 *  pullback keeps "how far behind the opening the sound sits" independent of source→edge
 	 *  distance, and lies on the acoustic path — unlike a source→edge lerp, which cuts straight
 	 *  through the very geometry the path bends around. */
@@ -113,7 +115,10 @@ struct FCachedEdgePoint {
 		if (bRelayed && WalkToward(EdgePoint)) {
 			return Current;
 		}
-		for (int32 i = ShortestPath.Num() - 2; i >= ShortestPathVerifiedFrom; --i) {
+		for (int32 i = ShortestPath.Num() - 2; i >= 0; --i) {
+			if (!ShortestPathSegmentVerified.IsValidIndex(i) || !ShortestPathSegmentVerified[i]) {
+				break;
+			}
 			if (WalkToward(ShortestPath[i])) {
 				break;
 			}
@@ -270,5 +275,5 @@ struct FFinalizeRefineProbe {
 	int32 LoSBounces = 0;
 	float BounceWeightFactor = 1.f;
 	TArray<FVector> ShortestPath;
-	int32 ShortestPathVerifiedFrom = 0;
+	TArray<bool> ShortestPathSegmentVerified;
 };

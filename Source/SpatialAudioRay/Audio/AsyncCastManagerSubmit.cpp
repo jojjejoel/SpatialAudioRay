@@ -36,14 +36,19 @@ bool FAsyncCastManager::HasClearShortcut(const USpatialAudioComponent& Component
 // string pull: starting at the edge point, find the first anchor (source, then waypoints in
 // path order) with a clear straight segment to the current point, hop there, and repeat from
 // that anchor until the source is reached — every link in the chain is a verified straight
-// segment. A level where nothing is visible keeps the traveled route for the remaining prefix.
+// segment. When nothing is visible from the current point, the search doesn't give up on the
+// whole remaining prefix: it consumes exactly one raw traveled hop (that single link stays
+// unverified — it's the actual crawl/bounce leg, not a confirmed straight line) and keeps
+// pulling from the new point, so one blocked corner can't also swallow a shortcut that's
+// genuinely available past it (e.g. a second, unrelated opening beyond a second corner).
 // OutPath receives the polyline the returned distance was measured along (source ... edge).
-// OutVerifiedFrom is the OutPath index where the HasClearShortcut-verified chain begins:
-// segments from there to the edge are known-clear straight lines; anything before it is
-// traveled route whose straight segments were never traced (and may be blocked by design).
+// OutSegmentVerified[i] says whether the segment from OutPath[i] to OutPath[i+1] is a
+// HasClearShortcut-verified straight line; false means traveled route whose straight segment
+// was traced and found blocked (and may still be blocked by design, not by geometry change).
+// Verified and unverified segments can interleave — no longer a single trailing cutoff.
 float FAsyncCastManager::ComputeStringPulledLeg1(const USpatialAudioComponent& Component, const UWorld* World,
                                                  const FSpatialRayState& Ray, const FVector& SourcePos,
-                                                 TArray<FVector>& OutPath, int32& OutVerifiedFrom) {
+                                                 TArray<FVector>& OutPath, TArray<bool>& OutSegmentVerified) {
 	// Waypoints at/past the LoS origin can't be prefix anchors.
 	int32 NumUsable = 0;
 	while (NumUsable < Ray.BounceWaypoints.Num()
@@ -52,21 +57,23 @@ float FAsyncCastManager::ComputeStringPulledLeg1(const USpatialAudioComponent& C
 	}
 
 	TArray<FVector> ReversePath;
+	TArray<bool> ReverseSegVerified;
 	ReversePath.Add(Ray.LoSOrigin);
 
 	FVector Current = Ray.LoSOrigin;
 	int32 CurrentIdx = NumUsable;
 	float CurrentCumDist = Ray.LoSCumulativeDistance;
-	float ChainDist = 0.f;
-	bool bReachedSource = false;
+	float Result = 0.f;
 
-	// CurrentIdx strictly decreases each hop, so the loop terminates.
+	// CurrentIdx strictly decreases (or the loop exits) every iteration, so this terminates.
 	while (true) {
 		if (HasClearShortcut(Component, World, Current, SourcePos)) {
-			ChainDist += FVector::Dist(Current, SourcePos);
-			bReachedSource = true;
+			Result += FVector::Dist(Current, SourcePos);
+			ReverseSegVerified.Add(true);
+			ReversePath.Add(SourcePos);
 			break;
 		}
+
 		int32 FoundIdx = INDEX_NONE;
 		for (int32 i = 0; i < CurrentIdx; ++i) {
 			if (HasClearShortcut(Component, World, Current, Ray.BounceWaypoints[i].Pos)) {
@@ -74,39 +81,46 @@ float FAsyncCastManager::ComputeStringPulledLeg1(const USpatialAudioComponent& C
 				break;
 			}
 		}
-		if (FoundIdx == INDEX_NONE) {
+
+		if (FoundIdx != INDEX_NONE) {
+			Result += FVector::Dist(Current, Ray.BounceWaypoints[FoundIdx].Pos);
+			ReverseSegVerified.Add(true);
+			Current = Ray.BounceWaypoints[FoundIdx].Pos;
+			CurrentIdx = FoundIdx;
+			CurrentCumDist = Ray.BounceWaypoints[FoundIdx].CumDist;
+			ReversePath.Add(Current);
+			continue;
+		}
+
+		if (CurrentIdx == 0) {
+			// No waypoints left to try and the source still isn't visible: close the final gap
+			// with the traveled distance, same fallback a total failure always used.
+			Result += CurrentCumDist;
+			ReverseSegVerified.Add(false);
+			ReversePath.Add(SourcePos);
 			break;
 		}
-		ChainDist += FVector::Dist(Current, Ray.BounceWaypoints[FoundIdx].Pos);
-		Current = Ray.BounceWaypoints[FoundIdx].Pos;
-		CurrentIdx = FoundIdx;
-		CurrentCumDist = Ray.BounceWaypoints[FoundIdx].CumDist;
+
+		// Nothing visible from Current — not even the immediately preceding traveled waypoint.
+		// Consume that one raw hop as an unverified link and keep pulling from there.
+		const float NextCumDist = Ray.BounceWaypoints[CurrentIdx - 1].CumDist;
+		Result += CurrentCumDist - NextCumDist;
+		ReverseSegVerified.Add(false);
+		Current = Ray.BounceWaypoints[CurrentIdx - 1].Pos;
+		CurrentCumDist = NextCumDist;
+		--CurrentIdx;
 		ReversePath.Add(Current);
 	}
 
-	float Result;
-	if (bReachedSource) {
-		Result = ChainDist;
-		OutVerifiedFrom = 0;
-	}
-	else {
-		// Nothing visible from Current: the traveled distance covers the remaining prefix, and
-		// the polyline follows the traveled waypoints back to the source. These prefix segments
-		// are NOT straight clear lines — crawl legs hug the wall between recorded turn points —
-		// so consumers re-tracing the polyline must skip them (blocked at discovery already,
-		// a blocked re-trace there says nothing about geometry having changed).
-		Result = ChainDist + CurrentCumDist;
-		for (int32 i = CurrentIdx - 1; i >= 0; --i) {
-			ReversePath.Add(Ray.BounceWaypoints[i].Pos);
-		}
-		OutVerifiedFrom = CurrentIdx + 1;
-	}
 	Result = FMath::Min(Result, Ray.LoSCumulativeDistance);
 
-	ReversePath.Add(SourcePos);
 	OutPath.Reset(ReversePath.Num());
 	for (int32 i = ReversePath.Num() - 1; i >= 0; --i) {
 		OutPath.Add(ReversePath[i]);
+	}
+	OutSegmentVerified.Reset(ReverseSegVerified.Num());
+	for (int32 i = ReverseSegVerified.Num() - 1; i >= 0; --i) {
+		OutSegmentVerified.Add(ReverseSegVerified[i]);
 	}
 	return Result;
 }
@@ -1064,7 +1078,7 @@ void FAsyncCastManager::SubmitFinalizeBatch(USpatialAudioComponent& Component, c
 			FFinalizeRefineProbe Probe;
 			Probe.LoSOrigin = Ray.LoSOrigin;
 			Probe.BasePathDist = ComputeStringPulledLeg1(Component, World, Ray, Component.AsyncSourcePos,
-			                                             Probe.ShortestPath, Probe.ShortestPathVerifiedFrom);
+			                                             Probe.ShortestPath, Probe.ShortestPathSegmentVerified);
 			Probe.LoSBounces = Ray.LoSBounces;
 			Probe.BounceWeightFactor = Settings.bWeightCandidatesByBounceCount
 				                           ? FMath::Pow(Settings.BounceCountFalloff, static_cast<float>(Ray.LoSBounces))

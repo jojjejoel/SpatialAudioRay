@@ -901,6 +901,7 @@ namespace {
 		FCachedEdgePoint Ep;
 		Ep.EdgePoint = FVector(1000, 500, 0);
 		Ep.ShortestPath = {FVector::ZeroVector, FVector(1000, 0, 0), FVector(1000, 500, 0)};
+		Ep.ShortestPathSegmentVerified = {true, true};
 		return Ep;
 	}
 }
@@ -950,8 +951,31 @@ bool FEmitterPoint_Pullback_StopsAtVerifiedBoundary::RunTest(const FString& Para
 	FCachedEdgePoint Ep = MakePathedEdgePoint();
 	// Source→anchor is unverified traveled route: the walk must not enter it, however large
 	// the pullback — a point on an unverified segment can sit inside geometry.
-	Ep.ShortestPathVerifiedFrom = 1;
+	Ep.ShortestPathSegmentVerified = {false, true};
 	TestTrue(TEXT("Walk clamps at the first verified anchor"),
+		Ep.EmitterPoint(99999.f).Equals(FVector(1000, 0, 0), 0.01f));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FEmitterPoint_Pullback_DoesNotResumePastGap,
+	"SpatialAudio.Math.EmitterPoint.Pullback_DoesNotResumePastGap",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FEmitterPoint_Pullback_DoesNotResumePastGap::RunTest(const FString& Parameters) {
+	// Path: source (0,0,0) -> mid (500,0,0) -> anchor (1000,0,0) -> edge (1000,500,0).
+	// Verified/unverified segments interleave: source->mid verified, mid->anchor unverified
+	// (a corner the string pull couldn't shortcut past), anchor->edge verified again.
+	FCachedEdgePoint Ep;
+	Ep.EdgePoint = FVector(1000, 500, 0);
+	Ep.ShortestPath = {
+		FVector::ZeroVector, FVector(500, 0, 0), FVector(1000, 0, 0), FVector(1000, 500, 0)
+	};
+	Ep.ShortestPathSegmentVerified = {true, false, true};
+	// The walk must clamp at the near side of the unverified gap (anchor) even though a
+	// verified stretch exists further back — it must not skip over the gap to reach it.
+	TestTrue(TEXT("Walk clamps at the gap, not the far verified stretch"),
 		Ep.EmitterPoint(99999.f).Equals(FVector(1000, 0, 0), 0.01f));
 	return true;
 }

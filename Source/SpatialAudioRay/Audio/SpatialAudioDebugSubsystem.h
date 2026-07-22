@@ -52,8 +52,9 @@ private:
 	bool bPrevCycleKeyDown = false;
 	bool bPrevSubModeKeyDown[11] = {};
 
-	/** World-space name labels at every source, toggled by ToggleActorLabelsKey. Independent of
-	 *  bDrawDebugRays so it's usable purely for scouting/filming without the ray-debug overlay. */
-	bool bShowActorLabels = false;
+	/** World-space name labels, toggled by ToggleActorLabelsKey. Only drawn on sources that
+	 *  currently have bDrawDebugRays true (the cycle-selected source, or the proximity-limited
+	 *  in-range set) — not every registered source. */
+	bool bShowActorLabels = true;
 	bool bPrevActorLabelsKeyDown = false;
 };

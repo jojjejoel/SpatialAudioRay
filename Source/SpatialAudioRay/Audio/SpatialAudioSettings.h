@@ -937,26 +937,34 @@ public:
 	float Phase0CheckInterval = 0.1f;
 
 	/**
-	 * Seconds between source-side path re-verifications. Each check re-traces ONE cached edge's
-	 * stored string-pulled source→edge polyline (round-robin, sync) to detect geometry that has
-	 * closed the path since discovery — Phase 0 only guards the listener side, source movement
-	 * only guards source position, and rank hysteresis rejects the longer re-finds a closed
-	 * path produces, so nothing else catches e.g. a door closing between a static source and
-	 * its edge. A confirmed-blocked path starts the normal eviction fade and requests a sweep.
-	 * 0 = off.
+	 * Seconds between source-side path re-verifications. Each check re-traces every segment of
+	 * ONE cached edge's stored string-pulled source→edge polyline (round-robin, sync), including
+	 * unverified segments, to detect geometry that has closed the path since discovery — Phase 0
+	 * only guards the listener side, source movement only guards source position, and rank
+	 * hysteresis rejects the longer re-finds a closed path produces, so nothing else catches e.g.
+	 * a door closing between a static source and its edge. A single blocked segment starts the
+	 * normal eviction fade and requests a sweep immediately. Because unverified segments (a raw
+	 * crawl/bounce hop the string pull couldn't shortcut past) were already blocked at discovery,
+	 * this also evicts ordinary multi-corner diffraction paths the moment they're rechecked, not
+	 * just genuine geometry changes — a deliberate trade-off of enabling this. 0 = off.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Edge Cache",
 		meta = (ClampMin = "0.0", ClampMax = "5.0", EditCondition = "bCacheEdgePoints"))
 	float ShortestPathRecheckInterval = 0.f;
 
 	/**
-	 * Consecutive failed path re-checks before the edge starts evicting. Polyline endpoints sit
-	 * within RaySurfaceBias of geometry, so a single blocked trace can be corner clipping rather
-	 * than a real obstruction (the Phase 0 lesson) — require agreement across checks.
+	 * Seconds between attempts to shrink a cached edge back toward the source even while it
+	 * already has direct listener LoS — unlike TickPhase0Readback's promotion (which only fires
+	 * as a rescue when the edge itself just went blocked), this runs opportunistically so an
+	 * edge keeps migrating toward the true minimal diffraction point as the listener moves,
+	 * rather than sitting wherever it was first discovered. Each check (round-robin, one edge)
+	 * tries only the single point immediately before the edge on its own polyline; if that point
+	 * has direct listener LoS too, the edge moves there — one step per interval, not a jump all
+	 * the way to the source. 0 = off.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Edge Cache",
-		meta = (ClampMin = "1", ClampMax = "8", EditCondition = "bCacheEdgePoints"))
-	int32 ShortestPathRecheckFailures = 2;
+		meta = (ClampMin = "0.0", ClampMax = "5.0", EditCondition = "bCacheEdgePoints"))
+	float ShortestPathPromotionInterval = 0.f;
 
 
 	// ── Debug ─────────────────────────────────────────────────────────────────

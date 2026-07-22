@@ -675,6 +675,12 @@ private:
 	float ShortestPathCheckTimer = 0.f;
 	int32 ShortestPathCheckCursor = 0;
 
+	/** Round-robin state for opportunistic inner-anchor promotion (one edge per
+	 *  ShortestPathPromotionInterval). Separate from ShortestPathCheckCursor above so the two
+	 *  intervals can be tuned independently. */
+	float ShortestPathPromotionTimer = 0.f;
+	int32 ShortestPathPromotionCursor = 0;
+
 	struct FFinalizeBatch {
 		bool bPending = false;
 		TArray<FFinalizeRefineProbe> RefineProbes;

@@ -30,9 +30,14 @@ private:
 	static bool HasOtherDirectEdge(const USpatialAudioComponent& Component, const FCachedEdgePoint& Self);
 	static bool TryRelayRescue(USpatialAudioComponent& Component, FCachedEdgePoint& EP, UWorld* World,
 	                           const FVector& LisPos);
+	static bool TryPromoteToInnerAnchor(USpatialAudioComponent& Component, FCachedEdgePoint& EP, UWorld* World,
+	                                    const FVector& LisPos);
 	static void TickRelayMaintenance(USpatialAudioComponent& Component, FCachedEdgePoint& EP, UWorld* World,
 	                                 const FVector& SrcPos, const FVector& LisPos, bool bIntervalFired);
 	static void TickShortestPathRecheck(USpatialAudioComponent& Component, UWorld* World,
 	                                    const FVector& SrcPos, float DeltaTime,
 	                                    const USpatialAudioSettings& Settings);
+	static void TickInnerAnchorPromotion(USpatialAudioComponent& Component, UWorld* World,
+	                                     const FVector& LisPos, float DeltaTime,
+	                                     const USpatialAudioSettings& Settings);
 };

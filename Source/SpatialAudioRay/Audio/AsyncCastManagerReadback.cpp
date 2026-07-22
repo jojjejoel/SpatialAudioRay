@@ -82,7 +82,7 @@ void FAsyncCastManager::ReadbackFinalizeBatch(USpatialAudioComponent& Component,
 		StoredPath.LoSCumulativeDistance = GeomDist;
 		StoredPath.PathDist = PathDistToEdge;
 		StoredPath.ShortestPath = RP.ShortestPath;
-		StoredPath.ShortestPathVerifiedFrom = RP.ShortestPathVerifiedFrom;
+		StoredPath.ShortestPathSegmentVerified = RP.ShortestPathSegmentVerified;
 		Component.StoredLoSPaths.Add(MoveTemp(StoredPath));
 	}
 
@@ -132,7 +132,7 @@ void FAsyncCastManager::ReadbackFinalizeBatch(USpatialAudioComponent& Component,
 			EP.GeomDist = SP.LoSCumulativeDistance;
 			EP.PathDist = SP.PathDist;
 			EP.ShortestPath = SP.ShortestPath;
-			EP.ShortestPathVerifiedFrom = SP.ShortestPathVerifiedFrom;
+			EP.ShortestPathSegmentVerified = SP.ShortestPathSegmentVerified;
 			EP.LoSBounces = SP.LoSBounces;
 			EP.CapturedSourcePos = Component.AsyncSourcePos;
 			EP.CapturedListenerPos = Component.AsyncListenerPos;
@@ -140,7 +140,6 @@ void FAsyncCastManager::ReadbackFinalizeBatch(USpatialAudioComponent& Component,
 			EP.bEvicting = false;
 			EP.bSourceSideEviction = false;
 			EP.EvictionAlpha = 1.f;
-			EP.PathCheckFailStreak = 0;
 			// A sweep re-confirming the edge means a fresh listener-visible path exists — any
 			// relay detour is obsolete.
 			EP.ClearRelay();

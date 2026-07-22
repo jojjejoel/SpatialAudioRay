@@ -93,5 +93,5 @@ private:
 	                             const FVector& Edge, const FVector& Anchor);
 	static float ComputeStringPulledLeg1(const USpatialAudioComponent& Component, const UWorld* World,
 	                                     const FSpatialRayState& Ray, const FVector& SourcePos,
-	                                     TArray<FVector>& OutPath, int32& OutVerifiedFrom);
+	                                     TArray<FVector>& OutPath, TArray<bool>& OutSegmentVerified);
 };

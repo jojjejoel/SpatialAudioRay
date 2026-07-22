@@ -44,7 +44,6 @@ void USpatialAudioDebugSubsystem::Tick(float DeltaTime) {
 	}
 
 	int32 NumSources = 0;
-	int32 NumSweeping = 0;
 	float TracesPerSec = 0.f;
 	float Avg10Sec = 0.f;
 	float Avg60Sec = 0.f;
@@ -58,7 +57,6 @@ void USpatialAudioDebugSubsystem::Tick(float DeltaTime) {
 			continue;
 		}
 		++NumSources;
-		NumSweeping += C->bAsyncCastActive ? 1 : 0;
 		TracesPerSec += C->TraceDiag.SnapshotTracesPerSec;
 		Avg10Sec += C->TraceDiag.Avg10Sec;
 		Avg60Sec += C->TraceDiag.Avg60Sec;
@@ -102,8 +100,10 @@ void USpatialAudioDebugSubsystem::Tick(float DeltaTime) {
 		}
 	}
 
-	// Independent of bAnyDebugRays: a lightweight label layer for finding/naming sources while
-	// filming, so it keeps working even with ray debugging fully off.
+	// The toggle key itself stays independent of bAnyDebugRays (works even with ray debugging
+	// fully off), but which sources actually get a label (below) is restricted to whichever
+	// ones bDrawDebugRays is already true for — the cycle-selected source, or the proximity-
+	// limited in-range set — so labels only ever appear on sources that are also drawing.
 	if (PC) {
 		const bool bDown = First->ToggleActorLabelsKey.IsValid()
 			&& PC->IsInputKeyDown(First->ToggleActorLabelsKey);
@@ -115,7 +115,7 @@ void USpatialAudioDebugSubsystem::Tick(float DeltaTime) {
 
 	if (bShowActorLabels) {
 		for (const TWeakObjectPtr<USpatialAudioComponent>& Src : Sources) {
-			if (const USpatialAudioComponent* C = Src.Get()) {
+			if (const USpatialAudioComponent* C = Src.Get(); C && C->bDrawDebugRays) {
 				if (AActor* Owner = C->GetOwner()) {
 					// DrawDebugString renders as screen-space text at the point's projected
 					// position — camera-facing and not depth-tested against geometry for free.
@@ -179,17 +179,18 @@ void USpatialAudioDebugSubsystem::Tick(float DeltaTime) {
 	// lands this low.
 	GEngine->AddOnScreenDebugMessage(1, 0.f, FColor::Yellow,
 	                                 FString::Printf(
-		                                 TEXT("GLOBAL  %d source%s (%d sweeping)  │  traces 1s=%.0f/s  10s=%.0f/s  60s=%.0f/s"),
-		                                 NumSources, NumSources == 1 ? TEXT("") : TEXT("s"), NumSweeping,
+		                                 TEXT("GLOBAL  %d source%s  │  traces 1s=%.0f/s  10s=%.0f/s  60s=%.0f/s"),
+		                                 NumSources, NumSources == 1 ? TEXT("") : TEXT("s"),
 		                                 TracesPerSec, Avg10Sec, Avg60Sec));
 
 	int32 LineKey = 2;
 	for (const TWeakObjectPtr<USpatialAudioComponent>& Src : Sources) {
 		if (const USpatialAudioComponent* C = Src.Get()) {
+			const AActor* Owner = C->GetOwner();
 			GEngine->AddOnScreenDebugMessage(LineKey++, 0.f, FColor(255, 255, 160),
 			                                 FString::Printf(
 				                                 TEXT("  %s  │  traces 1s=%.0f/s  10s=%.0f/s  60s=%.0f/s"),
-				                                 *GetNameSafe(C->GetOwner()),
+				                                 Owner ? *Owner->GetActorNameOrLabel() : TEXT("None"),
 				                                 C->TraceDiag.SnapshotTracesPerSec,
 				                                 C->TraceDiag.Avg10Sec,
 				                                 C->TraceDiag.Avg60Sec));
