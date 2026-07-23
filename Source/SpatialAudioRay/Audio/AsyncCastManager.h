@@ -6,6 +6,8 @@
 #include "SpatialAudioTypes.h"
 
 class USpatialAudioComponent;
+class AActor;
+class APawn;
 
 class FAsyncCastManager {
 public:
@@ -76,7 +78,63 @@ public:
 	                                          float SurfaceRoughness, float BounceListenerBias);
 
 private:
+	// ── ReadbackFinalizeBatch phases ─────────────────────────────────────────
+	static bool TryDiscardStaleSweep(USpatialAudioComponent& Component, UWorld* World, const USpatialAudioSettings& Settings);
+	static void AccumulateRefineProbesIntoCycle(USpatialAudioComponent& Component, UWorld* World, const USpatialAudioSettings& Settings);
+	static void MergeStoredPathsIntoCache(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings);
+	static void AdvanceSweepCycleAndIdleState(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings);
+
+	// A ray with no more pending async LoS probes is complete; one with probes still in flight
+	// must wait one more tick (bTerminalLoSPending picks it up on the early-out path next tick).
+	// The same shape recurs at every ray-lifecycle exit point in this file.
+	static void FinishOrDefer(FSpatialRayState& Ray, bool& bAllDone);
+
+	// ── StartAsyncFullCast phases ────────────────────────────────────────────
+	static void CaptureSweepPositions(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings,
+	                                  const AActor& Owner, const APawn& Pawn);
+	static void ResolveSweepRayBudget(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings);
+	static void BuildCachedEdgeExclusionDirs(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings);
+	static void UpdateActiveMissDirs(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings);
+	static void ResetCycleAccumulator(USpatialAudioComponent& Component);
+	static void SubmitSweepRays(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings, UWorld* World,
+	                            const FVector& ToListenerDir, float FullCastDistance, int32 CycleCount);
+
+	// ── TickAsyncCast per-ray phases ─────────────────────────────────────────
+	static void TickSingleRay(USpatialAudioComponent& Component, FSpatialRayState& Ray, UWorld* World,
+	                          bool bBias, float Budget, bool& bAllDone, const USpatialAudioSettings& Settings);
+	static bool TryProcessMidAirTurn(USpatialAudioComponent& Component, FSpatialRayState& Ray, UWorld* World,
+	                                 bool bBias, float Budget, bool bSegMissed, bool& bAllDone,
+	                                 const USpatialAudioSettings& Settings);
+	static void ProcessRayTermination(USpatialAudioComponent& Component, FSpatialRayState& Ray, UWorld* World,
+	                                  const FTraceDatum& SegData, bool bSegMissed, float Budget, bool& bAllDone,
+	                                  const USpatialAudioSettings& Settings);
+	static void ProcessRayBounceContinuation(USpatialAudioComponent& Component, FSpatialRayState& Ray, UWorld* World,
+	                                         const FHitResult& Hit, bool bBias, float Budget, bool& bAllDone,
+	                                         const USpatialAudioSettings& Settings);
+	static bool TrySetupSurfaceCrawl(USpatialAudioComponent& Component, FSpatialRayState& Ray, UWorld* World,
+	                                 const FHitResult& Hit, const USpatialAudioSettings& Settings);
+
 	static void DrainPendingLoSProbes(const USpatialAudioComponent& Component, FSpatialRayState& Ray, UWorld* World, const FVector& ListenerPos);
+
+	// ── ProcessCrawlBatch phases ─────────────────────────────────────────────
+	struct FCrawlStepResult {
+		bool bSucceeded = false;
+		bool bPerpWallHit = false;
+		FVector EdgePoint = FVector::ZeroVector;
+		FVector EdgeDir = FVector::ZeroVector;
+		FVector PerpNormal = FVector::ZeroVector;
+		float CrawlDist = 0.f;
+		int32 FoundAtStep = -1;
+	};
+
+	static bool AreCrawlTracesReady(UWorld* World, FSpatialRayState& Ray, FTraceDatum& OutRangeData);
+	static FCrawlStepResult EvaluateCrawlSteps(USpatialAudioComponent& Component, FSpatialRayState& Ray, UWorld* World,
+	                                           int32 Limit, const USpatialAudioSettings& Settings);
+	static void DrawCrawlDebugVisualization(USpatialAudioComponent& Component, const FSpatialRayState& Ray, UWorld* World,
+	                                        const FCrawlStepResult& Result, int32 Limit, const USpatialAudioSettings& Settings);
+	static void ApplyCrawlResult(USpatialAudioComponent& Component, FSpatialRayState& Ray,
+	                             const FCrawlStepResult& Result, bool bBias, const USpatialAudioSettings& Settings);
+
 	static void ProcessCrawlBatch(USpatialAudioComponent& Component, FSpatialRayState& Ray, UWorld* World,
 	                              bool bBias, float Budget, bool& bAllDone,
 	                              const USpatialAudioSettings& Settings);

@@ -288,18 +288,18 @@ void USpatialAudioComponent::PerformStartupLoSCheck() {
 	}
 }
 
-void USpatialAudioComponent::TickComponent(const float DeltaTime, const ELevelTick TickType,
-                                           FActorComponentTickFunction* ThisTickFunction) {
-	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
-	TraceDiag.FrameCount = 0;
+float USpatialAudioComponent::TimeToBlendSpeed(const float Seconds) {
+	return Seconds > 0.f ? 1.f / Seconds : 1000.f;
+}
 
+void USpatialAudioComponent::TickAsyncPipeline(const USpatialAudioSettings& Settings) {
 	if (Finalize.bPending) {
-		FAsyncCastManager::ReadbackFinalizeBatch(*this, GetSettings());
+		FAsyncCastManager::ReadbackFinalizeBatch(*this, Settings);
 	}
 
 	const bool bWasAsyncActive = bAsyncCastActive;
 	if (bAsyncCastActive) {
-		FAsyncCastManager::TickAsyncCast(*this, GetSettings());
+		FAsyncCastManager::TickAsyncCast(*this, Settings);
 	}
 	TraceDiag.AsyncFrameTraces = TraceDiag.FrameCount;
 
@@ -312,6 +312,153 @@ void USpatialAudioComponent::TickComponent(const float DeltaTime, const ELevelTi
 			TraceDiag.LastSweepAsyncRays = TraceDiag.SweepAsyncRayAccum;
 		}
 	}
+}
+
+void USpatialAudioComponent::TickNormalSweepDispatch(const float DeltaTime, UWorld* TickWorld, const bool bInRange,
+                                                      const APawn* TickPawn, const float SubInterval) {
+	FUpdater::TickDirectLoSSampling(*this, DeltaTime, GetSettings());
+
+	// Full sweeps may not start until one complete ring rotation has confirmed no-LoS
+	// (NoLoSSampleStreak resets on any clear sample). While moving, bHasDirectLoS drops on
+	// the first blocked sample, which would otherwise fire the expensive sweep pipeline for
+	// what may be a brief occluder flicker; the LoS-break sweep below still fires instantly
+	// so the virtual source is seeded for the transition. The pre-sweep band bypasses the
+	// rotation gate entirely (IsPreSweepActive reads CurrentOcclusion, not bHasDirectLoS):
+	// a fast occlusion jump that drops bHasDirectLoS in a single sample still starts sweeping
+	// the moment the debug-visible occlusion crosses the threshold, without waiting on the
+	// rotation to confirm total loss of LoS.
+	const int32 RingSteps = FMath::Clamp(GetSettings().OffsetRingRotationSteps, 1, 8);
+	const bool bPreSweep = IsPreSweepActive();
+	if (!bAsyncCastActive && !Finalize.bPending && bInRange &&
+		(bPreSweep || (!bHasDirectLoS && NoLoSSampleStreak >= RingSteps)) &&
+		(TimeSinceFullCast >= SubInterval || SweepScheduling.bMovementRequested)) {
+		FUpdater::PerformUpdateRayCast(*this, GetSettings());
+		if (!bHasDirectLoS || bPreSweep) {
+			const bool bMovementTriggered = SweepScheduling.bMovementRequested;
+			TimeSinceFullCast = 0.f;
+			SweepScheduling.bMovementRequested = false;
+			SweepScheduling.bStationaryIdleMode = false;
+			if (bMovementTriggered) {
+				StaggeredCycleIndex = 0;
+				SweepScheduling.CacheFillSweepsRemaining = GetSettings().MovementCacheFillMaxSweeps;
+				// Rebase "new": only edges discovered after this trigger satisfy the burst —
+				// entries surviving from the previous position must not end the re-survey.
+				for (FCachedEdgePoint& EP : CachedEdgePoints) {
+					EP.bNewSinceFillArm = false;
+				}
+			}
+			CycleAccum.Index = StaggeredCycleIndex;
+			TraceDiag.SweepStartTime = GetWorld()->GetTimeSeconds();
+			TraceDiag.LastSweepInterval = SubInterval;
+			FAsyncCastManager::StartAsyncFullCast(*this, GetSettings());
+		}
+	}
+	else if (!bAsyncCastActive && !Finalize.bPending) {
+		FUpdater::PerformUpdateRayCast(*this, GetSettings());
+	}
+}
+
+float USpatialAudioComponent::UpdateDirectLoSConfirmationAndBlendSpeed(const float DeltaTime) {
+	DirectLoSConfirmedDuration = bHasDirectLoS ? DirectLoSConfirmedDuration + DeltaTime : 0.f;
+	TimeSinceHadDirectLoS = bHasDirectLoS ? 0.f : TimeSinceHadDirectLoS + DeltaTime;
+	const bool bConfirmedDirectLoS = DirectLoSConfirmedDuration >= GetSettings().DirectLoSConfirmTime;
+
+	float OccBlendSpeed;
+	if (bHasDirectLoS) {
+		OccBlendSpeed = TimeToBlendSpeed(GetSettings().OcclusionClearTime);
+		// Not in the pre-sweep band: pre-warm sweeps are filling the cache while partial LoS
+		// remains, so confirmed-LoS clearing must wait until occlusion drops back below the
+		// threshold (source comfortably visible again).
+		if (bConfirmedDirectLoS && !IsPreSweepActive()) {
+			CachedEdgePoints.Empty();
+			CachedEdgeDirs.Empty();
+			// The occlusion episode is over; the next one re-arms via its own movement trigger
+			// (LoS break sets bMovementRequested), so don't let a half-spent budget leak into it.
+			SweepScheduling.CacheFillSweepsRemaining = 0;
+		}
+	}
+	else if (TargetOcclusion > CurrentOcclusion) {
+		OccBlendSpeed = TimeToBlendSpeed(GetSettings().OcclusionAttackTime);
+	}
+	else if (TargetOcclusion >= 1.f) {
+		OccBlendSpeed = TimeToBlendSpeed(GetSettings().OcclusionFullBlockTime);
+	}
+	else {
+		OccBlendSpeed = TimeToBlendSpeed(GetSettings().OcclusionBlendTime);
+	}
+	return OccBlendSpeed;
+}
+
+void USpatialAudioComponent::SmoothTowardTargets(const float DeltaTime, const float OccBlendSpeed,
+                                                 const bool bConfirmedDirectLoS) {
+	CurrentOcclusion = FMath::FInterpConstantTo(CurrentOcclusion, TargetOcclusion, DeltaTime, OccBlendSpeed);
+	CurrentPathAttenuation = FMath::FInterpTo(CurrentPathAttenuation, TargetPathAttenuation, DeltaTime,
+	                                          TimeToBlendSpeed(GetSettings().PathAttenuationBlendTime));
+	const float EffVirtualBlendSpeed = bConfirmedDirectLoS
+		                                   ? TimeToBlendSpeed(GetSettings().VirtualSourceSnapTime)
+		                                   : TimeToBlendSpeed(GetSettings().VirtualSourceMoveTime);
+	CurrentVirtualSourceLocation = FMath::VInterpTo(CurrentVirtualSourceLocation, TargetVirtualSourceLocation,
+	                                                DeltaTime, EffVirtualBlendSpeed);
+	for (FVirtualVoice& Voice : VirtualVoices) {
+		if (Voice.bActive) {
+			Voice.SmoothedPosition = FMath::VInterpTo(Voice.SmoothedPosition, Voice.TargetPosition,
+			                                          DeltaTime, EffVirtualBlendSpeed);
+		}
+	}
+}
+
+void USpatialAudioComponent::UpdateTraceDiagnostics(const float DeltaTime) {
+	if (DeltaTime <= 0.f) {
+		return;
+	}
+
+	TraceDiag.SmoothedFrameTraces = FMath::FInterpTo(TraceDiag.SmoothedFrameTraces, static_cast<float>(TraceDiag.FrameCount),
+	                                                 DeltaTime, 4.f);
+	TraceDiag.SmoothedAsyncTraces = FMath::FInterpTo(TraceDiag.SmoothedAsyncTraces, static_cast<float>(TraceDiag.AsyncFrameTraces),
+	                                                 DeltaTime, 4.f);
+	TraceDiag.SmoothedUpdateTraces = FMath::FInterpTo(TraceDiag.SmoothedUpdateTraces, static_cast<float>(TraceDiag.UpdateFrameTraces),
+	                                                  DeltaTime, 4.f);
+
+	TraceDiag.AccumBucket += TraceDiag.FrameCount;
+	TraceDiag.SnapshotTimer += DeltaTime;
+	if (TraceDiag.SnapshotTimer < 1.f) {
+		return;
+	}
+
+	TraceDiag.SnapshotTracesPerSec = TraceDiag.AccumBucket / TraceDiag.SnapshotTimer;
+	TraceDiag.SnapshotTimer = 0.f;
+	TraceDiag.AccumBucket = 0;
+	TraceDiag.SnapshotFrameTraces = TraceDiag.SmoothedFrameTraces;
+	TraceDiag.SnapshotAsyncTraces = TraceDiag.SmoothedAsyncTraces;
+	TraceDiag.SnapshotUpdateTraces = TraceDiag.SmoothedUpdateTraces;
+
+	TraceDiag.History[TraceDiag.HistoryHead] = TraceDiag.SnapshotTracesPerSec;
+	TraceDiag.HistoryHead = (TraceDiag.HistoryHead + 1) % TraceDiag.HistoryLen;
+	if (TraceDiag.HistoryCount < TraceDiag.HistoryLen) {
+		++TraceDiag.HistoryCount;
+	}
+	// Walk backward from the newest entry: the 10s window is the most recent Avg10Len
+	// snapshots of the shared 60-entry ring, not the whole buffer.
+	float Sum10 = 0.f;
+	float Sum60 = 0.f;
+	for (int32 k = 0; k < TraceDiag.HistoryCount; ++k) {
+		const int32 Idx = (TraceDiag.HistoryHead - 1 - k + TraceDiag.HistoryLen) % TraceDiag.HistoryLen;
+		Sum60 += TraceDiag.History[Idx];
+		if (k < TraceDiag.Avg10Len) {
+			Sum10 += TraceDiag.History[Idx];
+		}
+	}
+	const int32 Count10 = FMath::Min(TraceDiag.HistoryCount, TraceDiag.Avg10Len);
+	TraceDiag.Avg10Sec = Count10 > 0 ? Sum10 / Count10 : 0.f;
+	TraceDiag.Avg60Sec = TraceDiag.HistoryCount > 0 ? Sum60 / TraceDiag.HistoryCount : 0.f;
+}
+
+void USpatialAudioComponent::TickComponent(const float DeltaTime, const ELevelTick TickType,
+                                           FActorComponentTickFunction* ThisTickFunction) {
+	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+	TraceDiag.FrameCount = 0;
+
+	TickAsyncPipeline(GetSettings());
 
 	UWorld* TickWorld = GetWorld();
 	APlayerController* TickPC = TickWorld ? TickWorld->GetFirstPlayerController() : nullptr;
@@ -343,163 +490,24 @@ void USpatialAudioComponent::TickComponent(const float DeltaTime, const ELevelTi
 	const int32 PreUpdateCount = TraceDiag.FrameCount;
 	const int32 CycleCount = FMath::Max(1, GetSettings().FullSweepCycleCount);
 	const float SubInterval = EffFullSweepInterval / CycleCount;
-	if (bReplayDebug && !Replay.Paths.IsEmpty()) {
-		TargetOcclusion = 1.f;
-
-		if (bInRange && TickPawn && GetOwner() && TickWorld) {
-			const FVector SrcPt = GetOwner()->GetActorLocation();
-			const FVector LisPt = TickPawn->GetActorLocation();
-			const FVector SrcDir = (LisPt - SrcPt).GetSafeNormal();
-			FHitResult DirHit;
-			bHasDirectLoS = !TraceLine(TickWorld, DirHit, SrcPt + SrcDir * 5.f, LisPt);
-			LastDirectLoSFraction = bHasDirectLoS ? 1.f : 0.f;
-			if (bHasDirectLoS) {
-				TargetOcclusion = 0.f;
-				TargetVirtualSourceLocation = SrcPt;
-
-				CachedEdgePoints.Reset();
-				CachedEdgeDirs.Reset();
-			}
-		}
-	}
-	else {
-		FUpdater::TickDirectLoSSampling(*this, DeltaTime, GetSettings());
-
-		// Full sweeps may not start until one complete ring rotation has confirmed no-LoS
-		// (NoLoSSampleStreak resets on any clear sample). While moving, bHasDirectLoS drops on
-		// the first blocked sample, which would otherwise fire the expensive sweep pipeline for
-		// what may be a brief occluder flicker; the LoS-break sweep below still fires instantly
-		// so the virtual source is seeded for the transition. The pre-sweep band bypasses the
-		// rotation gate entirely (IsPreSweepActive reads CurrentOcclusion, not bHasDirectLoS):
-		// a fast occlusion jump that drops bHasDirectLoS in a single sample still starts sweeping
-		// the moment the debug-visible occlusion crosses the threshold, without waiting on the
-		// rotation to confirm total loss of LoS.
-		const int32 RingSteps = FMath::Clamp(GetSettings().OffsetRingRotationSteps, 1, 8);
-		const bool bPreSweep = IsPreSweepActive();
-		if (!bAsyncCastActive && !Finalize.bPending && bInRange &&
-			(bPreSweep || (!bHasDirectLoS && NoLoSSampleStreak >= RingSteps)) &&
-			(TimeSinceFullCast >= SubInterval || SweepScheduling.bMovementRequested)) {
-			FUpdater::PerformUpdateRayCast(*this, GetSettings());
-			if (!bHasDirectLoS || bPreSweep) {
-				const bool bMovementTriggered = SweepScheduling.bMovementRequested;
-				TimeSinceFullCast = 0.f;
-				SweepScheduling.bMovementRequested = false;
-				SweepScheduling.bStationaryIdleMode = false;
-				if (bMovementTriggered) {
-					StaggeredCycleIndex = 0;
-					SweepScheduling.CacheFillSweepsRemaining = GetSettings().MovementCacheFillMaxSweeps;
-					// Rebase "new": only edges discovered after this trigger satisfy the burst —
-					// entries surviving from the previous position must not end the re-survey.
-					for (FCachedEdgePoint& EP : CachedEdgePoints) {
-						EP.bNewSinceFillArm = false;
-					}
-				}
-				CycleAccum.Index = StaggeredCycleIndex;
-				TraceDiag.SweepStartTime = GetWorld()->GetTimeSeconds();
-				TraceDiag.LastSweepInterval = SubInterval;
-				FAsyncCastManager::StartAsyncFullCast(*this, GetSettings());
-			}
-		}
-		else if (!bAsyncCastActive && !Finalize.bPending) {
-			FUpdater::PerformUpdateRayCast(*this, GetSettings());
-		}
-	}
+	TickNormalSweepDispatch(DeltaTime, TickWorld, bInRange, TickPawn, SubInterval);
 	TraceDiag.UpdateFrameTraces = TraceDiag.FrameCount - PreUpdateCount;
 
-	if (!bReplayDebug && bPrevHadDirectLoS && !bHasDirectLoS && LoSBreakSweepCooldown <= 0.f) {
+	if (bPrevHadDirectLoS && !bHasDirectLoS && LoSBreakSweepCooldown <= 0.f) {
 		FUpdater::PerformLoSBreakSweep(*this, GetSettings());
 		LoSBreakSweepCooldown = GetSettings().LoSBreakSweepCooldownTime;
 		SweepScheduling.bMovementRequested = true;
 	}
 	LoSBreakSweepCooldown = FMath::Max(0.f, LoSBreakSweepCooldown - DeltaTime);
 
-	DirectLoSConfirmedDuration = bHasDirectLoS ? DirectLoSConfirmedDuration + DeltaTime : 0.f;
-	TimeSinceHadDirectLoS = bHasDirectLoS ? 0.f : TimeSinceHadDirectLoS + DeltaTime;
+	const float OccBlendSpeed = UpdateDirectLoSConfirmationAndBlendSpeed(DeltaTime);
 	const bool bConfirmedDirectLoS = DirectLoSConfirmedDuration >= GetSettings().DirectLoSConfirmTime;
+	SmoothTowardTargets(DeltaTime, OccBlendSpeed, bConfirmedDirectLoS);
 
-	auto TimeToBlendSpeed = [](const float Seconds) -> float { return Seconds > 0.f ? 1.f / Seconds : 1000.f; };
-
-	float OccBlendSpeed;
-	if (bHasDirectLoS) {
-		OccBlendSpeed = TimeToBlendSpeed(GetSettings().OcclusionClearTime);
-		// Not in the pre-sweep band: pre-warm sweeps are filling the cache while partial LoS
-		// remains, so confirmed-LoS clearing must wait until occlusion drops back below the
-		// threshold (source comfortably visible again).
-		if (bConfirmedDirectLoS && !IsPreSweepActive()) {
-			CachedEdgePoints.Empty();
-			CachedEdgeDirs.Empty();
-			// The occlusion episode is over; the next one re-arms via its own movement trigger
-			// (LoS break sets bMovementRequested), so don't let a half-spent budget leak into it.
-			SweepScheduling.CacheFillSweepsRemaining = 0;
-		}
-	}
-	else if (TargetOcclusion > CurrentOcclusion) {
-		OccBlendSpeed = TimeToBlendSpeed(GetSettings().OcclusionAttackTime);
-	}
-	else if (TargetOcclusion >= 1.f) {
-		OccBlendSpeed = TimeToBlendSpeed(GetSettings().OcclusionFullBlockTime);
-	}
-	else {
-		OccBlendSpeed = TimeToBlendSpeed(GetSettings().OcclusionBlendTime);
-	}
-
-	CurrentOcclusion = FMath::FInterpConstantTo(CurrentOcclusion, TargetOcclusion, DeltaTime, OccBlendSpeed);
-	CurrentPathAttenuation = FMath::FInterpTo(CurrentPathAttenuation, TargetPathAttenuation, DeltaTime,
-	                                          TimeToBlendSpeed(GetSettings().PathAttenuationBlendTime));
-	const float EffVirtualBlendSpeed = bConfirmedDirectLoS
-		                                   ? TimeToBlendSpeed(GetSettings().VirtualSourceSnapTime)
-		                                   : TimeToBlendSpeed(GetSettings().VirtualSourceMoveTime);
-	CurrentVirtualSourceLocation = FMath::VInterpTo(CurrentVirtualSourceLocation, TargetVirtualSourceLocation,
-	                                                DeltaTime, EffVirtualBlendSpeed);
-	for (FVirtualVoice& Voice : VirtualVoices) {
-		if (Voice.bActive) {
-			Voice.SmoothedPosition = FMath::VInterpTo(Voice.SmoothedPosition, Voice.TargetPosition,
-			                                          DeltaTime, EffVirtualBlendSpeed);
-		}
-	}
-
-	if (DeltaTime > 0.f) {
-		TraceDiag.SmoothedFrameTraces = FMath::FInterpTo(TraceDiag.SmoothedFrameTraces, static_cast<float>(TraceDiag.FrameCount),
-		                                                 DeltaTime, 4.f);
-		TraceDiag.SmoothedAsyncTraces = FMath::FInterpTo(TraceDiag.SmoothedAsyncTraces, static_cast<float>(TraceDiag.AsyncFrameTraces),
-		                                                 DeltaTime, 4.f);
-		TraceDiag.SmoothedUpdateTraces = FMath::FInterpTo(TraceDiag.SmoothedUpdateTraces, static_cast<float>(TraceDiag.UpdateFrameTraces),
-		                                                  DeltaTime, 4.f);
-
-		TraceDiag.AccumBucket += TraceDiag.FrameCount;
-		TraceDiag.SnapshotTimer += DeltaTime;
-		if (TraceDiag.SnapshotTimer >= 1.f) {
-			TraceDiag.SnapshotTracesPerSec = TraceDiag.AccumBucket / TraceDiag.SnapshotTimer;
-			TraceDiag.SnapshotTimer = 0.f;
-			TraceDiag.AccumBucket = 0;
-			TraceDiag.SnapshotFrameTraces = TraceDiag.SmoothedFrameTraces;
-			TraceDiag.SnapshotAsyncTraces = TraceDiag.SmoothedAsyncTraces;
-			TraceDiag.SnapshotUpdateTraces = TraceDiag.SmoothedUpdateTraces;
-
-			TraceDiag.History[TraceDiag.HistoryHead] = TraceDiag.SnapshotTracesPerSec;
-			TraceDiag.HistoryHead = (TraceDiag.HistoryHead + 1) % TraceDiag.HistoryLen;
-			if (TraceDiag.HistoryCount < TraceDiag.HistoryLen) {
-				++TraceDiag.HistoryCount;
-			}
-			// Walk backward from the newest entry: the 10s window is the most recent Avg10Len
-			// snapshots of the shared 60-entry ring, not the whole buffer.
-			float Sum10 = 0.f;
-			float Sum60 = 0.f;
-			for (int32 k = 0; k < TraceDiag.HistoryCount; ++k) {
-				const int32 Idx = (TraceDiag.HistoryHead - 1 - k + TraceDiag.HistoryLen) % TraceDiag.HistoryLen;
-				Sum60 += TraceDiag.History[Idx];
-				if (k < TraceDiag.Avg10Len) {
-					Sum10 += TraceDiag.History[Idx];
-				}
-			}
-			const int32 Count10 = FMath::Min(TraceDiag.HistoryCount, TraceDiag.Avg10Len);
-			TraceDiag.Avg10Sec = Count10 > 0 ? Sum10 / Count10 : 0.f;
-			TraceDiag.Avg60Sec = TraceDiag.HistoryCount > 0 ? Sum60 / TraceDiag.HistoryCount : 0.f;
-		}
-	}
+	UpdateTraceDiagnostics(DeltaTime);
 
 	if (bDrawDebugRays) {
-		DrawDebugVisualization(DeltaTime, GetSettings());
+		DrawDebugVisualization(GetSettings());
 	}
 
 	FUpdater::UpdateAudioParameters(*this, DeltaTime, GetSettings());

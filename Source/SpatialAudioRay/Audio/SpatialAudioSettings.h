@@ -844,14 +844,6 @@ public:
 	float DiffractionEdgeSampleStep = 30.f;
 
 	/**
-	 * Fraction of each ray's total travel budget within which edge sampling is performed.
-	 * 0.3 = only the first 30% of each ray's path is sampled. Reduces trace cost for distant rays.
-	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Virtual Source",
-		meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float DiffractionEdgeSampleRange = 0.3f;
-
-	/**
 	 * Maximum number of sample positions tested per ray segment during LoS sampling.
 	 * Each sample costs 2 traces (nudge + LoS); sampling stops as soon as one succeeds.
 	 * 0 = no limit (original behaviour). Lower values cap worst-case trace cost for long

@@ -154,7 +154,6 @@ void USpatialAudioDebugSubsystem::Tick(float DeltaTime) {
 		ApplyToggle(First->ToggleVirtualSourceKey, bPrevSubModeKeyDown[0], &USpatialAudioComponent::bShowVirtualSourceRays);
 		ApplyToggle(First->ToggleBounceRaysKey, bPrevSubModeKeyDown[1], &USpatialAudioComponent::bShowBounceRays);
 		ApplyToggle(First->ToggleDebugTextKey, bPrevSubModeKeyDown[2], &USpatialAudioComponent::bShowDebugText);
-		ApplyToggle(First->ToggleReplayDebugKey, bPrevSubModeKeyDown[3], &USpatialAudioComponent::bReplayDebug);
 		ApplyToggle(First->ToggleDiffractionPathsKey, bPrevSubModeKeyDown[4], &USpatialAudioComponent::bShowDiffractionPaths);
 		ApplyToggle(First->ToggleEdgePointsKey, bPrevSubModeKeyDown[5], &USpatialAudioComponent::bShowEdgePoints);
 		ApplyToggle(First->ToggleSurfaceCrawlKey, bPrevSubModeKeyDown[6], &USpatialAudioComponent::bShowSurfaceCrawl);

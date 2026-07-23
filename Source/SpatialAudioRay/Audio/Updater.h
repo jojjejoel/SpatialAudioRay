@@ -6,6 +6,8 @@ class USpatialAudioComponent;
 class USpatialAudioSettings;
 class UWorld;
 struct FEdgeCluster;
+struct FVirtualVoice;
+struct FVirtualSlot;
 
 class FUpdater {
 public:
@@ -40,6 +42,24 @@ private:
 	static void UpdateDualModeAudio(USpatialAudioComponent& Component, float DeltaTime, const USpatialAudioSettings& Settings,
 	                                float CurvedOcclusion);
 
+	// ── TickDirectLoSSampling phases ─────────────────────────────────────────
+	static void TrySampleOffsetLoS(USpatialAudioComponent& Component, UWorld* World, const USpatialAudioSettings& Settings,
+	                               float DeltaTime, const FVector& SourcePos, const FVector& ListenerPos,
+	                               int32 RotationSteps);
+	static void UpdateSmoothedOcclusionFromSamples(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings,
+	                                               float DeltaTime, int32 RotationSteps);
+
+	// ── PerformUpdateRayCast phases ──────────────────────────────────────────
+	struct FEdgeWeightAccum {
+		int32 RaysReached = 0;
+		FVector WeightedPos = FVector::ZeroVector;
+		float PosWeightTotal = 0.f;
+		float SrcWeightTotal = 0.f;
+		float WeightedDistSum = 0.f;
+	};
+	static FEdgeWeightAccum AccumulateCachedEdgeWeights(USpatialAudioComponent& Component, UWorld* World,
+	                                                    const USpatialAudioSettings& Settings, const FVector& ListenerPos);
+
 	/** Matches the desired voice set (edge clusters, or one aggregate voice when none exist)
 	 *  to the active voices: within-glide-range matches keep their slot and glide; everything
 	 *  else fades out in place while a replacement fades in on a fresh slot. */
@@ -47,4 +67,31 @@ private:
 	                                        const TArray<FEdgeCluster>& Clusters,
 	                                        const USpatialAudioSettings& Settings);
 
+	// ── SyncVirtualVoicesToClusters phases ───────────────────────────────────
+	struct FDesired {
+		FVector Position;
+		float PathDist;
+		float PathAttenuation;
+		float WeightShare;
+		int32 MatchedVoice = INDEX_NONE;
+	};
+	static TArray<FDesired> BuildDesiredVoices(USpatialAudioComponent& Component, const TArray<FEdgeCluster>& Clusters,
+	                                           const USpatialAudioSettings& Settings);
+	static void MatchVoicesToDesired(const TArray<FVirtualVoice>& Voices, TArray<FDesired>& Desired,
+	                                 const USpatialAudioSettings& Settings, TArray<bool>& OutVoiceClaimed);
+	static void FadeOutUnmatchedVoices(USpatialAudioComponent& Component, TArray<FVirtualVoice>& Voices,
+	                                   const TArray<bool>& VoiceClaimed);
+	static void AssignDesiredToVoices(USpatialAudioComponent& Component, TArray<FVirtualVoice>& Voices,
+	                                  TArray<FDesired>& Desired);
+
+	// ── PerformLoSBreakSweep phases ──────────────────────────────────────────
+	struct FLoSBreakRayResult {
+		bool bFound = false;
+		FVector Point = FVector::ZeroVector;
+		float CumDist = 0.f;
+	};
+	static FLoSBreakRayResult TraceSingleLoSBreakRay(USpatialAudioComponent& Component, UWorld* World,
+	                                                 const USpatialAudioSettings& Settings, const FVector& SourcePos,
+	                                                 const FVector& ListenerPos, const FVector& ToListenerDir, bool bBias,
+	                                                 int32 EffMaxBounces, float MaxPathDist, float SteerDist, int32 RayIndex);
 };

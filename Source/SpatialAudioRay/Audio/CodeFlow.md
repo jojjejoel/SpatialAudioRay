@@ -204,7 +204,7 @@ The component holds all shared state. The important groups:
 
 `RayPhysics.cpp` — `CrawlSurfaceToEdge` and `ProcessRayHit`
 
-These are called identically by both the async cast (`TickAsyncCast` → `ProcessRayHit`) and the replay debug sweep (`PerformReplaySweep`). Reading them together explains both.
+These are called identically by both the async cast (`TickAsyncCast` → `ProcessRayHit`) and the sync LoS-break sweep (`FUpdater::TraceSingleLoSBreakRay`). Reading them together explains both.
 
 `ProcessRayHit` decides what happens when a ray hits a surface:
 - Even-numbered bounces crawl; odd bounces reflect (or vice versa, depending on `bNextHitCrawls`).

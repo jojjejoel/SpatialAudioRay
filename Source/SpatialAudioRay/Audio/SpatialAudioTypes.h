@@ -233,24 +233,6 @@ struct FSpatialRayState {
 	int32 CrawlMaxSteps = 0;
 };
 
-struct FReplayWaypoint {
-	FVector Position;
-	float CumDist;
-	bool bIsCrawlStep;
-	bool bHasLoS;
-	int32 BounceIndex;
-};
-
-struct FReplayRayPath {
-	TArray<FReplayWaypoint> Waypoints;
-	TArray<FVector> CrawlProbeEnds;
-	FVector ListenerPos;
-	FVector LoSPoint;
-	float LoSCumDist;
-	float TotalDist;
-	bool bFoundLoS;
-};
-
 struct FRayHitOutput {
 	bool bCrawlSucceeded = false;
 	bool bLoSFound = false;

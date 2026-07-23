@@ -6,6 +6,68 @@
 
 #include "DrawDebugHelpers.h"
 
+int32 FEdgeCache::SelectRoundRobinEdge(const TArray<FCachedEdgePoint>& Points, int32& Cursor,
+                                       TFunctionRef<bool(const FCachedEdgePoint&)> ShouldSkip) {
+	const int32 Num = Points.Num();
+	for (int32 Step = 0; Step < Num; ++Step) {
+		const int32 Candidate = (Cursor + Step) % Num;
+		if (!ShouldSkip(Points[Candidate])) {
+			Cursor = (Candidate + 1) % Num;
+			return Candidate;
+		}
+	}
+	return INDEX_NONE;
+}
+
+bool FEdgeCache::IsPolylineBlocked(const USpatialAudioComponent& Component, UWorld* World, const TArray<FVector>& Path,
+                                   float Pull, FVector& OutBlockedA, FVector& OutBlockedB) {
+	FHitResult Hit;
+	for (int32 s = 0; s + 1 < Path.Num(); ++s) {
+		FVector A = Path[s];
+		FVector B = Path[s + 1];
+		const FVector AB = B - A;
+		const float Len = AB.Size();
+		if (Len <= Pull * 2.f + 1.f) {
+			continue;
+		}
+		const FVector Dir = AB / Len;
+		A += Dir * Pull;
+		B -= Dir * Pull;
+		if (Component.TraceLine(World, Hit, A, B) || Component.TraceLine(World, Hit, B, A)) {
+			OutBlockedA = A;
+			OutBlockedB = B;
+			return true;
+		}
+	}
+	return false;
+}
+
+TArray<float> FEdgeCache::ComputeProgressiveMoveThresholds(const USpatialAudioComponent& Component,
+                                                            const FVector& SrcPos, float MoveThresh) {
+	TArray<float> EffectiveThresholds;
+	EffectiveThresholds.SetNum(Component.CachedEdgePoints.Num());
+	for (float& V : EffectiveThresholds) { V = MoveThresh; }
+	if (MoveThresh <= 0.f) {
+		return EffectiveThresholds;
+	}
+
+	struct FRankEntry { int32 Idx; float Delta; };
+	TArray<FRankEntry> Sortable;
+	for (int32 i = 0; i < Component.CachedEdgePoints.Num(); ++i) {
+		const FCachedEdgePoint& EP = Component.CachedEdgePoints[i];
+		if (!EP.bEvicting) {
+			const float SrcDelta = FVector::Dist(SrcPos, EP.CapturedSourcePos);
+			Sortable.Add({i, SrcDelta});
+		}
+	}
+	Sortable.Sort([](const FRankEntry& A, const FRankEntry& B) { return A.Delta > B.Delta; });
+	const int32 N = Sortable.Num();
+	for (int32 k = 0; k < N; ++k) {
+		EffectiveThresholds[Sortable[k].Idx] = MoveThresh * (k + 1.f) / N;
+	}
+	return EffectiveThresholds;
+}
+
 bool FEdgeCache::TickEvictionFade(FCachedEdgePoint& EP, float DeltaTime, float EvictFadeTime) {
 	if (!EP.bEvicting) {
 		return false;
@@ -347,29 +409,10 @@ void FEdgeCache::TickCachedEdgeEviction(USpatialAudioComponent& Component, const
 		Component.Phase0Timer = 0.f;
 	}
 
-	// Compute a progressive effective threshold for each point. Sort non-evicting points by
-	// their individual movement delta (most stale first). The k-th point at rank k of N gets
-	// threshold * (k+1)/N, so evictions spread across the movement range instead of all
-	// triggering at once when the threshold is crossed.
-	TArray<float> EffectiveThresholds;
-	EffectiveThresholds.SetNum(Component.CachedEdgePoints.Num());
-	for (float& V : EffectiveThresholds) { V = MoveThresh; }
-	if (MoveThresh > 0.f) {
-		struct FRankEntry { int32 Idx; float Delta; };
-		TArray<FRankEntry> Sortable;
-		for (int32 i = 0; i < Component.CachedEdgePoints.Num(); ++i) {
-			const FCachedEdgePoint& EP = Component.CachedEdgePoints[i];
-			if (!EP.bEvicting) {
-				const float SrcDelta = FVector::Dist(SrcPos, EP.CapturedSourcePos);
-				Sortable.Add({i, SrcDelta});
-			}
-		}
-		Sortable.Sort([](const FRankEntry& A, const FRankEntry& B) { return A.Delta > B.Delta; });
-		const int32 N = Sortable.Num();
-		for (int32 k = 0; k < N; ++k) {
-			EffectiveThresholds[Sortable[k].Idx] = MoveThresh * (k + 1.f) / N;
-		}
-	}
+	// Progressive effective threshold per point: non-evicting points are ranked by movement delta
+	// (most stale first), so evictions spread across the movement range instead of all triggering
+	// at once when the threshold is crossed.
+	const TArray<float> EffectiveThresholds = ComputeProgressiveMoveThresholds(Component, SrcPos, MoveThresh);
 
 	for (int32 i = Component.CachedEdgePoints.Num() - 1; i >= 0; --i) {
 		FCachedEdgePoint& EP = Component.CachedEdgePoints[i];
@@ -415,24 +458,15 @@ void FEdgeCache::TickShortestPathRecheck(USpatialAudioComponent& Component, UWor
 	}
 	Component.ShortestPathCheckTimer = 0.f;
 
-	const int32 Num = Component.CachedEdgePoints.Num();
-	int32 Idx = INDEX_NONE;
-	for (int32 Step = 0; Step < Num; ++Step) {
-		const int32 Candidate = (Component.ShortestPathCheckCursor + Step) % Num;
-		if (!Component.CachedEdgePoints[Candidate].bEvicting) {
-			Idx = Candidate;
-			break;
-		}
-	}
+	const int32 Idx = SelectRoundRobinEdge(Component.CachedEdgePoints, Component.ShortestPathCheckCursor,
+	                                       [](const FCachedEdgePoint& EP) { return EP.bEvicting; });
 	if (Idx == INDEX_NONE) {
 		return;
 	}
-	Component.ShortestPathCheckCursor = (Idx + 1) % Num;
 
 	FCachedEdgePoint& EP = Component.CachedEdgePoints[Idx];
 
-	// Entries without a stored polyline (e.g. seeded by the replay sweep, always 0-bounce, so
-	// the straight source→edge segment was the actual flight) fall back to that segment.
+	// Entries without a stored polyline fall back to the straight source→edge segment.
 	TArray<FVector> FallbackPath;
 	const TArray<FVector>* Path = &EP.ShortestPath;
 	if (EP.ShortestPath.Num() < 2) {
@@ -447,25 +481,8 @@ void FEdgeCache::TickShortestPathRecheck(USpatialAudioComponent& Component, UWor
 	// them the same and evicts on either — a real trade-off, not an oversight (see the eviction
 	// comment below).
 	const float Pull = FMath::Max(Settings.RaySurfaceBias, 1.f);
-	bool bBlocked = false;
-	FVector BlockedA = FVector::ZeroVector;
-	FVector BlockedB = FVector::ZeroVector;
-	FHitResult Hit;
-	for (int32 s = 0; s + 1 < Path->Num() && !bBlocked; ++s) {
-		FVector A = (*Path)[s];
-		FVector B = (*Path)[s + 1];
-		const FVector AB = B - A;
-		const float Len = AB.Size();
-		if (Len <= Pull * 2.f + 1.f) {
-			continue;
-		}
-		const FVector Dir = AB / Len;
-		A += Dir * Pull;
-		B -= Dir * Pull;
-		bBlocked = Component.TraceLine(World, Hit, A, B) || Component.TraceLine(World, Hit, B, A);
-		BlockedA = A;
-		BlockedB = B;
-	}
+	FVector BlockedA, BlockedB;
+	const bool bBlocked = IsPolylineBlocked(Component, World, *Path, Pull, BlockedA, BlockedB);
 
 	if (bBlocked) {
 		if (Component.bDrawDebugRays && Component.bShowShortestPaths) {
@@ -497,19 +514,11 @@ void FEdgeCache::TickInnerAnchorPromotion(USpatialAudioComponent& Component, UWo
 	}
 	Component.ShortestPathPromotionTimer = 0.f;
 
-	const int32 Num = Component.CachedEdgePoints.Num();
-	int32 Idx = INDEX_NONE;
-	for (int32 Step = 0; Step < Num; ++Step) {
-		const int32 Candidate = (Component.ShortestPathPromotionCursor + Step) % Num;
-		if (!Component.CachedEdgePoints[Candidate].bEvicting && !Component.CachedEdgePoints[Candidate].bRelayed) {
-			Idx = Candidate;
-			break;
-		}
-	}
+	const int32 Idx = SelectRoundRobinEdge(Component.CachedEdgePoints, Component.ShortestPathPromotionCursor,
+	                                       [](const FCachedEdgePoint& EP) { return EP.bEvicting || EP.bRelayed; });
 	if (Idx == INDEX_NONE) {
 		return;
 	}
-	Component.ShortestPathPromotionCursor = (Idx + 1) % Num;
 
 	TryPromoteToInnerAnchor(Component, Component.CachedEdgePoints[Idx], World, LisPos);
 }

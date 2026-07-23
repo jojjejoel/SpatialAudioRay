@@ -11,54 +11,53 @@
 #include "GameFramework/Pawn.h"
 
 
-void FAsyncCastManager::ReadbackFinalizeBatch(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings) {
-	UWorld* World = Component.GetWorld();
-
-	// The sweep was submitted against stale positions: the listener may have regained LoS while
-	// the multi-frame cast was in flight. Re-run the LoS sample synchronously at current
-	// positions and discard the whole sweep when occlusion has fallen back below the pre-sweep
-	// threshold — publishing then would register edges that get cleared a frame later, audibly
-	// pumping the virtual voice. With PreSweepOcclusionThreshold at 1 this reduces to the
-	// original rule (discard on ANY clear sample); below 1, results in the pre-warm band are
-	// deliberately kept — warming the cache during partial LoS is the point of pre-sweeps.
-	if (!Component.Finalize.bDirectLoSFound) {
-		AActor* Owner = Component.GetOwner();
-		APlayerController* PC = World ? World->GetFirstPlayerController() : nullptr;
-		APawn* Pawn = PC ? PC->GetPawn() : nullptr;
-		if (Owner && Pawn) {
-			const float SourceR = Settings.bEnableOffsetLoSChecks
-				                      ? Component.AttenuationInnerRadius * Settings.SourceLoSSampleRadiusScale
-				                      : 0.f;
-			const float OffsetFraction = FUpdater::SyncOffsetLoSFraction(
-				Component, World, Owner->GetActorLocation(), Pawn->GetActorLocation(),
-				Settings.bEnableOffsetLoSChecks ? Settings.DirectLoSSampleRadius : 0.f,
-				SourceR, SourceR,
-				UE_HALF_PI / FMath::Clamp(Settings.OffsetRingRotationSteps, 1, 8));
-			if (1.f - OffsetFraction < Settings.PreSweepOcclusionThreshold) {
-				Component.LastOffsetLoSFraction = OffsetFraction;
-				Component.NoLoSSampleStreak = 0;
-				Component.bHasDirectLoS = true;
-				Component.TraceDiag.LastSweepDuration =
-					Component.GetWorld()->GetTimeSeconds() - Component.TraceDiag.SweepStartTime;
-				Component.TraceDiag.LastFinalizeRetries = Component.TraceDiag.FinalizeRetries;
-				Component.TraceDiag.FinalizeRetries = 0;
-				Component.Finalize.bPending = false;
-				Component.Finalize.RefineProbes.Reset();
-				Component.StoredLoSPaths.Reset();
-				Component.StaggeredCycleIndex =
-					(Component.StaggeredCycleIndex + 1) % FMath::Max(1, Settings.FullSweepCycleCount);
-				return;
-			}
-		}
+bool FAsyncCastManager::TryDiscardStaleSweep(USpatialAudioComponent& Component, UWorld* World, const USpatialAudioSettings& Settings) {
+	if (Component.Finalize.bDirectLoSFound) {
+		return false;
 	}
 
+	AActor* Owner = Component.GetOwner();
+	APlayerController* PC = World ? World->GetFirstPlayerController() : nullptr;
+	APawn* Pawn = PC ? PC->GetPawn() : nullptr;
+	if (!Owner || !Pawn) {
+		return false;
+	}
+
+	const float SourceR = Settings.bEnableOffsetLoSChecks
+		                      ? Component.AttenuationInnerRadius * Settings.SourceLoSSampleRadiusScale
+		                      : 0.f;
+	const float OffsetFraction = FUpdater::SyncOffsetLoSFraction(
+		Component, World, Owner->GetActorLocation(), Pawn->GetActorLocation(),
+		Settings.bEnableOffsetLoSChecks ? Settings.DirectLoSSampleRadius : 0.f,
+		SourceR, SourceR,
+		UE_HALF_PI / FMath::Clamp(Settings.OffsetRingRotationSteps, 1, 8));
+	if (1.f - OffsetFraction >= Settings.PreSweepOcclusionThreshold) {
+		return false;
+	}
+
+	Component.LastOffsetLoSFraction = OffsetFraction;
+	Component.NoLoSSampleStreak = 0;
+	Component.bHasDirectLoS = true;
+	Component.TraceDiag.LastSweepDuration =
+		Component.GetWorld()->GetTimeSeconds() - Component.TraceDiag.SweepStartTime;
+	Component.TraceDiag.LastFinalizeRetries = Component.TraceDiag.FinalizeRetries;
+	Component.TraceDiag.FinalizeRetries = 0;
+	Component.Finalize.bPending = false;
+	Component.Finalize.RefineProbes.Reset();
+	Component.StoredLoSPaths.Reset();
+	Component.StaggeredCycleIndex =
+		(Component.StaggeredCycleIndex + 1) % FMath::Max(1, Settings.FullSweepCycleCount);
+	return true;
+}
+
+void FAsyncCastManager::AccumulateRefineProbesIntoCycle(USpatialAudioComponent& Component, UWorld* World, const USpatialAudioSettings& Settings) {
 	int32 RaysReached = Component.Finalize.RaysReached;
 	int32 TotalLoSBounces = Component.Finalize.TotalLoSBounces;
 	float MinLoSDist = Component.Finalize.MinLoSDist;
 	FVector WeightedPosSum = Component.Finalize.WeightedPosSum;
 	float TotalWeight = Component.Finalize.TotalWeight;
 	float WeightedDistSum = Component.Finalize.WeightedDistSum;
-	bool bDirectLoSFound = Component.Finalize.bDirectLoSFound;
+	const bool bDirectLoSFound = Component.Finalize.bDirectLoSFound;
 
 	for (const FFinalizeRefineProbe& RP : Component.Finalize.RefineProbes) {
 		const FVector TrueEdge = RP.LoSOrigin;
@@ -99,122 +98,122 @@ void FAsyncCastManager::ReadbackFinalizeBatch(USpatialAudioComponent& Component,
 	Component.CycleAccum.TotalWeight += TotalWeight;
 	Component.CycleAccum.WeightedDist += WeightedDistSum;
 	Component.CycleAccum.bDirectLoSFound = Component.CycleAccum.bDirectLoSFound || bDirectLoSFound;
+}
 
-	Component.SuccessfulEdgeDirHints = BuildEdgeDirHints(Component.StoredLoSPaths, Component.AsyncSourcePos);
+void FAsyncCastManager::MergeStoredPathsIntoCache(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings) {
+	const float MergeRadiusSq = FMath::Square(Settings.CachedEdgeMergeRadius);
+	TArray<bool> bCycleMatched;
+	bCycleMatched.Init(false, Component.CachedEdgePoints.Num());
 
-	if (Settings.bCacheEdgePoints && Component.StoredLoSPaths.Num() > 0) {
-		const float MergeRadiusSq = FMath::Square(Settings.CachedEdgeMergeRadius);
-		TArray<bool> bCycleMatched;
-		bCycleMatched.Init(false, Component.CachedEdgePoints.Num());
+	// Replacement rank mirrors the cluster priority: source-path falloff × listener-proximity
+	// falloff (listener term inert while ListenerDistanceFalloff is 0). Bounce count stays
+	// the primary key; the 1% hysteresis on the score prevents churn between near-equal
+	// entries. An entry is only displaced by a candidate that ranks better — never just
+	// because a recast from the new positions happened not to re-find it.
+	const float MaxRay = FMath::Max(Component.MaxRayDistance, 1.f);
+	auto RankScore = [&](const float PathDist, const FVector& Pos) -> float
+	{
+		return (1.f / (1.f + Settings.CandidateDistanceFalloff * PathDist / MaxRay))
+			/ (1.f + Settings.ListenerDistanceFalloff
+				* FVector::Dist(Component.AsyncListenerPos, Pos) / MaxRay);
+	};
+	auto IsBetter = [&](const FStoredLoSPath& SP, const FCachedEdgePoint& EP) -> bool
+	{
+		return SP.LoSBounces < EP.LoSBounces ||
+			(SP.LoSBounces == EP.LoSBounces
+				&& RankScore(SP.PathDist, SP.LoSOrigin)
+					> RankScore(EP.EffectivePathDist(), EP.EffectivePoint()) * 1.01f);
+	};
+	auto WriteEntry = [&](FCachedEdgePoint& EP, const FStoredLoSPath& SP)
+	{
+		EP.EdgePoint = SP.LoSOrigin;
+		EP.GeomDist = SP.LoSCumulativeDistance;
+		EP.PathDist = SP.PathDist;
+		EP.ShortestPath = SP.ShortestPath;
+		EP.ShortestPathSegmentVerified = SP.ShortestPathSegmentVerified;
+		EP.LoSBounces = SP.LoSBounces;
+		EP.CapturedSourcePos = Component.AsyncSourcePos;
+		EP.CapturedListenerPos = Component.AsyncListenerPos;
+		EP.bPhase0Pending = false;
+		EP.bEvicting = false;
+		EP.bSourceSideEviction = false;
+		EP.EvictionAlpha = 1.f;
+		// A sweep re-confirming the edge means a fresh listener-visible path exists — any
+		// relay detour is obsolete.
+		EP.ClearRelay();
+		EP.LastLoSListenerPos = Component.AsyncListenerPos;
+		EP.bHasLastLoSListenerPos = true;
+	};
 
-		// Replacement rank mirrors the cluster priority: source-path falloff × listener-proximity
-		// falloff (listener term inert while ListenerDistanceFalloff is 0). Bounce count stays
-		// the primary key; the 1% hysteresis on the score prevents churn between near-equal
-		// entries. An entry is only displaced by a candidate that ranks better — never just
-		// because a recast from the new positions happened not to re-find it.
-		const float MaxRay = FMath::Max(Component.MaxRayDistance, 1.f);
-		auto RankScore = [&](const float PathDist, const FVector& Pos) -> float
-		{
-			return (1.f / (1.f + Settings.CandidateDistanceFalloff * PathDist / MaxRay))
-				/ (1.f + Settings.ListenerDistanceFalloff
-					* FVector::Dist(Component.AsyncListenerPos, Pos) / MaxRay);
-		};
-		auto IsBetter = [&](const FStoredLoSPath& SP, const FCachedEdgePoint& EP) -> bool
-		{
-			return SP.LoSBounces < EP.LoSBounces ||
-				(SP.LoSBounces == EP.LoSBounces
-					&& RankScore(SP.PathDist, SP.LoSOrigin)
-						> RankScore(EP.EffectivePathDist(), EP.EffectivePoint()) * 1.01f);
-		};
-		auto WriteEntry = [&](FCachedEdgePoint& EP, const FStoredLoSPath& SP)
-		{
-			EP.EdgePoint = SP.LoSOrigin;
-			EP.GeomDist = SP.LoSCumulativeDistance;
-			EP.PathDist = SP.PathDist;
-			EP.ShortestPath = SP.ShortestPath;
-			EP.ShortestPathSegmentVerified = SP.ShortestPathSegmentVerified;
-			EP.LoSBounces = SP.LoSBounces;
-			EP.CapturedSourcePos = Component.AsyncSourcePos;
-			EP.CapturedListenerPos = Component.AsyncListenerPos;
-			EP.bPhase0Pending = false;
-			EP.bEvicting = false;
-			EP.bSourceSideEviction = false;
-			EP.EvictionAlpha = 1.f;
-			// A sweep re-confirming the edge means a fresh listener-visible path exists — any
-			// relay detour is obsolete.
-			EP.ClearRelay();
-			EP.LastLoSListenerPos = Component.AsyncListenerPos;
-			EP.bHasLastLoSListenerPos = true;
-		};
+	bool bWorstReplacedThisCycle = false;
 
-		bool bWorstReplacedThisCycle = false;
-
-		for (const FStoredLoSPath& SP : Component.StoredLoSPaths) {
-			int32 BestIdx = -1;
-			float BestDist = MergeRadiusSq;
-			for (int32 i = 0; i < Component.CachedEdgePoints.Num(); ++i) {
-				const float DSq = FVector::DistSquared(Component.CachedEdgePoints[i].EdgePoint, SP.LoSOrigin);
-				if (DSq < BestDist) {
-					BestDist = DSq;
-					BestIdx = i;
-				}
+	for (const FStoredLoSPath& SP : Component.StoredLoSPaths) {
+		int32 BestIdx = -1;
+		float BestDist = MergeRadiusSq;
+		for (int32 i = 0; i < Component.CachedEdgePoints.Num(); ++i) {
+			const float DSq = FVector::DistSquared(Component.CachedEdgePoints[i].EdgePoint, SP.LoSOrigin);
+			if (DSq < BestDist) {
+				BestDist = DSq;
+				BestIdx = i;
 			}
+		}
 
-			if (BestIdx >= 0) {
-				FCachedEdgePoint& EP = Component.CachedEdgePoints[BestIdx];
-				if (IsBetter(SP, EP)) {
-					WriteEntry(EP, SP);
-				}
-				else {
-					EP.CapturedSourcePos = Component.AsyncSourcePos;
-					EP.CapturedListenerPos = Component.AsyncListenerPos;
-				}
-				bCycleMatched[BestIdx] = true;
+		if (BestIdx >= 0) {
+			FCachedEdgePoint& EP = Component.CachedEdgePoints[BestIdx];
+			if (IsBetter(SP, EP)) {
+				WriteEntry(EP, SP);
 			}
 			else {
-				// No admission clustering here: the cache deliberately holds points from ALL
-				// openings — per-frame voice clustering (Math::ClusterEdgePoints) is what groups
-				// them into audible emitters and drops insignificant groups.
-				if (Component.CachedEdgePoints.Num() < Settings.CachedEdgeMaxCount) {
-					FCachedEdgePoint NewEP;
-					WriteEntry(NewEP, SP);
-					NewEP.bNewSinceFillArm = true;
-					Component.CachedEdgePoints.Add(MoveTemp(NewEP));
-					bCycleMatched.Add(true);
+				EP.CapturedSourcePos = Component.AsyncSourcePos;
+				EP.CapturedListenerPos = Component.AsyncListenerPos;
+			}
+			bCycleMatched[BestIdx] = true;
+		}
+		else {
+			// No admission clustering here: the cache deliberately holds points from ALL
+			// openings — per-frame voice clustering (Math::ClusterEdgePoints) is what groups
+			// them into audible emitters and drops insignificant groups.
+			if (Component.CachedEdgePoints.Num() < Settings.CachedEdgeMaxCount) {
+				FCachedEdgePoint NewEP;
+				WriteEntry(NewEP, SP);
+				NewEP.bNewSinceFillArm = true;
+				Component.CachedEdgePoints.Add(MoveTemp(NewEP));
+				bCycleMatched.Add(true);
+			}
+			else if (!bWorstReplacedThisCycle) {
+				int32 WorstIdx = -1;
+				for (int32 i = 0; i < Component.CachedEdgePoints.Num(); ++i) {
+					if (bCycleMatched[i]) {
+						continue;
+					}
+					const FCachedEdgePoint& EP = Component.CachedEdgePoints[i];
+					if (WorstIdx < 0) {
+						WorstIdx = i;
+						continue;
+					}
+					const FCachedEdgePoint& Worst = Component.CachedEdgePoints[WorstIdx];
+					if (EP.LoSBounces > Worst.LoSBounces ||
+						(EP.LoSBounces == Worst.LoSBounces
+							&& RankScore(EP.EffectivePathDist(), EP.EffectivePoint())
+								< RankScore(Worst.EffectivePathDist(), Worst.EffectivePoint()))) {
+						WorstIdx = i;
+					}
 				}
-				else if (!bWorstReplacedThisCycle) {
-					int32 WorstIdx = -1;
-					for (int32 i = 0; i < Component.CachedEdgePoints.Num(); ++i) {
-						if (bCycleMatched[i]) {
-							continue;
-						}
-						const FCachedEdgePoint& EP = Component.CachedEdgePoints[i];
-						if (WorstIdx < 0) {
-							WorstIdx = i;
-							continue;
-						}
-						const FCachedEdgePoint& Worst = Component.CachedEdgePoints[WorstIdx];
-						if (EP.LoSBounces > Worst.LoSBounces ||
-							(EP.LoSBounces == Worst.LoSBounces
-								&& RankScore(EP.EffectivePathDist(), EP.EffectivePoint())
-									< RankScore(Worst.EffectivePathDist(), Worst.EffectivePoint()))) {
-							WorstIdx = i;
-						}
-					}
-					if (WorstIdx >= 0 && IsBetter(SP, Component.CachedEdgePoints[WorstIdx])) {
-						WriteEntry(Component.CachedEdgePoints[WorstIdx], SP);
-						// Displacement lands at a different location — a discovery, unlike the
-						// merge-matched re-confirmation above, which keeps the entry's flag as-is.
-						Component.CachedEdgePoints[WorstIdx].bNewSinceFillArm = true;
-						bCycleMatched[WorstIdx] = true;
-						bWorstReplacedThisCycle = true;
-					}
+				if (WorstIdx >= 0 && IsBetter(SP, Component.CachedEdgePoints[WorstIdx])) {
+					WriteEntry(Component.CachedEdgePoints[WorstIdx], SP);
+					// Displacement lands at a different location — a discovery, unlike the
+					// merge-matched re-confirmation above, which keeps the entry's flag as-is.
+					Component.CachedEdgePoints[WorstIdx].bNewSinceFillArm = true;
+					bCycleMatched[WorstIdx] = true;
+					bWorstReplacedThisCycle = true;
 				}
 			}
 		}
-		Component.StoredLoSPaths.Reset();
 	}
+	Component.StoredLoSPaths.Reset();
+}
 
+void FAsyncCastManager::AdvanceSweepCycleAndIdleState(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings) {
 	const int32 CycleCount = FMath::Max(1, Settings.FullSweepCycleCount);
 	Component.StaggeredCycleIndex = (Component.StaggeredCycleIndex + 1) % CycleCount;
 	Component.CycleAccum.Index = 0;
@@ -237,16 +236,39 @@ void FAsyncCastManager::ReadbackFinalizeBatch(USpatialAudioComponent& Component,
 		Component.SweepScheduling.StationaryIdleSourcePos = Component.AsyncSourcePos;
 		Component.SweepScheduling.StationaryIdleListenerPos = Component.AsyncListenerPos;
 	}
+}
 
-	RaysReached = Component.CycleAccum.RaysReached;
-	TotalLoSBounces = Component.CycleAccum.LoSBounces;
-	MinLoSDist = Component.CycleAccum.MinLoSDist;
-	WeightedPosSum = Component.CycleAccum.WeightedPos;
-	TotalWeight = Component.CycleAccum.TotalWeight;
-	WeightedDistSum = Component.CycleAccum.WeightedDist;
-	bDirectLoSFound = Component.CycleAccum.bDirectLoSFound;
+void FAsyncCastManager::ReadbackFinalizeBatch(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings) {
+	UWorld* World = Component.GetWorld();
 
-	const int32 NumRays = Component.AsyncTotalRays;
+	// The sweep was submitted against stale positions: the listener may have regained LoS while
+	// the multi-frame cast was in flight. Re-run the LoS sample synchronously at current
+	// positions and discard the whole sweep when occlusion has fallen back below the pre-sweep
+	// threshold — publishing then would register edges that get cleared a frame later, audibly
+	// pumping the virtual voice. With PreSweepOcclusionThreshold at 1 this reduces to the
+	// original rule (discard on ANY clear sample); below 1, results in the pre-warm band are
+	// deliberately kept — warming the cache during partial LoS is the point of pre-sweeps.
+	if (TryDiscardStaleSweep(Component, World, Settings)) {
+		return;
+	}
+
+	AccumulateRefineProbesIntoCycle(Component, World, Settings);
+
+	Component.SuccessfulEdgeDirHints = BuildEdgeDirHints(Component.StoredLoSPaths, Component.AsyncSourcePos);
+
+	if (Settings.bCacheEdgePoints && Component.StoredLoSPaths.Num() > 0) {
+		MergeStoredPathsIntoCache(Component, Settings);
+	}
+
+	AdvanceSweepCycleAndIdleState(Component, Settings);
+
+	const int32 RaysReached = Component.CycleAccum.RaysReached;
+	const int32 TotalLoSBounces = Component.CycleAccum.LoSBounces;
+	const float MinLoSDist = Component.CycleAccum.MinLoSDist;
+	const FVector WeightedPosSum = Component.CycleAccum.WeightedPos;
+	const float TotalWeight = Component.CycleAccum.TotalWeight;
+	const float WeightedDistSum = Component.CycleAccum.WeightedDist;
+	const bool bDirectLoSFound = Component.CycleAccum.bDirectLoSFound;
 
 	{
 		FRayAccumulatorInput AccumIn;

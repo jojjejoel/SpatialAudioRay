@@ -2,6 +2,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Templates/Function.h"
 #include "Audio/SpatialAudioSettings.h"
 
 
@@ -13,6 +14,22 @@ public:
 	static void TickCachedEdgeEviction(USpatialAudioComponent& Component, float DeltaTime, const USpatialAudioSettings& Settings);
 
 private:
+	// Round-robins through Points starting at Cursor, skipping entries ShouldSkip rejects, and
+	// advances Cursor past whatever it returns. INDEX_NONE if every entry is skipped. Shared by
+	// the recheck and promotion round-robins below, which differ only in their skip condition.
+	static int32 SelectRoundRobinEdge(const TArray<FCachedEdgePoint>& Points, int32& Cursor,
+	                                  TFunctionRef<bool(const FCachedEdgePoint&)> ShouldSkip);
+	// Traces each segment of Path (pulled in by Pull at both ends to avoid corner-clipping
+	// false positives). Returns true and fills OutBlockedA/B with the clipped endpoints of the
+	// first blocked segment found; short segments (<= 2*Pull+1) are skipped entirely.
+	static bool IsPolylineBlocked(const USpatialAudioComponent& Component, UWorld* World, const TArray<FVector>& Path,
+	                              float Pull, FVector& OutBlockedA, FVector& OutBlockedB);
+	// Ranks non-evicting points by movement delta (most stale first) and spreads their eviction
+	// thresholds across [MoveThresh/N, MoveThresh] so a shared movement doesn't evict all of them
+	// on the same frame.
+	static TArray<float> ComputeProgressiveMoveThresholds(const USpatialAudioComponent& Component,
+	                                                       const FVector& SrcPos, float MoveThresh);
+
 	static bool TickEvictionFade(FCachedEdgePoint& EP, float DeltaTime, float EvictFadeTime);
 	static void TickPhase0Readback(USpatialAudioComponent& Component, FCachedEdgePoint& EP, UWorld* World,
 	                               const FVector& SrcPos, const FVector& LisPos,

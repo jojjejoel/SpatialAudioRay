@@ -152,36 +152,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Debug")
 	FKey ToggleActorLabelsKey = EKeys::L;
 
-	/**
-	 * Replay debug mode: performs a dedicated synchronous sweep and animates the ray paths
-	 * slowly over ReplayAnimDuration seconds so you can follow every bounce and surface crawl.
-	 * Only a fraction of rays is shown (ReplayRayCount). Audio is unaffected — this is
-	 * a purely visual mode. Toggle at runtime with ToggleReplayDebugKey (default F4).
-	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Debug",
-		meta = (EditCondition = "bDrawDebugRays"))
-	bool bReplayDebug = false;
-
-	/** Number of rays captured and animated per replay sweep. Lower = clearer to read. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Debug",
-		meta = (EditCondition = "bDrawDebugRays && bReplayDebug", ClampMin = "1", ClampMax = "64"))
-	int32 ReplayRayCount = 8;
-
-	/** Seconds over which the captured ray paths are animated. Higher = slower, easier to follow. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Debug",
-		meta = (EditCondition = "bDrawDebugRays && bReplayDebug", ClampMin = "0.5", ClampMax = "30.0"))
-	float ReplayAnimDuration = 4.0f;
-
-	/** Seconds to hold the fully-drawn result before starting the next sweep. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Debug",
-		meta = (EditCondition = "bDrawDebugRays && bReplayDebug", ClampMin = "0.0", ClampMax = "30.0"))
-	float ReplayPauseDuration = 1.5f;
-
-	/** Key that toggles bReplayDebug at runtime. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Debug",
-		meta = (EditCondition = "bDrawDebugRays"))
-	FKey ToggleReplayDebugKey = EKeys::Four;
-
 	/** Show the full diffraction ray paths (cyan lines from LoSDiffractionPaths) and
 	 *  the direct-path LoS sampling lines from the full cast. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Debug",
@@ -332,8 +302,15 @@ private:
 	 *  the listener has moved far enough since the last triggered position. */
 	void TickMovementSweepTrigger(float DeltaTime, bool bInRange, const APawn* Pawn);
 
-	void PerformReplaySweep(const USpatialAudioSettings& Settings);
-	void TickReplayDebug(float DeltaTime, const USpatialAudioSettings& Settings);
+	// ── TickComponent phases ─────────────────────────────────────────────────
+	static float TimeToBlendSpeed(float Seconds);
+	void TickAsyncPipeline(const USpatialAudioSettings& Settings);
+	void TickNormalSweepDispatch(float DeltaTime, UWorld* TickWorld, bool bInRange, const APawn* TickPawn, float SubInterval);
+	/** Advances DirectLoSConfirmedDuration/TimeSinceHadDirectLoS, clears the edge cache on a
+	 *  confirmed clear, and returns the occlusion blend speed for this tick. */
+	float UpdateDirectLoSConfirmationAndBlendSpeed(float DeltaTime);
+	void SmoothTowardTargets(float DeltaTime, float OccBlendSpeed, bool bConfirmedDirectLoS);
+	void UpdateTraceDiagnostics(float DeltaTime);
 
 	bool StepSampleSegmentForLoS(const FVector& SegStart, const FVector& SegDir, float SegLen,
 	                             float CumDistBase, const FVector& ListenerPos, float MaxBudget,
@@ -380,7 +357,26 @@ private:
 	void GetEffectiveRayCounts(int32& OutFull, float& OutPriority) const;
 
 
-	void DrawDebugVisualization(float DeltaTime, const USpatialAudioSettings& Settings);
+	void DrawDebugVisualization(const USpatialAudioSettings& Settings);
+
+	// ── DrawDebugVisualization phases ────────────────────────────────────────
+	void DrawSteeringPredictionDebug(const USpatialAudioSettings& Settings);
+	void DrawVirtualSourceDebug();
+	void DrawEdgePointsDebug();
+	void DrawShortestPathsDebug();
+	void DrawDiffractionPathsDebug();
+	void DrawDebugTextHUD(const USpatialAudioSettings& Settings);
+	void DrawDebugLegends();
+
+	// ── DrawDebugTextHUD slots ───────────────────────────────────────────────
+	void DrawSourceAudioDebugText(uint64 Base) const;
+	void DrawVirtualAudioDebugText(uint64 Base) const;
+	void DrawOcclusionDebugText(uint64 Base) const;
+	void DrawEdgeCacheDebugText(uint64 Base, const USpatialAudioSettings& Settings) const;
+	void DrawSweepPacingDebugText(uint64 Base, const USpatialAudioSettings& Settings, int32 ScaledRayCount) const;
+	void DrawAudioSpikeDebugText(uint64 Base) const;
+	void DrawTraceStatsDebugText(uint64 Base) const;
+	void DrawEdgeTimerDebugText(uint64 Base, const USpatialAudioSettings& Settings) const;
 
 	void CacheAudioComponents();
 	void ApplyAttenuationOverrides();
@@ -444,15 +440,6 @@ private:
 
 	FCycleAccumulator CycleAccum;
 	int32 StaggeredCycleIndex = 0;
-
-	struct FReplayState {
-		TArray<FReplayRayPath> Paths;
-		float AnimTimer = 0.f;
-		float PauseTimer = 0.f;
-		bool bAnimating = false;
-		int32 CastRaysReached = 0;
-		float CastTotalDist = 0.f;
-	} Replay;
 
 	float TimeSinceFullCast = 0.f;
 	float StoredEffFullSweepInterval = 0.5f;
