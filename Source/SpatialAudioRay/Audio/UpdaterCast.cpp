@@ -361,8 +361,8 @@ void FUpdater::PerformUpdateRayCast(USpatialAudioComponent& Component, const USp
 				Component.CurrentSourceToVirtualDistance = Accum.WeightedDistSum / Accum.SrcWeightTotal;
 			}
 			const float Leg1Geom = FVector::Dist(SourcePos, Component.TargetVirtualSourceLocation);
-			Component.TargetPathAttenuation = Math::ComputePathAttenuation(
-				Component.CurrentSourceToVirtualDistance, Leg1Geom, Component.MaxRayDistance, Settings);
+			Component.TargetPathAttenuation = Component.ComputePathAttenuationCurved(
+				Component.CurrentSourceToVirtualDistance, Leg1Geom, Settings);
 		}
 		else if (Component.bHasDirectLoS && Component.DirectLoSConfirmedDuration >= Settings.DirectLoSConfirmTime) {
 			Component.TargetPathAttenuation = 0.f;
@@ -394,7 +394,7 @@ TArray<FUpdater::FDesired> FUpdater::BuildDesiredVoices(USpatialAudioComponent& 
 		for (const FEdgeCluster& Cluster : Clusters) {
 			const float Leg1Geom = FVector::Dist(ActorPos, Cluster.Centroid);
 			Desired.Add({Cluster.Centroid, Cluster.PathDist,
-			             Math::ComputePathAttenuation(Cluster.PathDist, Leg1Geom, Component.MaxRayDistance, Settings),
+			             Component.ComputePathAttenuationCurved(Cluster.PathDist, Leg1Geom, Settings),
 			             Cluster.TotalWeight / FMath::Max(TotalWeight, KINDA_SMALL_NUMBER)});
 		}
 	}

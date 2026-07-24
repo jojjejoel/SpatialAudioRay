@@ -6,6 +6,7 @@
 #include "Audio/SpatialAudioTypes.h"
 #include "Components/ActorComponent.h"
 #include "Audio/SpatialAudioSettings.h"
+#include "Sound/SoundAttenuation.h"
 #include "SpatialAudioComponent.generated.h"
 
 
@@ -392,6 +393,19 @@ private:
 	void DrawTraceStatsDebugText(uint64 Base) const;
 	void DrawEdgeTimerDebugText(uint64 Base, const USpatialAudioSettings& Settings) const;
 
+	/** Volume multiplier [0-1] of the VIRTUAL template's attenuation curve evaluated at
+	 *  Distance — the exact curve the engine applies to the emitter→listener leg (inner-radius
+	 *  hold + the asset's falloff model), so the source→emitter leg attenuates coherently with
+	 *  it even when the virtual and source assets differ. Falls back to the widest source's
+	 *  curve, then to a linear ramp over MaxRayDistance. */
+	float EvaluateVirtualAttenuationVolumeAt(float Distance) const;
+	/** Curve-shaped path attenuation: 1 − curve volume at the GeomBlend-blended Leg1 distance,
+	 *  scaled by PathAttenuationStrength. Replaces the linear Math::ComputePathAttenuation on
+	 *  the audible paths — a long acoustic path behind an emitter now costs what the engine
+	 *  would charge for the same distance in front of it, instead of a much flatter linear
+	 *  ramp (which let a close emitter with a long path out-shout a far one with a short path). */
+	float ComputePathAttenuationCurved(float AvgPathDist, float Leg1Geom, const USpatialAudioSettings& S) const;
+
 	void CacheAudioComponents();
 	void ApplyAttenuationOverrides();
 	void ApplyAttenuationOverridesTo(UAudioComponent* AC) const;
@@ -491,6 +505,14 @@ private:
 	 *  Ray count priority is clamped to 1.0 within 2x this distance, then scales to 0 at MaxRayDistance.
 	 *  0 means no attenuation asset found — falls back to scaling from distance 0. */
 	float AttenuationInnerRadius = 0.f;
+
+	/** Copy of the virtual template's effective attenuation settings (falling back to the
+	 *  widest source's when the template has none), captured in ReadAttenuationSettings after
+	 *  ApplyAttenuationOverrides so overrides are included. Evaluated at Leg1 by
+	 *  ComputePathAttenuationCurved — must be the same curve the engine applies to the pooled
+	 *  emitters' own listener leg. */
+	FSoundAttenuationSettings VirtualAttenuationSettings;
+	bool bHasVirtualAttenuationSettings = false;
 
 	float CurrentSourceToVirtualDistance;
 

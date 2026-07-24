@@ -304,7 +304,14 @@ void FAsyncCastManager::ReadbackFinalizeBatch(USpatialAudioComponent& Component,
 		// offset-LoS sampler (TickDirectLoSSampling). The sweep's path-ratio occlusion is lower
 		// than the fraction-derived value whenever a good diffraction path exists, so writing it
 		// per completed cycle kept knocking the target off 100% while fully occluded.
-		Component.TargetPathAttenuation = AccumOut.PathAttenuation;
+		// Curve-shaped rather than AccumOut's linear PathAttenuation, matching the two live
+		// audible sites (update cast, voice building) — the accumulator keeps its pure linear
+		// form for the unit tests and the LoS-break sweep (which discards it).
+		const float Leg1GeomRB = AccumOut.bHasVirtualSource
+			? FVector::Dist(Component.AsyncSourcePos, AccumOut.VirtualSourcePos)
+			: AccumOut.MinLoSDist;
+		Component.TargetPathAttenuation = Component.ComputePathAttenuationCurved(
+			AccumOut.MinLoSDist, Leg1GeomRB, Settings);
 
 		if (AccumOut.bHasVirtualSource) {
 			const float AvgSourceToEdgeDist = WeightedDistSum / TotalWeight;

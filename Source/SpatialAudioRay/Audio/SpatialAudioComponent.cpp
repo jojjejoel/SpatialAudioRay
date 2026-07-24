@@ -248,6 +248,26 @@ void USpatialAudioComponent::ReadAttenuationSettings() {
 		}
 	}
 
+	// The path-attenuation curve comes from the VIRTUAL template — the pooled emitters play
+	// through its attenuation, so charging Leg1 on the same curve keeps the two legs coherent
+	// when the virtual and source assets differ. Widest source only as fallback.
+	const FSoundAttenuationSettings* CurveSource = nullptr;
+	if (const UAudioComponent* VirtualTemplate = CachedAudioComponentVirtual.Get()) {
+		if (VirtualTemplate->bOverrideAttenuation) {
+			CurveSource = &VirtualTemplate->AttenuationOverrides;
+		}
+		else if (VirtualTemplate->AttenuationSettings) {
+			CurveSource = &VirtualTemplate->AttenuationSettings->Attenuation;
+		}
+	}
+	if (!CurveSource || !CurveSource->bAttenuate) {
+		CurveSource = Widest;
+	}
+	if (CurveSource) {
+		VirtualAttenuationSettings = *CurveSource;
+		bHasVirtualAttenuationSettings = true;
+	}
+
 	if (Widest) {
 		AttenuationInnerRadius = Widest->AttenuationShapeExtents.X;
 
@@ -263,6 +283,22 @@ void USpatialAudioComponent::ReadAttenuationSettings() {
 		       TEXT("SpatialAudioComponent: bAutoMaxDistance is true but no attenuation found. Using %.0f cm."),
 		       MaxRayDistance);
 	}
+}
+
+float USpatialAudioComponent::EvaluateVirtualAttenuationVolumeAt(const float Distance) const {
+	if (!bHasVirtualAttenuationSettings || !VirtualAttenuationSettings.bAttenuate) {
+		return 1.f - FMath::Clamp(Distance / FMath::Max(MaxRayDistance, 1.f), 0.f, 1.f);
+	}
+	// Evaluate the real curve (shape inner extent + the asset's falloff model, incl. dB and
+	// custom-curve modes) at a synthetic point Distance along one axis from an identity origin.
+	return VirtualAttenuationSettings.Evaluate(FTransform::Identity, FVector(Distance, 0.f, 0.f));
+}
+
+float USpatialAudioComponent::ComputePathAttenuationCurved(const float AvgPathDist, const float Leg1Geom,
+                                                           const USpatialAudioSettings& S) const {
+	const float BlendedDist = FMath::Lerp(AvgPathDist, Leg1Geom, S.PathAttenuationGeomBlend);
+	return FMath::Clamp((1.f - EvaluateVirtualAttenuationVolumeAt(BlendedDist)) * S.PathAttenuationStrength,
+	                    0.f, 1.f);
 }
 
 void USpatialAudioComponent::PerformStartupLoSCheck() {

@@ -765,9 +765,11 @@ public:
 	 * 1 = full bend when the diffraction path is twice the straight-line distance; 0.5 = full
 	 * bend already at 1.5x. The single saturation point for everything the MetaSound derives
 	 * from VirtualPathBend (LPF, HPF, reverb) — keep the graph's bend input mapped 0→1.
+	 * Large values (10+) effectively mute the detour-ratio term, leaving
+	 * VirtualPathBendDistanceStrength as the sole bend driver (distance-only muffling).
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Virtual Source",
-		meta = (ClampMin = "0.01", ClampMax = "4.0"))
+		meta = (ClampMin = "0.01", ClampMax = "100.0"))
 	float VirtualPathBendFullExcess = 1.f;
 
 	/**

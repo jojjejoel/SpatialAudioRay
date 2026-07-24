@@ -119,6 +119,11 @@ namespace Math {
 	// already blends against (see ComputeVirtualAudioParams) — PathAttenuationGeomBlend applies
 	// the same idea to gain. Blending the distance itself (rather than two separately-computed
 	// attenuation values) keeps this a single pass through the existing formula below.
+	// NOTE: this pure linear form only backs the ray accumulator (and its unit tests) and the
+	// no-attenuation-asset fallback. The live audible paths use
+	// USpatialAudioComponent::ComputePathAttenuationCurved, which evaluates the actual source
+	// attenuation curve at the blended Leg1 distance so the source→emitter leg attenuates with
+	// the same shape the engine applies to the emitter→listener leg.
 	inline float ComputePathAttenuation(float AvgPathDist, float Leg1Geom,
 	                                    float MaxRayDistance, const USpatialAudioSettings& S) {
 		const float BlendedDist = FMath::Lerp(AvgPathDist, Leg1Geom, S.PathAttenuationGeomBlend);
