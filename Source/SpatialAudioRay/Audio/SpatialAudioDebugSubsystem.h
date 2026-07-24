@@ -31,6 +31,21 @@ private:
 	 *  beyond the closest N to the listener, and restores it as sources move back into range. */
 	void ApplyProximityDebugLimit(const USpatialAudioComponent& First, const APlayerController* PC);
 
+	// ── Tick phases ───────────────────────────────────────────────────────────
+	struct FAggregateTraceStats {
+		int32 NumSources = 0;
+		float TracesPerSec = 0.f;
+		float Avg10Sec = 0.f;
+		float Avg60Sec = 0.f;
+	};
+	/** Sums trace diagnostics over all sources, pruning any whose weak pointer has gone stale. */
+	FAggregateTraceStats AggregateSourceTraceStats();
+	bool ComputeAnyDebugRaysActive() const;
+	void HandleCycleKey(const USpatialAudioComponent& First, const APlayerController* PC);
+	void HandleActorLabelsToggleAndDraw(const USpatialAudioComponent& First, const APlayerController* PC);
+	void HandleSubModeKeyToggles(const USpatialAudioComponent& First, const APlayerController* PC);
+	void DrawGlobalDebugHUD(const FAggregateTraceStats& Stats);
+
 	/** Weak so a component destroyed without unregistering is dropped harmlessly next tick. */
 	TArray<TWeakObjectPtr<USpatialAudioComponent>> Sources;
 

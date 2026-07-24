@@ -634,7 +634,7 @@ FUpdater::FLoSBreakRayResult FUpdater::TraceSingleLoSBreakRay(
 
 		FRayHitOutput HitOut;
 		Component.ProcessRayHit(RayHit, Origin, Dir, CumDist, BounceIdx, bNextHitCrawls,
-		                        Result.bFound, bBias, ListenerPos, MaxPathDist, Settings, World, HitOut);
+		                        Result.bFound, bBias, ListenerPos, Settings, World, HitOut);
 
 		if (!Result.bFound && HitOut.bCrawlSucceeded && HitOut.bLoSFound) {
 			Result.bFound = true;

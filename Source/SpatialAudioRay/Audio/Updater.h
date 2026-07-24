@@ -42,6 +42,23 @@ private:
 	static void UpdateDualModeAudio(USpatialAudioComponent& Component, float DeltaTime, const USpatialAudioSettings& Settings,
 	                                float CurvedOcclusion);
 
+	// ── UpdateDualModeAudio phases ────────────────────────────────────────────
+	// Advances the smoothed crossfade ramp/gate and returns the current VirtualCrossfade value.
+	static float UpdateVirtualCrossfadeGate(USpatialAudioComponent& Component, float DeltaTime, const USpatialAudioSettings& Settings);
+	static void ApplySourceOcclusionParams(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings, float CurvedOcclusion);
+
+	struct FVirtualVoiceUpdateResult {
+		float TotalVirtualGain = 0.f;
+		float PrimaryGain = -1.f;
+		float PrimaryPathBend = 0.f;
+		FVector PrimaryOffset = FVector::ZeroVector;
+	};
+	static FVirtualVoiceUpdateResult UpdateVirtualVoiceSlots(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings,
+	                                                         float DeltaTime, float VirtualCrossfade, const FVector& ActorPos);
+	static void UpdateAudioSpikeDiagnostics(USpatialAudioComponent& Component, float DeltaTime,
+	                                        float PrevSrcCrossfade, float PrevCurvedOcc, float PrevVrtGain,
+	                                        float CurvedOcclusion, float TotalVirtualGain);
+
 	// ── TickDirectLoSSampling phases ─────────────────────────────────────────
 	static void TrySampleOffsetLoS(USpatialAudioComponent& Component, UWorld* World, const USpatialAudioSettings& Settings,
 	                               float DeltaTime, const FVector& SourcePos, const FVector& ListenerPos,

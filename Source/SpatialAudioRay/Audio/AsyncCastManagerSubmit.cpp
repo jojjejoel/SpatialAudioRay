@@ -582,7 +582,7 @@ void FAsyncCastManager::ProcessRayBounceContinuation(USpatialAudioComponent& Com
 		return;
 	}
 
-	Ray.Dir = ComputeBouncedDirection(Ray.Dir, Hit.Normal, !Ray.bLoSFound && bBias,
+	Ray.Dir = Math::ComputeBouncedDirection(Ray.Dir, Hit.Normal, !Ray.bLoSFound && bBias,
 	                                  Hit.Location, Component.AsyncSteeringListenerPos, Settings.SurfaceRoughness,
 	                                  Settings.BounceListenerBias);
 	Ray.Origin = Hit.Location + Hit.Normal * Settings.RaySurfaceBias;
@@ -822,7 +822,7 @@ FAsyncCastManager::FCrawlStepResult FAsyncCastManager::EvaluateCrawlSteps(
 	return Result;
 }
 
-void FAsyncCastManager::DrawCrawlDebugVisualization(USpatialAudioComponent& Component, const FSpatialRayState& Ray,
+void FAsyncCastManager::DrawCrawlDebugVisualization(const FSpatialRayState& Ray,
                                                      UWorld* World, const FCrawlStepResult& Result, int32 Limit,
                                                      const USpatialAudioSettings& Settings) {
 	DrawDebugSphere(World, Ray.CrawlNudgedStart, 6.f, 6, FColor::Cyan,
@@ -841,7 +841,7 @@ void FAsyncCastManager::DrawCrawlDebugVisualization(USpatialAudioComponent& Comp
 
 		DrawDebugSphere(World, SP.StepPos, Radius, 6, StepColor,
 		                false, Settings.DebugLineDuration, SDPG_Foreground, 1.f);
-		// Cyan = crawl movement, matching the replay sweep's crawl color; flight segments stay white.
+		// Cyan marks crawl movement; flight segments stay white.
 		DrawDebugLine(World, Prev, SP.StepPos, FColor(0, 220, 255),
 		              false, Settings.DebugLineDuration, 0, 1.5f);
 		Prev = SP.StepPos;
@@ -880,7 +880,7 @@ void FAsyncCastManager::ApplyCrawlResult(USpatialAudioComponent& Component, FSpa
 		}
 	}
 	else {
-		Ray.Dir = ComputeBouncedDirection(Ray.CrawlInDir, Ray.CrawlHitNormal, !Ray.bLoSFound && bBias,
+		Ray.Dir = Math::ComputeBouncedDirection(Ray.CrawlInDir, Ray.CrawlHitNormal, !Ray.bLoSFound && bBias,
 		                                  Ray.CrawlHitLoc, Component.AsyncSteeringListenerPos, Settings.SurfaceRoughness,
 		                                  Settings.BounceListenerBias);
 		Ray.Origin = Ray.CrawlHitLoc + Ray.CrawlHitNormal * Settings.RaySurfaceBias;
@@ -910,7 +910,7 @@ void FAsyncCastManager::ProcessCrawlBatch(USpatialAudioComponent& Component, FSp
 	const FCrawlStepResult Result = EvaluateCrawlSteps(Component, Ray, World, Limit, Settings);
 
 	if (Component.bDrawDebugRays && Component.bShowSurfaceCrawl && World) {
-		DrawCrawlDebugVisualization(Component, Ray, World, Result, Limit, Settings);
+		DrawCrawlDebugVisualization(Ray, World, Result, Limit, Settings);
 	}
 
 	ApplyCrawlResult(Component, Ray, Result, bBias, Settings);
@@ -960,48 +960,6 @@ TArray<FVector> FAsyncCastManager::BuildEdgeDirHints(const TArray<FStoredLoSPath
 		}
 	}
 	return Hints;
-}
-
-FVector FAsyncCastManager::ComputeBouncedDirection(const FVector& InDir, const FVector& SurfaceNormal,
-                                                   bool bApplyBias, const FVector& HitLocation,
-                                                   const FVector& ListenerPos, float SurfaceRoughness,
-                                                   float BounceListenerBias) {
-	const FVector Reflected = Math::ReflectDirection(InDir, SurfaceNormal);
-	FVector RandH = FMath::VRand();
-	if (FVector::DotProduct(RandH, SurfaceNormal) < 0.f) {
-		RandH = -RandH;
-	}
-	FVector Result = FMath::Lerp(Reflected, RandH, SurfaceRoughness).GetSafeNormal();
-
-	if (bApplyBias) {
-		const FVector HitToLis = ListenerPos - HitLocation;
-		const float HitLisDist = HitToLis.Size();
-		if (HitLisDist > 0.f) {
-			const FVector HitToListenerDir = HitToLis / HitLisDist;
-			for (int32 Attempt = 0; Attempt < 20; ++Attempt) {
-				FVector RandH2 = FMath::VRand();
-				if (FVector::DotProduct(RandH2, SurfaceNormal) < 0.f) {
-					RandH2 = -RandH2;
-				}
-				const FVector Cand = FMath::Lerp(Reflected, RandH2, SurfaceRoughness).GetSafeNormal();
-				if (FMath::FRand() < (1.f - FMath::Abs(FVector::DotProduct(Cand, HitToListenerDir)))) {
-					Result = Cand;
-					break;
-				}
-			}
-		}
-	}
-
-	if (BounceListenerBias > 0.f) {
-		const FVector ToListener = (ListenerPos - HitLocation).GetSafeNormal();
-		Result = FMath::Lerp(Result, ToListener, BounceListenerBias).GetSafeNormal();
-		if (FVector::DotProduct(Result, SurfaceNormal) < 0.f) {
-			Result -= 2.f * FVector::DotProduct(Result, SurfaceNormal) * SurfaceNormal;
-			Result.Normalize();
-		}
-	}
-
-	return Result;
 }
 
 FVector FAsyncCastManager::ComputeMidAirTurnDirection(const FVector& InDir, const FVector& TurnPoint,
@@ -1104,8 +1062,7 @@ void FAsyncCastManager::SubmitFinalizeBatch(USpatialAudioComponent& Component, c
 	const bool bDirectLoSFound = !Component.bPreSweepCast && Math::HasAnyDirectLoS(Component.AsyncRays);
 
 	const FCachedPointAccum Accum = AccumulateCachedPoints(
-		Component.PendingValidCachedPoints,
-		Component.AsyncListenerPos, Settings);
+		Component.PendingValidCachedPoints, Settings);
 
 	int32 RaysReached = Accum.RaysReached;
 	int32 TotalLoSBounces = 0;

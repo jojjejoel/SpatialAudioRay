@@ -26,7 +26,6 @@ public:
 
 	static FCachedPointAccum AccumulateCachedPoints(
 		const TArray<FCachedEdgePoint>& Points,
-		const FVector& ListenerPos,
 		const USpatialAudioSettings& Settings);
 
 	static void UpdateMissDirState(
@@ -130,7 +129,7 @@ private:
 	static bool AreCrawlTracesReady(UWorld* World, FSpatialRayState& Ray, FTraceDatum& OutRangeData);
 	static FCrawlStepResult EvaluateCrawlSteps(USpatialAudioComponent& Component, FSpatialRayState& Ray, UWorld* World,
 	                                           int32 Limit, const USpatialAudioSettings& Settings);
-	static void DrawCrawlDebugVisualization(USpatialAudioComponent& Component, const FSpatialRayState& Ray, UWorld* World,
+	static void DrawCrawlDebugVisualization(const FSpatialRayState& Ray, UWorld* World,
 	                                        const FCrawlStepResult& Result, int32 Limit, const USpatialAudioSettings& Settings);
 	static void ApplyCrawlResult(USpatialAudioComponent& Component, FSpatialRayState& Ray,
 	                             const FCrawlStepResult& Result, bool bBias, const USpatialAudioSettings& Settings);
@@ -143,10 +142,6 @@ private:
 	                                   const FVector& SegOrigin, const FVector& SegDir,
 	                                   float SegLen, float Budget,
 	                                   const USpatialAudioSettings& Settings);
-	static FVector ComputeBouncedDirection(const FVector& InDir, const FVector& SurfaceNormal,
-	                                       bool bApplyBias, const FVector& HitLocation,
-	                                       const FVector& ListenerPos, float SurfaceRoughness,
-	                                       float BounceListenerBias);
 	static bool HasClearShortcut(const USpatialAudioComponent& Component, const UWorld* World,
 	                             const FVector& Edge, const FVector& Anchor);
 	static float ComputeStringPulledLeg1(const USpatialAudioComponent& Component, const UWorld* World,

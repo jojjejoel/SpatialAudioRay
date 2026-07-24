@@ -80,7 +80,7 @@ void USpatialAudioComponent::ProcessRayHit(
 	FVector& InOutOrigin, FVector& InOutDir,
 	float& InOutCumDist, int32& InOutBounce, bool& InOutNextHitCrawls,
 	bool bLoSAlreadyFound, bool bBias,
-	const FVector& ListenerPos, float MaxBudget,
+	const FVector& ListenerPos,
 	const USpatialAudioSettings& Settings, UWorld* World,
 	FRayHitOutput& Out) const {
 	Out = FRayHitOutput{};
@@ -110,20 +110,9 @@ void USpatialAudioComponent::ProcessRayHit(
 				Out.bPerpWall = true;
 				Out.PerpWallEdgePoint = EdgePoint;
 				++InOutBounce;
-				const FVector Reflected = ReflectDirection(EdgeDir, CrawlOut.PerpHit.Normal);
-				FVector RandomHemi = FMath::VRand();
-				if (FVector::DotProduct(RandomHemi, CrawlOut.PerpHit.Normal) < 0.f) {
-					RandomHemi = -RandomHemi;
-				}
-				InOutDir = FMath::Lerp(Reflected, RandomHemi, Settings.SurfaceRoughness).GetSafeNormal();
-				if (Settings.BounceListenerBias > 0.f) {
-					const FVector ToListener = (ListenerPos - EdgePoint).GetSafeNormal();
-					InOutDir = FMath::Lerp(InOutDir, ToListener, Settings.BounceListenerBias).GetSafeNormal();
-					if (FVector::DotProduct(InOutDir, CrawlOut.PerpHit.Normal) < 0.f) {
-						InOutDir -= 2.f * FVector::DotProduct(InOutDir, CrawlOut.PerpHit.Normal) * CrawlOut.PerpHit.Normal;
-						InOutDir.Normalize();
-					}
-				}
+				InOutDir = ComputeBouncedDirection(EdgeDir, CrawlOut.PerpHit.Normal, /*bApplyBias=*/false,
+				                                   EdgePoint, ListenerPos, Settings.SurfaceRoughness,
+				                                   Settings.BounceListenerBias);
 				InOutOrigin += CrawlOut.PerpHit.Normal * Settings.RaySurfaceBias;
 			}
 			else {
@@ -134,39 +123,9 @@ void USpatialAudioComponent::ProcessRayHit(
 	}
 
 	if (!Out.bCrawlSucceeded) {
-		const FVector Reflected = ReflectDirection(InOutDir, Hit.Normal);
-		FVector RandomHemi = FMath::VRand();
-		if (FVector::DotProduct(RandomHemi, Hit.Normal) < 0.f) {
-			RandomHemi = -RandomHemi;
-		}
-		InOutDir = FMath::Lerp(Reflected, RandomHemi, Settings.SurfaceRoughness).GetSafeNormal();
-
-		if (!bLoSAlreadyFound && bBias) {
-			const FVector HitToLis = ListenerPos - Hit.Location;
-			const float HitLisDist = HitToLis.Size();
-			if (HitLisDist > 0.f) {
-				const FVector S2L = HitToLis / HitLisDist;
-				for (int32 Attempt = 0; Attempt < 20; ++Attempt) {
-					FVector RandH = FMath::VRand();
-					if (FVector::DotProduct(RandH, Hit.Normal) < 0.f) {
-						RandH = -RandH;
-					}
-					const FVector Cand = FMath::Lerp(Reflected, RandH, Settings.SurfaceRoughness).GetSafeNormal();
-					if (FMath::FRand() < (1.f - FMath::Abs(FVector::DotProduct(Cand, S2L)))) {
-						InOutDir = Cand;
-						break;
-					}
-				}
-			}
-		}
-		if (Settings.BounceListenerBias > 0.f) {
-			const FVector ToListener = (ListenerPos - Hit.Location).GetSafeNormal();
-			InOutDir = FMath::Lerp(InOutDir, ToListener, Settings.BounceListenerBias).GetSafeNormal();
-			if (FVector::DotProduct(InOutDir, Hit.Normal) < 0.f) {
-				InOutDir -= 2.f * FVector::DotProduct(InOutDir, Hit.Normal) * Hit.Normal;
-				InOutDir.Normalize();
-			}
-		}
+		InOutDir = ComputeBouncedDirection(InOutDir, Hit.Normal, !bLoSAlreadyFound && bBias,
+		                                   Hit.Location, ListenerPos, Settings.SurfaceRoughness,
+		                                   Settings.BounceListenerBias);
 		InOutOrigin = Hit.Location + Hit.Normal * Settings.RaySurfaceBias;
 		++InOutBounce;
 	}
@@ -210,16 +169,9 @@ bool USpatialAudioComponent::CrawlSurfaceToEdge(
 			S.MaxStraightFlightDistance / FMath::Max(S.CrawlStepSize, 1.f)),
 			1, S.MaxCrawlSteps);
 	}
-	int32 EffMaxSteps = CrawlStepCap;
-	float MaxCrawlRange = CrawlStepCap * S.CrawlStepSize;
-	{
-		FHitResult FwdHit;
-		if (TraceLine(World, FwdHit, NudgedStart, NudgedStart + CrawlDir * MaxCrawlRange)) {
-			const float HitDist = FVector::Dist(NudgedStart, FwdHit.Location);
-			MaxCrawlRange = HitDist;
-			EffMaxSteps = FMath::Min(FMath::FloorToInt(HitDist / S.CrawlStepSize), CrawlStepCap);
-		}
-	}
+	int32 EffMaxSteps;
+	float MaxCrawlRange;
+	ComputeCrawlStepBudget(NudgedStart, CrawlDir, World, S, CrawlStepCap, EffMaxSteps, MaxCrawlRange);
 
 	bool bLoSFoundDuringCrawl = false;
 
@@ -271,30 +223,53 @@ bool USpatialAudioComponent::CrawlSurfaceToEdge(
 	}
 
 	if (Out && !bLoSFoundDuringCrawl) {
-		for (int32 Step = EffMaxSteps + 1; Step <= S.MaxCrawlSteps; ++Step) {
-			const float StepDist = Step * S.CrawlStepSize;
-			if (StepDist > MaxCrawlRange) {
-				break;
-			}
-			const FVector StepPos = NudgedStart + StepDist * CrawlDir;
-			if (FVector::DotProduct(ListenerPos - StepPos, SurfaceNormal) <= 0.f) {
-				continue;
-			}
-
-			FHitResult LoSHit;
-			if (!TraceLine(World, LoSHit, StepPos, ListenerPos)
-				&& !TraceLine(World, LoSHit, ListenerPos, StepPos)) {
-				Out->LoSPoint = StepPos;
-				Out->LoSCumDist = InCumDist + Step * S.CrawlStepSize;
-				Out->bLoSFound = true;
-				break;
-			}
-		}
+		TryFindLoSBeyondCrawlSteps(NudgedStart, CrawlDir, SurfaceNormal, ListenerPos, World, S,
+		                          EffMaxSteps + 1, MaxCrawlRange, InCumDist, *Out);
 	}
 
 	if (Out) {
 		Out->Steps.Reset();
 		Out->ProbeEnds.Reset();
+	}
+	return false;
+}
+
+void USpatialAudioComponent::ComputeCrawlStepBudget(const FVector& NudgedStart, const FVector& CrawlDir, UWorld* World,
+                                                     const USpatialAudioSettings& S, const int32 CrawlStepCap,
+                                                     int32& OutEffMaxSteps, float& OutMaxCrawlRange) const {
+	OutEffMaxSteps = CrawlStepCap;
+	OutMaxCrawlRange = CrawlStepCap * S.CrawlStepSize;
+	FHitResult FwdHit;
+	if (TraceLine(World, FwdHit, NudgedStart, NudgedStart + CrawlDir * OutMaxCrawlRange)) {
+		const float HitDist = FVector::Dist(NudgedStart, FwdHit.Location);
+		OutMaxCrawlRange = HitDist;
+		OutEffMaxSteps = FMath::Min(FMath::FloorToInt(HitDist / S.CrawlStepSize), CrawlStepCap);
+	}
+}
+
+bool USpatialAudioComponent::TryFindLoSBeyondCrawlSteps(const FVector& NudgedStart, const FVector& CrawlDir,
+                                                         const FVector& SurfaceNormal, const FVector& ListenerPos,
+                                                         UWorld* World, const USpatialAudioSettings& S,
+                                                         const int32 FromStep, const float MaxCrawlRange,
+                                                         const float InCumDist, FCrawlOutput& Out) const {
+	for (int32 Step = FromStep; Step <= S.MaxCrawlSteps; ++Step) {
+		const float StepDist = Step * S.CrawlStepSize;
+		if (StepDist > MaxCrawlRange) {
+			break;
+		}
+		const FVector StepPos = NudgedStart + StepDist * CrawlDir;
+		if (FVector::DotProduct(ListenerPos - StepPos, SurfaceNormal) <= 0.f) {
+			continue;
+		}
+
+		FHitResult LoSHit;
+		if (!TraceLine(World, LoSHit, StepPos, ListenerPos)
+			&& !TraceLine(World, LoSHit, ListenerPos, StepPos)) {
+			Out.LoSPoint = StepPos;
+			Out.LoSCumDist = InCumDist + Step * S.CrawlStepSize;
+			Out.bLoSFound = true;
+			return true;
+		}
 	}
 	return false;
 }

@@ -14,7 +14,6 @@ bool Accumulate_EmptyArray::RunTest(const FString& Parameters) {
 
 	FAsyncCastManager::FCachedPointAccum Accum = FAsyncCastManager::AccumulateCachedPoints(
 		TArray<FCachedEdgePoint>(),
-		FVector::ZeroVector,
 		*Settings);
 
 	TestTrue(
@@ -50,7 +49,6 @@ bool Accumulate_SinglePoint_Alpha1::RunTest(const FString& Parameters) {
 
 	FAsyncCastManager::FCachedPointAccum Accum = FAsyncCastManager::AccumulateCachedPoints(
 		Array,
-		FVector::ZeroVector,
 		*Settings);
 
 	TestTrue(
@@ -82,7 +80,6 @@ bool Accumulate_SinglePoint_AlphaHalf::RunTest(const FString& Parameters) {
 
 	FAsyncCastManager::FCachedPointAccum Accum = FAsyncCastManager::AccumulateCachedPoints(
 		Array,
-		FVector::ZeroVector,
 		*Settings);
 
 	TestTrue(

@@ -15,12 +15,7 @@ void FUpdater::UpdateAudioParameters(USpatialAudioComponent& Component, const fl
 	UpdateDualModeAudio(Component, DeltaTime, Settings, CurvedOcclusion);
 }
 
-void FUpdater::UpdateDualModeAudio(USpatialAudioComponent& Component, const float DeltaTime, const USpatialAudioSettings& Settings,
-                                   const float CurvedOcclusion) {
-	const float PrevSrcCrossfade = Component.AudioDiag.SourceCrossfade;
-	const float PrevCurvedOcc = Component.AudioDiag.CurvedOcclusion;
-	const float PrevVrtGain = Component.AudioDiag.VirtualGain;
-
+float FUpdater::UpdateVirtualCrossfadeGate(USpatialAudioComponent& Component, const float DeltaTime, const USpatialAudioSettings& Settings) {
 	// Source volume is no longer crossfaded externally — the Source's own MetaSound graph
 	// shapes volume/filtering continuously from CurvedOcclusion (including whatever floor it
 	// should hold at full occlusion), driven purely by OcclusionParamName.
@@ -48,10 +43,10 @@ void FUpdater::UpdateDualModeAudio(USpatialAudioComponent& Component, const floa
 	Component.CurrentVirtualCrossfade = Math::ComputeVirtualCrossfadeSlew(
 		Component.CurrentVirtualCrossfade, CrossfadeTarget,
 		Settings.VirtualCrossfadeFadeInTime, Settings.VirtualCrossfadeFadeOutTime, DeltaTime);
-	const float VirtualCrossfade = Component.CurrentVirtualCrossfade;
-	Component.AudioDiag.CurvedOcclusion = CurvedOcclusion;
-	Component.AudioDiag.SourceCrossfade = 1.f;
+	return Component.CurrentVirtualCrossfade;
+}
 
+void FUpdater::ApplySourceOcclusionParams(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings, const float CurvedOcclusion) {
 	for (int32 i = Component.CachedAudioComponentSources.Num() - 1; i >= 0; --i) {
 		if (UAudioComponent* Ac = Component.CachedAudioComponentSources[i].Get()) {
 			Ac->SetFloatParameter(Settings.OcclusionParamName, CurvedOcclusion);
@@ -62,12 +57,12 @@ void FUpdater::UpdateDualModeAudio(USpatialAudioComponent& Component, const floa
 			Component.CachedAudioComponentSources.RemoveAt(i);
 		}
 	}
+}
 
-	AActor* OwnerActor = Component.GetOwner();
-	if (!OwnerActor) {
-		return;
-	}
-	const FVector ActorPos = OwnerActor->GetActorLocation();
+FUpdater::FVirtualVoiceUpdateResult FUpdater::UpdateVirtualVoiceSlots(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings,
+                                                                       const float DeltaTime, const float VirtualCrossfade,
+                                                                       const FVector& ActorPos) {
+	FVirtualVoiceUpdateResult Result;
 
 	const float FadeStep = Settings.VirtualVoiceHandoffFadeTime > 0.f
 		                       ? DeltaTime / Settings.VirtualVoiceHandoffFadeTime
@@ -76,11 +71,6 @@ void FUpdater::UpdateDualModeAudio(USpatialAudioComponent& Component, const floa
 		                              ? 1.f / Settings.PathAttenuationBlendTime
 		                              : 1000.f;
 	const float MoveSpeed = Settings.AudioSourceMoveTime > 0.f ? 1.f / Settings.AudioSourceMoveTime : 1000.f;
-
-	float TotalVirtualGain = 0.f;
-	float PrimaryGain = -1.f;
-	float PrimaryPathBend = 0.f;
-	FVector PrimaryOffset = FVector::ZeroVector;
 
 	for (int32 SlotIdx = 0; SlotIdx < Component.VirtualSlots.Num(); ++SlotIdx) {
 		FVirtualSlot& Slot = Component.VirtualSlots[SlotIdx];
@@ -102,7 +92,7 @@ void FUpdater::UpdateDualModeAudio(USpatialAudioComponent& Component, const floa
 			// instantly when direct LoS is regained.
 			const float Gain = Slot.FrozenGainScale * Slot.FadeAlpha * VirtualCrossfade;
 			VC->SetFloatParameter(FName("VirtualGain"), Component.bDebugSilenceVirtual ? 0.f : Gain);
-			TotalVirtualGain += Gain;
+			Result.TotalVirtualGain += Gain;
 			continue;
 		}
 
@@ -160,37 +150,65 @@ void FUpdater::UpdateDualModeAudio(USpatialAudioComponent& Component, const floa
 		VC->SetFloatParameter(FName("VirtualGain"), Component.bDebugSilenceVirtual ? 0.f : Gain);
 		VC->SetFloatParameter(FName("VirtualPathBend"), VAP.VirtualPathBend);
 
-		TotalVirtualGain += Gain;
-		if (Gain > PrimaryGain) {
-			PrimaryGain = Gain;
-			PrimaryPathBend = VAP.VirtualPathBend;
-			PrimaryOffset = Slot.WorldOffset;
+		Result.TotalVirtualGain += Gain;
+		if (Gain > Result.PrimaryGain) {
+			Result.PrimaryGain = Gain;
+			Result.PrimaryPathBend = VAP.VirtualPathBend;
+			Result.PrimaryOffset = Slot.WorldOffset;
 		}
 	}
+
+	return Result;
+}
+
+void FUpdater::UpdateAudioSpikeDiagnostics(USpatialAudioComponent& Component, const float DeltaTime,
+                                           const float PrevSrcCrossfade, const float PrevCurvedOcc, const float PrevVrtGain,
+                                           const float CurvedOcclusion, const float TotalVirtualGain) {
+	const float SrcDelta = 1.f - PrevSrcCrossfade;
+	const float VrtDelta = TotalVirtualGain - PrevVrtGain;
+	const float OccDelta = CurvedOcclusion - PrevCurvedOcc;
+
+	Component.AudioDiag.DeltaSrcVol = SrcDelta;
+	Component.AudioDiag.DeltaOcc = OccDelta;
+	Component.AudioDiag.DeltaVrtGain = VrtDelta;
+
+	Component.AudioDiag.SpikeTimer = FMath::Max(0.f, Component.AudioDiag.SpikeTimer - DeltaTime);
+	const bool bGainSpike = FMath::Max3(FMath::Abs(SrcDelta), FMath::Abs(VrtDelta), FMath::Abs(OccDelta)) > 0.02f;
+	if (bGainSpike) {
+		Component.AudioDiag.SpikeTimer = 3.f;
+		Component.AudioDiag.SpikeSrcDelta = SrcDelta;
+		Component.AudioDiag.SpikeVrtGainDelta = VrtDelta;
+		Component.AudioDiag.SpikeOccDelta = OccDelta;
+	}
+}
+
+void FUpdater::UpdateDualModeAudio(USpatialAudioComponent& Component, const float DeltaTime, const USpatialAudioSettings& Settings,
+                                   const float CurvedOcclusion) {
+	const float PrevSrcCrossfade = Component.AudioDiag.SourceCrossfade;
+	const float PrevCurvedOcc = Component.AudioDiag.CurvedOcclusion;
+	const float PrevVrtGain = Component.AudioDiag.VirtualGain;
+
+	const float VirtualCrossfade = UpdateVirtualCrossfadeGate(Component, DeltaTime, Settings);
+	Component.AudioDiag.CurvedOcclusion = CurvedOcclusion;
+	Component.AudioDiag.SourceCrossfade = 1.f;
+
+	ApplySourceOcclusionParams(Component, Settings, CurvedOcclusion);
+
+	AActor* OwnerActor = Component.GetOwner();
+	if (!OwnerActor) {
+		return;
+	}
+
+	const FVirtualVoiceUpdateResult Result = UpdateVirtualVoiceSlots(
+		Component, Settings, DeltaTime, VirtualCrossfade, OwnerActor->GetActorLocation());
 
 	// HUD/Blueprint mirror of the loudest slot; diagnostics track the summed virtual level so
 	// the spike detector still sees handoff crossfades as one continuous gain.
-	Component.CurrentAudioComponentOffset = PrimaryGain >= 0.f ? PrimaryOffset : FVector::ZeroVector;
+	Component.CurrentAudioComponentOffset = Result.PrimaryGain >= 0.f ? Result.PrimaryOffset : FVector::ZeroVector;
 
-	{
-		const float SrcDelta = 1.f - PrevSrcCrossfade;
-		const float VrtDelta = TotalVirtualGain - PrevVrtGain;
-		const float OccDelta = CurvedOcclusion - PrevCurvedOcc;
+	UpdateAudioSpikeDiagnostics(Component, DeltaTime, PrevSrcCrossfade, PrevCurvedOcc, PrevVrtGain,
+	                            CurvedOcclusion, Result.TotalVirtualGain);
 
-		Component.AudioDiag.DeltaSrcVol = SrcDelta;
-		Component.AudioDiag.DeltaOcc = OccDelta;
-		Component.AudioDiag.DeltaVrtGain = VrtDelta;
-
-		Component.AudioDiag.SpikeTimer = FMath::Max(0.f, Component.AudioDiag.SpikeTimer - DeltaTime);
-		const bool bGainSpike = FMath::Max3(FMath::Abs(SrcDelta), FMath::Abs(VrtDelta), FMath::Abs(OccDelta)) > 0.02f;
-		if (bGainSpike) {
-			Component.AudioDiag.SpikeTimer = 3.f;
-			Component.AudioDiag.SpikeSrcDelta = SrcDelta;
-			Component.AudioDiag.SpikeVrtGainDelta = VrtDelta;
-			Component.AudioDiag.SpikeOccDelta = OccDelta;
-		}
-	}
-
-	Component.AudioDiag.VirtualGain = TotalVirtualGain;
-	Component.AudioDiag.VirtualPathBend = PrimaryPathBend;
+	Component.AudioDiag.VirtualGain = Result.TotalVirtualGain;
+	Component.AudioDiag.VirtualPathBend = Result.PrimaryPathBend;
 }

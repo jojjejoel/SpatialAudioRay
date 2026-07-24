@@ -37,18 +37,8 @@ TStatId USpatialAudioDebugSubsystem::GetStatId() const {
 	RETURN_QUICK_DECLARE_CYCLE_STAT(USpatialAudioDebugSubsystem, STATGROUP_Tickables);
 }
 
-void USpatialAudioDebugSubsystem::Tick(float DeltaTime) {
-	Super::Tick(DeltaTime);
-	if (!GEngine) {
-		return;
-	}
-
-	int32 NumSources = 0;
-	float TracesPerSec = 0.f;
-	float Avg10Sec = 0.f;
-	float Avg60Sec = 0.f;
-	bool bAnyDebugRays = false;
-
+USpatialAudioDebugSubsystem::FAggregateTraceStats USpatialAudioDebugSubsystem::AggregateSourceTraceStats() {
+	FAggregateTraceStats Stats;
 	for (int32 i = Sources.Num() - 1; i >= 0; --i) {
 		const USpatialAudioComponent* C = Sources[i].Get();
 		if (!C) {
@@ -56,131 +46,114 @@ void USpatialAudioDebugSubsystem::Tick(float DeltaTime) {
 			bEligibleForDebugRays.RemoveAt(i);
 			continue;
 		}
-		++NumSources;
-		TracesPerSec += C->TraceDiag.SnapshotTracesPerSec;
-		Avg10Sec += C->TraceDiag.Avg10Sec;
-		Avg60Sec += C->TraceDiag.Avg60Sec;
-		bAnyDebugRays |= C->bDrawDebugRays;
+		++Stats.NumSources;
+		Stats.TracesPerSec += C->TraceDiag.SnapshotTracesPerSec;
+		Stats.Avg10Sec += C->TraceDiag.Avg10Sec;
+		Stats.Avg60Sec += C->TraceDiag.Avg60Sec;
 	}
+	return Stats;
+}
 
-	// All key config is read from the first registered source, like the G key always was —
-	// per-source rebinding is not supported.
-	USpatialAudioComponent* First = Sources.Num() > 0 ? Sources[0].Get() : nullptr;
-	if (!First) {
-		return;
+bool USpatialAudioDebugSubsystem::ComputeAnyDebugRaysActive() const {
+	for (const TWeakObjectPtr<USpatialAudioComponent>& Src : Sources) {
+		if (const USpatialAudioComponent* C = Src.Get(); C && C->bDrawDebugRays) {
+			return true;
+		}
 	}
+	return false;
+}
 
-	const APlayerController* PC =
-		FSlateApplication::IsInitialized() ? GetWorld()->GetFirstPlayerController() : nullptr;
-
+void USpatialAudioDebugSubsystem::HandleCycleKey(const USpatialAudioComponent& First, const APlayerController* PC) {
 	// The cycle key is polled BEFORE the bAnyDebugRays gate — cycling back in from the
 	// all-off stop is exactly the state where that gate rejects everything else.
-	if (PC) {
-		const bool bDown = First->CycleDebugSourceKey.IsValid()
-			&& PC->IsInputKeyDown(First->CycleDebugSourceKey);
-		if (bDown && !bPrevCycleKeyDown) {
-			bAnyDebugRays = CycleDebugRaySource();
-			bCycleModeActive = bAnyDebugRays;
-		}
-		bPrevCycleKeyDown = bDown;
+	if (!PC) {
+		return;
 	}
-
-	// Not single-source-cycled (never pressed N, or cycled back around to OFF): cap how many
-	// originally-enabled sources actually draw to the closest N, so a level with several
-	// debug-enabled sources doesn't draw all of them at once before one is picked via N.
-	if (!bCycleModeActive) {
-		ApplyProximityDebugLimit(*First, PC);
+	const bool bDown = First.CycleDebugSourceKey.IsValid() && PC->IsInputKeyDown(First.CycleDebugSourceKey);
+	if (bDown && !bPrevCycleKeyDown) {
+		bCycleModeActive = CycleDebugRaySource();
 	}
+	bPrevCycleKeyDown = bDown;
+}
 
-	// Re-derive after the cycle key / proximity limit may have changed which sources draw.
-	bAnyDebugRays = false;
-	for (const TWeakObjectPtr<USpatialAudioComponent>& Src : Sources) {
-		if (const USpatialAudioComponent* C = Src.Get()) {
-			bAnyDebugRays |= C->bDrawDebugRays;
-		}
-	}
-
+void USpatialAudioDebugSubsystem::HandleActorLabelsToggleAndDraw(const USpatialAudioComponent& First, const APlayerController* PC) {
 	// The toggle key itself stays independent of bAnyDebugRays (works even with ray debugging
 	// fully off), but which sources actually get a label (below) is restricted to whichever
 	// ones bDrawDebugRays is already true for — the cycle-selected source, or the proximity-
 	// limited in-range set — so labels only ever appear on sources that are also drawing.
 	if (PC) {
-		const bool bDown = First->ToggleActorLabelsKey.IsValid()
-			&& PC->IsInputKeyDown(First->ToggleActorLabelsKey);
+		const bool bDown = First.ToggleActorLabelsKey.IsValid()
+			&& PC->IsInputKeyDown(First.ToggleActorLabelsKey);
 		if (bDown && !bPrevActorLabelsKeyDown) {
 			bShowActorLabels = !bShowActorLabels;
 		}
 		bPrevActorLabelsKeyDown = bDown;
 	}
 
-	if (bShowActorLabels) {
-		for (const TWeakObjectPtr<USpatialAudioComponent>& Src : Sources) {
-			if (const USpatialAudioComponent* C = Src.Get(); C && C->bDrawDebugRays) {
-				if (AActor* Owner = C->GetOwner()) {
-					// DrawDebugString renders as screen-space text at the point's projected
-					// position — camera-facing and not depth-tested against geometry for free.
-					DrawDebugString(GetWorld(), Owner->GetActorLocation(), Owner->GetActorNameOrLabel(),
-					                 nullptr, FColor::White, 0.f, true);
-				}
+	if (!bShowActorLabels) {
+		return;
+	}
+	for (const TWeakObjectPtr<USpatialAudioComponent>& Src : Sources) {
+		if (const USpatialAudioComponent* C = Src.Get(); C && C->bDrawDebugRays) {
+			if (AActor* Owner = C->GetOwner()) {
+				// DrawDebugString renders as screen-space text at the point's projected
+				// position — camera-facing and not depth-tested against geometry for free.
+				DrawDebugString(GetWorld(), Owner->GetActorLocation(), Owner->GetActorNameOrLabel(),
+				                 nullptr, FColor::White, 0.f, true);
 			}
 		}
 	}
+}
 
-	// Gated on the master debug switch only, NOT on per-source bShowDebugText — key 3 hides
-	// the per-source blocks without taking the global line with them.
-	if (!bAnyDebugRays) {
-		return;
-	}
-
+void USpatialAudioDebugSubsystem::HandleSubModeKeyToggles(const USpatialAudioComponent& First, const APlayerController* PC) {
 	// Polled here rather than per component: with the source cycle at most one component draws
 	// (and the old per-component poll only ran while drawing), so hidden sources would stop
 	// seeing presses and their flags would desync from the visible one. One edge-detector
 	// assigning !First to every source keeps all flags identical, so the cycled-to source
 	// always shows the same sub-mode set just toggled on the previous one.
-	if (PC) {
-		auto ApplyToggle = [&](const FKey& Key, bool& bPrevDown, bool USpatialAudioComponent::* Flag) {
-			const bool bDown = Key.IsValid() && PC->IsInputKeyDown(Key);
-			if (bDown && !bPrevDown) {
-				const bool bNew = !(First->*Flag);
-				for (const TWeakObjectPtr<USpatialAudioComponent>& Src : Sources) {
-					if (USpatialAudioComponent* C = Src.Get()) {
-						C->*Flag = bNew;
-					}
-				}
-			}
-			bPrevDown = bDown;
-		};
-
-		ApplyToggle(First->ToggleVirtualSourceKey, bPrevSubModeKeyDown[0], &USpatialAudioComponent::bShowVirtualSourceRays);
-		ApplyToggle(First->ToggleBounceRaysKey, bPrevSubModeKeyDown[1], &USpatialAudioComponent::bShowBounceRays);
-		ApplyToggle(First->ToggleDebugTextKey, bPrevSubModeKeyDown[2], &USpatialAudioComponent::bShowDebugText);
-		ApplyToggle(First->ToggleDiffractionPathsKey, bPrevSubModeKeyDown[4], &USpatialAudioComponent::bShowDiffractionPaths);
-		ApplyToggle(First->ToggleEdgePointsKey, bPrevSubModeKeyDown[5], &USpatialAudioComponent::bShowEdgePoints);
-		ApplyToggle(First->ToggleSurfaceCrawlKey, bPrevSubModeKeyDown[6], &USpatialAudioComponent::bShowSurfaceCrawl);
-		ApplyToggle(First->ToggleLoSChecksKey, bPrevSubModeKeyDown[7], &USpatialAudioComponent::bShowLoSChecks);
-		ApplyToggle(First->ToggleOffsetLoSChecksKey, bPrevSubModeKeyDown[8], &USpatialAudioComponent::bShowOffsetLoSChecks);
-		ApplyToggle(First->ToggleShortestPathsKey, bPrevSubModeKeyDown[9], &USpatialAudioComponent::bShowShortestPaths);
-		ApplyToggle(First->ToggleSteeringPredictionKey, bPrevSubModeKeyDown[10], &USpatialAudioComponent::bShowSteeringPrediction);
-
-		const bool bDown = First->ToggleGlobalDebugTextKey.IsValid()
-			&& PC->IsInputKeyDown(First->ToggleGlobalDebugTextKey);
-		if (bDown && !bPrevToggleKeyDown) {
-			bShowGlobalDebugText = !bShowGlobalDebugText;
-		}
-		bPrevToggleKeyDown = bDown;
-	}
-
-	if (!bShowGlobalDebugText) {
+	if (!PC) {
 		return;
 	}
+	auto ApplyToggle = [&](const FKey& Key, bool& bPrevDown, bool USpatialAudioComponent::* Flag) {
+		const bool bDown = Key.IsValid() && PC->IsInputKeyDown(Key);
+		if (bDown && !bPrevDown) {
+			const bool bNew = !(First.*Flag);
+			for (const TWeakObjectPtr<USpatialAudioComponent>& Src : Sources) {
+				if (USpatialAudioComponent* C = Src.Get()) {
+					C->*Flag = bNew;
+				}
+			}
+		}
+		bPrevDown = bDown;
+	};
 
+	ApplyToggle(First.ToggleVirtualSourceKey, bPrevSubModeKeyDown[0], &USpatialAudioComponent::bShowVirtualSourceRays);
+	ApplyToggle(First.ToggleBounceRaysKey, bPrevSubModeKeyDown[1], &USpatialAudioComponent::bShowBounceRays);
+	ApplyToggle(First.ToggleDebugTextKey, bPrevSubModeKeyDown[2], &USpatialAudioComponent::bShowDebugText);
+	ApplyToggle(First.ToggleDiffractionPathsKey, bPrevSubModeKeyDown[4], &USpatialAudioComponent::bShowDiffractionPaths);
+	ApplyToggle(First.ToggleEdgePointsKey, bPrevSubModeKeyDown[5], &USpatialAudioComponent::bShowEdgePoints);
+	ApplyToggle(First.ToggleSurfaceCrawlKey, bPrevSubModeKeyDown[6], &USpatialAudioComponent::bShowSurfaceCrawl);
+	ApplyToggle(First.ToggleLoSChecksKey, bPrevSubModeKeyDown[7], &USpatialAudioComponent::bShowLoSChecks);
+	ApplyToggle(First.ToggleOffsetLoSChecksKey, bPrevSubModeKeyDown[8], &USpatialAudioComponent::bShowOffsetLoSChecks);
+	ApplyToggle(First.ToggleShortestPathsKey, bPrevSubModeKeyDown[9], &USpatialAudioComponent::bShowShortestPaths);
+	ApplyToggle(First.ToggleSteeringPredictionKey, bPrevSubModeKeyDown[10], &USpatialAudioComponent::bShowSteeringPrediction);
+
+	const bool bDown = First.ToggleGlobalDebugTextKey.IsValid()
+		&& PC->IsInputKeyDown(First.ToggleGlobalDebugTextKey);
+	if (bDown && !bPrevToggleKeyDown) {
+		bShowGlobalDebugText = !bShowGlobalDebugText;
+	}
+	bPrevToggleKeyDown = bDown;
+}
+
+void USpatialAudioDebugSubsystem::DrawGlobalDebugHUD(const FAggregateTraceStats& Stats) {
 	// Fixed keys 1..N+1 — the per-component slots key off GetUniqueID() * 10, which never
 	// lands this low.
 	GEngine->AddOnScreenDebugMessage(1, 0.f, FColor::Yellow,
 	                                 FString::Printf(
 		                                 TEXT("GLOBAL  %d source%s  │  traces 1s=%.0f/s  10s=%.0f/s  60s=%.0f/s"),
-		                                 NumSources, NumSources == 1 ? TEXT("") : TEXT("s"),
-		                                 TracesPerSec, Avg10Sec, Avg60Sec));
+		                                 Stats.NumSources, Stats.NumSources == 1 ? TEXT("") : TEXT("s"),
+		                                 Stats.TracesPerSec, Stats.Avg10Sec, Stats.Avg60Sec));
 
 	int32 LineKey = 2;
 	for (const TWeakObjectPtr<USpatialAudioComponent>& Src : Sources) {
@@ -195,6 +168,52 @@ void USpatialAudioDebugSubsystem::Tick(float DeltaTime) {
 				                                 C->TraceDiag.Avg60Sec));
 		}
 	}
+}
+
+void USpatialAudioDebugSubsystem::Tick(float DeltaTime) {
+	Super::Tick(DeltaTime);
+	if (!GEngine) {
+		return;
+	}
+
+	const FAggregateTraceStats Stats = AggregateSourceTraceStats();
+
+	// All key config is read from the first registered source, like the G key always was —
+	// per-source rebinding is not supported.
+	USpatialAudioComponent* First = Sources.Num() > 0 ? Sources[0].Get() : nullptr;
+	if (!First) {
+		return;
+	}
+
+	const APlayerController* PC =
+		FSlateApplication::IsInitialized() ? GetWorld()->GetFirstPlayerController() : nullptr;
+
+	HandleCycleKey(*First, PC);
+
+	// Not single-source-cycled (never pressed N, or cycled back around to OFF): cap how many
+	// originally-enabled sources actually draw to the closest N, so a level with several
+	// debug-enabled sources doesn't draw all of them at once before one is picked via N.
+	if (!bCycleModeActive) {
+		ApplyProximityDebugLimit(*First, PC);
+	}
+
+	const bool bAnyDebugRays = ComputeAnyDebugRaysActive();
+
+	HandleActorLabelsToggleAndDraw(*First, PC);
+
+	// Gated on the master debug switch only, NOT on per-source bShowDebugText — key 3 hides
+	// the per-source blocks without taking the global line with them.
+	if (!bAnyDebugRays) {
+		return;
+	}
+
+	HandleSubModeKeyToggles(*First, PC);
+
+	if (!bShowGlobalDebugText) {
+		return;
+	}
+
+	DrawGlobalDebugHUD(Stats);
 }
 
 bool USpatialAudioDebugSubsystem::CycleDebugRaySource() {

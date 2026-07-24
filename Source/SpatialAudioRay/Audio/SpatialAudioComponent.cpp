@@ -314,8 +314,7 @@ void USpatialAudioComponent::TickAsyncPipeline(const USpatialAudioSettings& Sett
 	}
 }
 
-void USpatialAudioComponent::TickNormalSweepDispatch(const float DeltaTime, UWorld* TickWorld, const bool bInRange,
-                                                      const APawn* TickPawn, const float SubInterval) {
+void USpatialAudioComponent::TickNormalSweepDispatch(const float DeltaTime, const bool bInRange, const float SubInterval) {
 	FUpdater::TickDirectLoSSampling(*this, DeltaTime, GetSettings());
 
 	// Full sweeps may not start until one complete ring rotation has confirmed no-LoS
@@ -490,7 +489,7 @@ void USpatialAudioComponent::TickComponent(const float DeltaTime, const ELevelTi
 	const int32 PreUpdateCount = TraceDiag.FrameCount;
 	const int32 CycleCount = FMath::Max(1, GetSettings().FullSweepCycleCount);
 	const float SubInterval = EffFullSweepInterval / CycleCount;
-	TickNormalSweepDispatch(DeltaTime, TickWorld, bInRange, TickPawn, SubInterval);
+	TickNormalSweepDispatch(DeltaTime, bInRange, SubInterval);
 	TraceDiag.UpdateFrameTraces = TraceDiag.FrameCount - PreUpdateCount;
 
 	if (bPrevHadDirectLoS && !bHasDirectLoS && LoSBreakSweepCooldown <= 0.f) {

@@ -353,7 +353,6 @@ FAsyncCastManager::FRayAccumulatorOutput FAsyncCastManager::ComputeAudioFromRayA
 
 FAsyncCastManager::FCachedPointAccum FAsyncCastManager::AccumulateCachedPoints(
 	const TArray<FCachedEdgePoint>& Points,
-	const FVector& ListenerPos,
 	const USpatialAudioSettings& Settings) {
 	FCachedPointAccum Out;
 	for (const FCachedEdgePoint& EP : Points) {

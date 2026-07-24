@@ -10,6 +10,56 @@ namespace Math {
 		return Dir - 2.f * FVector::DotProduct(Dir, Normal) * Normal;
 	}
 
+	// Reflects InDir off SurfaceNormal, blends toward a random hemisphere sample by SurfaceRoughness
+	// (0 = mirror, 1 = fully diffuse), and — when bApplyBias is set — rejection-samples up to 20
+	// diffuse candidates toward whichever one leans most toward the listener (bias strength implicit
+	// in the acceptance probability, not a direct lerp, so roughness keeps controlling the spread).
+	// BounceListenerBias then pulls the result the rest of the way toward the listener directly,
+	// re-projecting above the surface if that pull would send it through. Shared by the async
+	// bounce/crawl-bounce-out paths and the sync ProcessRayHit perp-wall/fallback bounces — all
+	// four must scatter identically.
+	inline FVector ComputeBouncedDirection(const FVector& InDir, const FVector& SurfaceNormal,
+	                                       bool bApplyBias, const FVector& HitLocation,
+	                                       const FVector& ListenerPos, float SurfaceRoughness,
+	                                       float BounceListenerBias) {
+		const FVector Reflected = ReflectDirection(InDir, SurfaceNormal);
+		FVector RandH = FMath::VRand();
+		if (FVector::DotProduct(RandH, SurfaceNormal) < 0.f) {
+			RandH = -RandH;
+		}
+		FVector Result = FMath::Lerp(Reflected, RandH, SurfaceRoughness).GetSafeNormal();
+
+		if (bApplyBias) {
+			const FVector HitToLis = ListenerPos - HitLocation;
+			const float HitLisDist = HitToLis.Size();
+			if (HitLisDist > 0.f) {
+				const FVector HitToListenerDir = HitToLis / HitLisDist;
+				for (int32 Attempt = 0; Attempt < 20; ++Attempt) {
+					FVector RandH2 = FMath::VRand();
+					if (FVector::DotProduct(RandH2, SurfaceNormal) < 0.f) {
+						RandH2 = -RandH2;
+					}
+					const FVector Cand = FMath::Lerp(Reflected, RandH2, SurfaceRoughness).GetSafeNormal();
+					if (FMath::FRand() < (1.f - FMath::Abs(FVector::DotProduct(Cand, HitToListenerDir)))) {
+						Result = Cand;
+						break;
+					}
+				}
+			}
+		}
+
+		if (BounceListenerBias > 0.f) {
+			const FVector ToListener = (ListenerPos - HitLocation).GetSafeNormal();
+			Result = FMath::Lerp(Result, ToListener, BounceListenerBias).GetSafeNormal();
+			if (FVector::DotProduct(Result, SurfaceNormal) < 0.f) {
+				Result -= 2.f * FVector::DotProduct(Result, SurfaceNormal) * SurfaceNormal;
+				Result.Normalize();
+			}
+		}
+
+		return Result;
+	}
+
 	inline float ComputeConeCosine(float Distance, float Radius) {
 		return Distance / FMath::Sqrt(Distance * Distance + Radius * Radius);
 	}

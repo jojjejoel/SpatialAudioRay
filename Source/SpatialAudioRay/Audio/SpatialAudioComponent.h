@@ -305,7 +305,7 @@ private:
 	// ── TickComponent phases ─────────────────────────────────────────────────
 	static float TimeToBlendSpeed(float Seconds);
 	void TickAsyncPipeline(const USpatialAudioSettings& Settings);
-	void TickNormalSweepDispatch(float DeltaTime, UWorld* TickWorld, bool bInRange, const APawn* TickPawn, float SubInterval);
+	void TickNormalSweepDispatch(float DeltaTime, bool bInRange, float SubInterval);
 	/** Advances DirectLoSConfirmedDuration/TimeSinceHadDirectLoS, clears the edge cache on a
 	 *  confirmed clear, and returns the occlusion blend speed for this tick. */
 	float UpdateDirectLoSConfirmationAndBlendSpeed(float DeltaTime);
@@ -321,7 +321,7 @@ private:
 	                   FVector& InOutOrigin, FVector& InOutDir,
 	                   float& InOutCumDist, int32& InOutBounce, bool& InOutNextHitCrawls,
 	                   bool bLoSAlreadyFound, bool bBias,
-	                   const FVector& ListenerPos, float MaxBudget,
+	                   const FVector& ListenerPos,
 	                   const USpatialAudioSettings& Settings, UWorld* World,
 	                   FRayHitOutput& Out) const;
 
@@ -349,6 +349,20 @@ private:
 	                        const USpatialAudioSettings& S,
 	                        float InCumDist = 0.f,
 	                        FCrawlOutput* Out = nullptr) const;
+
+	// ── CrawlSurfaceToEdge phases ────────────────────────────────────────────
+	/** Forward-probes from NudgedStart along CrawlDir to see whether the wall ends before the
+	 *  full step cap; shrinks OutEffMaxSteps/OutMaxCrawlRange to the hit distance if so. */
+	void ComputeCrawlStepBudget(const FVector& NudgedStart, const FVector& CrawlDir, UWorld* World,
+	                            const USpatialAudioSettings& S, int32 CrawlStepCap,
+	                            int32& OutEffMaxSteps, float& OutMaxCrawlRange) const;
+	/** Continues the LoS-only search past the stepped range (debug-only, Out required) up to
+	 *  MaxCrawlRange; the main loop already tried perp-wall/back-probe edges within EffMaxSteps. */
+	bool TryFindLoSBeyondCrawlSteps(const FVector& NudgedStart, const FVector& CrawlDir,
+	                                const FVector& SurfaceNormal, const FVector& ListenerPos,
+	                                UWorld* World, const USpatialAudioSettings& S,
+	                                int32 FromStep, float MaxCrawlRange, float InCumDist,
+	                                FCrawlOutput& Out) const;
 
 	bool TraceLine(const UWorld* World, FHitResult& Hit, const FVector& Start, const FVector& End) const;
 
