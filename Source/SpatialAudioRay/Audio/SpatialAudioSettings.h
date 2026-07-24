@@ -930,7 +930,8 @@ public:
 
 	/**
 	 * Seconds between source-side path re-verifications. Each check re-traces every segment of
-	 * ONE cached edge's stored string-pulled source→edge polyline (round-robin, sync), including
+	 * ONE cached edge's stored string-pulled source→edge polyline (round-robin; traces are
+	 * submitted async and evaluated the following tick), including
 	 * unverified segments, to detect geometry that has closed the path since discovery — Phase 0
 	 * only guards the listener side, source movement only guards source position, and rank
 	 * hysteresis rejects the longer re-finds a closed path produces, so nothing else catches e.g.

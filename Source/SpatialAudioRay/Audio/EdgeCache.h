@@ -19,11 +19,16 @@ private:
 	// the recheck and promotion round-robins below, which differ only in their skip condition.
 	static int32 SelectRoundRobinEdge(const TArray<FCachedEdgePoint>& Points, int32& Cursor,
 	                                  TFunctionRef<bool(const FCachedEdgePoint&)> ShouldSkip);
-	// Traces each segment of Path (pulled in by Pull at both ends to avoid corner-clipping
-	// false positives). Returns true and fills OutBlockedA/B with the clipped endpoints of the
-	// first blocked segment found; short segments (<= 2*Pull+1) are skipped entirely.
-	static bool IsPolylineBlocked(const USpatialAudioComponent& Component, UWorld* World, const TArray<FVector>& Path,
-	                              float Pull, FVector& OutBlockedA, FVector& OutBlockedB);
+	// Submits forward+reverse async traces for every segment of Path (pulled in by Pull at both
+	// ends to avoid corner-clipping false positives; short segments <= 2*Pull+1 are skipped)
+	// into Component.PathRecheck, alongside the pulled endpoints for the readback's debug draw.
+	static void SubmitPolylineRecheckTraces(USpatialAudioComponent& Component, UWorld* World,
+	                                        const TArray<FVector>& Path, float Pull);
+	// Reads back an in-flight polyline recheck; waits (returns) while any trace is still in
+	// flight. A blocked segment source-side-evicts the checked entry, re-found by exact
+	// EdgePoint match — an entry rewritten or removed since submission drops the result.
+	static void TickShortestPathReadback(USpatialAudioComponent& Component, UWorld* World,
+	                                     const FVector& SrcPos, const USpatialAudioSettings& Settings);
 	// Ranks non-evicting points by movement delta (most stale first) and spreads their eviction
 	// thresholds across [MoveThresh/N, MoveThresh] so a shared movement doesn't evict all of them
 	// on the same frame.

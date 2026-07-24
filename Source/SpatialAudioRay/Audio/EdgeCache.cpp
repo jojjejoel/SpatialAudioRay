@@ -19,9 +19,11 @@ int32 FEdgeCache::SelectRoundRobinEdge(const TArray<FCachedEdgePoint>& Points, i
 	return INDEX_NONE;
 }
 
-bool FEdgeCache::IsPolylineBlocked(const USpatialAudioComponent& Component, UWorld* World, const TArray<FVector>& Path,
-                                   float Pull, FVector& OutBlockedA, FVector& OutBlockedB) {
-	FHitResult Hit;
+void FEdgeCache::SubmitPolylineRecheckTraces(USpatialAudioComponent& Component, UWorld* World,
+                                             const TArray<FVector>& Path, float Pull) {
+	Component.PathRecheck.Handles.Reset();
+	Component.PathRecheck.SegStarts.Reset();
+	Component.PathRecheck.SegEnds.Reset();
 	for (int32 s = 0; s + 1 < Path.Num(); ++s) {
 		FVector A = Path[s];
 		FVector B = Path[s + 1];
@@ -33,13 +35,13 @@ bool FEdgeCache::IsPolylineBlocked(const USpatialAudioComponent& Component, UWor
 		const FVector Dir = AB / Len;
 		A += Dir * Pull;
 		B -= Dir * Pull;
-		if (Component.TraceLine(World, Hit, A, B) || Component.TraceLine(World, Hit, B, A)) {
-			OutBlockedA = A;
-			OutBlockedB = B;
-			return true;
-		}
+		// All segments submitted up front (no early-out on the first blocked one, unlike the
+		// old sync walk) — same batch-then-evaluate shape as the async crawl probes.
+		Component.PathRecheck.Handles.Add(Component.SubmitAsyncTrace(World, A, B));
+		Component.PathRecheck.Handles.Add(Component.SubmitAsyncTrace(World, B, A));
+		Component.PathRecheck.SegStarts.Add(A);
+		Component.PathRecheck.SegEnds.Add(B);
 	}
-	return false;
 }
 
 TArray<float> FEdgeCache::ComputeProgressiveMoveThresholds(const USpatialAudioComponent& Component,
@@ -281,11 +283,13 @@ bool FEdgeCache::TryRelayRescue(USpatialAudioComponent& Component, FCachedEdgePo
 }
 
 // While relayed, Phase 0 only watches the relay point, so two blind spots need a periodic
-// sync re-check: direct listener→edge LoS returning (listener walked back around the corner —
+// re-check: direct listener→edge LoS returning (listener walked back around the corner —
 // without un-relaying, the voice stays parked at the relay with its longer path), and the
 // edge→relay leg going dark (it was verified only once, at rescue time — dynamic geometry
-// closing in between would otherwise keep playing through). One round-trip each per Phase 0
-// interval, only while relayed.
+// closing in between would otherwise keep playing through). Both are pure validation with no
+// same-frame dependency, so the four traces (forward + reverse per leg) are submitted async
+// on the Phase 0 interval and read back the following tick(s) — the one-frame skew matches
+// Phase 0's own accepted staleness.
 void FEdgeCache::TickRelayMaintenance(USpatialAudioComponent& Component, FCachedEdgePoint& EP, UWorld* World,
                                       const FVector& SrcPos, const FVector& LisPos, bool bIntervalFired) {
 	if (!EP.bRelayed) {
@@ -301,28 +305,48 @@ void FEdgeCache::TickRelayMaintenance(USpatialAudioComponent& Component, FCached
 		StartEviction(Component, EP, SrcPos);
 		return;
 	}
+
+	if (EP.bRelayCheckPending) {
+		FTraceDatum Data[4];
+		for (int32 i = 0; i < 4; ++i) {
+			if (!World->QueryTraceData(EP.RelayCheckHandles[i], Data[i])) {
+				return;
+			}
+		}
+		EP.bRelayCheckPending = false;
+
+		auto IsClear = [](const FTraceDatum& Datum) {
+			return Datum.OutHits.IsEmpty() || !Datum.OutHits[0].bBlockingHit;
+		};
+		// Direct listener↔edge LoS returned: snap back to the true edge and its shorter path.
+		// LisPos is one frame newer than the position the traces verified — accepted skew.
+		if (IsClear(Data[0]) && IsClear(Data[1])) {
+			EP.ClearRelay();
+			EP.LastLoSListenerPos = LisPos;
+			EP.bHasLastLoSListenerPos = true;
+			EP.CapturedListenerPos = LisPos;
+			return;
+		}
+		// Drop the relay before evicting: Phase 0's clear-restore path un-evicts on listener LoS to
+		// EffectivePoint(), and the listener typically still sees the relay point — keeping bRelayed
+		// would resurrect a path that is broken upstream every interval. Un-relayed, the standard
+		// machinery decides: fan finds the edge → lives directly; all blocked → rescue re-attempts
+		// against the same anchor and fails on the same broken leg → fades out.
+		if (!IsClear(Data[2]) || !IsClear(Data[3])) {
+			EP.ClearRelay();
+			StartEviction(Component, EP, SrcPos);
+		}
+		return;
+	}
+
 	if (!bIntervalFired) {
 		return;
 	}
-	FHitResult Hit;
-	if (!Component.TraceLine(World, Hit, LisPos, EP.EdgePoint)
-		&& !Component.TraceLine(World, Hit, EP.EdgePoint, LisPos)) {
-		EP.ClearRelay();
-		EP.LastLoSListenerPos = LisPos;
-		EP.bHasLastLoSListenerPos = true;
-		EP.CapturedListenerPos = LisPos;
-		return;
-	}
-	// Drop the relay before evicting: Phase 0's clear-restore path un-evicts on listener LoS to
-	// EffectivePoint(), and the listener typically still sees the relay point — keeping bRelayed
-	// would resurrect a path that is broken upstream every interval. Un-relayed, the standard
-	// machinery decides: fan finds the edge → lives directly; all blocked → rescue re-attempts
-	// against the same anchor and fails on the same broken leg → fades out.
-	if (Component.TraceLine(World, Hit, EP.EdgePoint, EP.RelayPoint)
-		|| Component.TraceLine(World, Hit, EP.RelayPoint, EP.EdgePoint)) {
-		EP.ClearRelay();
-		StartEviction(Component, EP, SrcPos);
-	}
+	EP.RelayCheckHandles[0] = Component.SubmitAsyncTrace(World, LisPos, EP.EdgePoint);
+	EP.RelayCheckHandles[1] = Component.SubmitAsyncTrace(World, EP.EdgePoint, LisPos);
+	EP.RelayCheckHandles[2] = Component.SubmitAsyncTrace(World, EP.EdgePoint, EP.RelayPoint);
+	EP.RelayCheckHandles[3] = Component.SubmitAsyncTrace(World, EP.RelayPoint, EP.EdgePoint);
+	EP.bRelayCheckPending = true;
 }
 
 void FEdgeCache::StartEviction(USpatialAudioComponent& Component, FCachedEdgePoint& EP, const FVector& SrcPos,
@@ -396,7 +420,9 @@ void FEdgeCache::TickCachedEdgeEviction(USpatialAudioComponent& Component, const
 		for (FCachedEdgePoint& EP : Component.CachedEdgePoints) {
 			EP.bPhase0Pending = false;
 			EP.bPhase0OffsetPending = false;
+			EP.bRelayCheckPending = false;
 		}
+		Component.PathRecheck.bPending = false;
 	}
 	Component.bPhase0HandlesStale = false;
 
@@ -433,6 +459,7 @@ void FEdgeCache::TickCachedEdgeEviction(USpatialAudioComponent& Component, const
 		TickPhase0Submission(Component, EP, World, LisPos, bIntervalFired);
 	}
 
+	TickShortestPathReadback(Component, World, SrcPos, Settings);
 	TickShortestPathRecheck(Component, World, SrcPos, DeltaTime, Settings);
 	TickInnerAnchorPromotion(Component, World, LisPos, DeltaTime, Settings);
 }
@@ -441,11 +468,13 @@ void FEdgeCache::TickCachedEdgeEviction(USpatialAudioComponent& Component, const
 // measured along, catching geometry that closed the source→edge path after discovery (a static
 // source, a door closing — nothing else sees it: Phase 0 watches the listener leg, movement
 // eviction watches source position, and rank hysteresis discards the worse-ranking re-finds a
-// closed path produces). One edge per interval, sync — a handful of traces at most. Every segment
-// is checked, including unverified ones (a raw crawl/bounce hop the string pull couldn't shortcut
-// past) — a deliberate choice: those were already blocked at discovery, so this will also evict
-// on ordinary multi-corner diffraction paths the moment they're rechecked, not just on genuine
-// geometry change. Enabling ShortestPathRecheckInterval accepts that trade-off.
+// closed path produces). One edge per interval; pure validation with no same-frame dependency,
+// so every segment's traces are submitted async up front here and evaluated by
+// TickShortestPathReadback the following tick. Every segment is checked, including unverified
+// ones (a raw crawl/bounce hop the string pull couldn't shortcut past) — a deliberate choice:
+// those were already blocked at discovery, so this will also evict on ordinary multi-corner
+// diffraction paths the moment they're rechecked, not just on genuine geometry change.
+// Enabling ShortestPathRecheckInterval accepts that trade-off.
 void FEdgeCache::TickShortestPathRecheck(USpatialAudioComponent& Component, UWorld* World,
                                          const FVector& SrcPos, const float DeltaTime,
                                          const USpatialAudioSettings& Settings) {
@@ -453,7 +482,10 @@ void FEdgeCache::TickShortestPathRecheck(USpatialAudioComponent& Component, UWor
 		return;
 	}
 	Component.ShortestPathCheckTimer += DeltaTime;
-	if (Component.ShortestPathCheckTimer < Settings.ShortestPathRecheckInterval) {
+	if (Component.ShortestPathCheckTimer < Settings.ShortestPathRecheckInterval
+		|| Component.PathRecheck.bPending) {
+		// A still-pending batch holds the timer past the interval; the readback consumes it and
+		// the next tick submits — intervals are far longer than a frame, so no check is skipped.
 		return;
 	}
 	Component.ShortestPathCheckTimer = 0.f;
@@ -476,22 +508,57 @@ void FEdgeCache::TickShortestPathRecheck(USpatialAudioComponent& Component, UWor
 
 	// Segment endpoints sit within ~RaySurfaceBias of geometry, so pull both ends in before
 	// tracing — a trace grazing its own anchor surface is corner clipping, not an obstruction.
-	// Every segment is traced, verified or not: an unverified segment failing again doesn't
-	// distinguish "still the same corner" from "geometry changed," so this deliberately treats
-	// them the same and evicts on either — a real trade-off, not an oversight (see the eviction
-	// comment below).
 	const float Pull = FMath::Max(Settings.RaySurfaceBias, 1.f);
-	FVector BlockedA, BlockedB;
-	const bool bBlocked = IsPolylineBlocked(Component, World, *Path, Pull, BlockedA, BlockedB);
+	SubmitPolylineRecheckTraces(Component, World, *Path, Pull);
+	if (Component.PathRecheck.Handles.IsEmpty()) {
+		return;
+	}
+	Component.PathRecheck.EdgePoint = EP.EdgePoint;
+	Component.PathRecheck.bPending = true;
+}
 
-	if (bBlocked) {
-		if (Component.bDrawDebugRays && Component.bShowShortestPaths) {
-			DrawDebugLine(World, BlockedA, BlockedB, FColor::Red, false,
-			              Settings.DebugLineDuration * 4.f, 0, 3.f);
+void FEdgeCache::TickShortestPathReadback(USpatialAudioComponent& Component, UWorld* World,
+                                          const FVector& SrcPos, const USpatialAudioSettings& Settings) {
+	if (!Component.PathRecheck.bPending) {
+		return;
+	}
+	// All-or-nothing, same shape as the async crawl batch: evaluate only once every segment's
+	// traces are ready. All handles were submitted the same tick, so they complete together.
+	TArray<FTraceDatum> Data;
+	Data.SetNum(Component.PathRecheck.Handles.Num());
+	for (int32 i = 0; i < Component.PathRecheck.Handles.Num(); ++i) {
+		if (!World->QueryTraceData(Component.PathRecheck.Handles[i], Data[i])) {
+			return;
 		}
-		// Source-side eviction: the listener leg is typically still clear here, and Phase 0's
-		// clear-restore would resurrect the edge every interval, faster than the fade completes.
-		StartEviction(Component, EP, SrcPos, /*bSourceSide=*/true);
+	}
+	Component.PathRecheck.bPending = false;
+
+	int32 BlockedSeg = INDEX_NONE;
+	for (int32 i = 0; i < Data.Num(); ++i) {
+		if (!Data[i].OutHits.IsEmpty() && Data[i].OutHits[0].bBlockingHit) {
+			BlockedSeg = i / 2;
+			break;
+		}
+	}
+	if (BlockedSeg == INDEX_NONE) {
+		return;
+	}
+
+	// Re-find the checked entry by exact edge position: WriteEntry and inner-anchor promotion
+	// are the only EdgePoint writers, so a mismatch means the path this batch traced no longer
+	// exists — drop the stale result rather than evict whatever sits at the index now.
+	for (FCachedEdgePoint& EP : Component.CachedEdgePoints) {
+		if (!EP.bEvicting && EP.EdgePoint == Component.PathRecheck.EdgePoint) {
+			if (Component.bDrawDebugRays && Component.bShowShortestPaths) {
+				DrawDebugLine(World, Component.PathRecheck.SegStarts[BlockedSeg],
+				              Component.PathRecheck.SegEnds[BlockedSeg], FColor::Red, false,
+				              Settings.DebugLineDuration * 4.f, 0, 3.f);
+			}
+			// Source-side eviction: the listener leg is typically still clear here, and Phase 0's
+			// clear-restore would resurrect the edge every interval, faster than the fade completes.
+			StartEviction(Component, EP, SrcPos, /*bSourceSide=*/true);
+			break;
+		}
 	}
 }
 

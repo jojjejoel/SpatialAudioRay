@@ -676,6 +676,21 @@ private:
 	float ShortestPathCheckTimer = 0.f;
 	int32 ShortestPathCheckCursor = 0;
 
+	/** In-flight async re-trace of one cached edge's stored ShortestPath polyline (the
+	 *  round-robin source-side validation). All segment traces are submitted up front on the
+	 *  interval and read back the following tick(s). The entry is re-found by exact EdgePoint
+	 *  match at readback, so a sweep rewrite, promotion, or eviction in between simply drops
+	 *  the stale result instead of evicting the wrong entry. */
+	struct FPathRecheckState {
+		bool bPending = false;
+		FVector EdgePoint = FVector::ZeroVector;
+		TArray<FTraceHandle> Handles;
+		/** Pulled-in endpoints per traced segment (Handles holds forward + reverse per entry),
+		 *  kept for the blocked-segment debug draw at readback. */
+		TArray<FVector> SegStarts;
+		TArray<FVector> SegEnds;
+	} PathRecheck;
+
 	/** Round-robin state for opportunistic inner-anchor promotion (one edge per
 	 *  ShortestPathPromotionInterval). Separate from ShortestPathCheckCursor above so the two
 	 *  intervals can be tuned independently. */

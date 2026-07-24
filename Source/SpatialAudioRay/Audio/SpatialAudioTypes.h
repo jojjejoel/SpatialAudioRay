@@ -75,10 +75,18 @@ struct FCachedEdgePoint {
 	FVector RelayPoint = FVector::ZeroVector;
 	float RelayDist = 0.f;
 
+	/** In-flight relay-maintenance traces (listener↔edge return check + edge↔relay leg,
+	 *  forward and reverse each), submitted on the Phase 0 interval while relayed and read
+	 *  back the following tick(s). Cleared with the relay itself so a sweep rewrite can't
+	 *  leave the flag pointing at dead handles. */
+	FTraceHandle RelayCheckHandles[4];
+	bool bRelayCheckPending = false;
+
 	void ClearRelay() {
 		bRelayed = false;
 		RelayPoint = FVector::ZeroVector;
 		RelayDist = 0.f;
+		bRelayCheckPending = false;
 	}
 
 	/** Where this edge presents itself to positioning/clustering, and the path distance that
