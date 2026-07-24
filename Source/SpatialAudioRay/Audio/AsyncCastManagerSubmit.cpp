@@ -171,9 +171,21 @@ void FAsyncCastManager::ResolveSweepRayBudget(USpatialAudioComponent& Component,
 		Component.PendingValidCachedPoints.Append(Component.CachedEdgePoints);
 	}
 
-	Component.AsyncActualRays = FMath::Max(0, ScaledRayCount - Component.PendingValidCachedPoints.Num());
+	// Only direct, full-strength entries substitute for rays. A relayed edge means the real
+	// listener leg is gone — the relay is an audible stopgap, not a found path — and an
+	// evicting entry is on its way out; both keep presenting through the snapshot, but the
+	// sweep must keep searching at full budget while they're what's playing, so a genuine
+	// replacement path can be found and displace them.
+	int32 SubstituteCount = 0;
+	for (const FCachedEdgePoint& EP : Component.PendingValidCachedPoints) {
+		if (!EP.bRelayed && !EP.bEvicting) {
+			++SubstituteCount;
+		}
+	}
+
+	Component.AsyncActualRays = FMath::Max(0, ScaledRayCount - SubstituteCount);
 	Component.TraceDiag.SweepAsyncRayAccum = 0;
-	Component.TraceDiag.LastSweepCachedReplaced = Component.PendingValidCachedPoints.Num();
+	Component.TraceDiag.LastSweepCachedReplaced = SubstituteCount;
 }
 
 void FAsyncCastManager::BuildCachedEdgeExclusionDirs(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings) {
@@ -184,7 +196,10 @@ void FAsyncCastManager::BuildCachedEdgeExclusionDirs(USpatialAudioComponent& Com
 
 	const float MoveThreshSq = FMath::Square(Settings.CachedEdgeUpdateMoveThreshold);
 	for (const FCachedEdgePoint& EP : Component.PendingValidCachedPoints) {
-		if (EP.bEvicting) {
+		// A relayed edge must not exclude its direction either: the region around it is exactly
+		// where a real replacement path most likely exists, and finding one is what lets the
+		// relay yield.
+		if (EP.bEvicting || EP.bRelayed) {
 			continue;
 		}
 		const bool bSrcMoved = FVector::DistSquared(Component.AsyncSourcePos, EP.CapturedSourcePos) > MoveThreshSq;

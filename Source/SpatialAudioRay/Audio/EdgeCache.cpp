@@ -99,7 +99,8 @@ void FEdgeCache::TickPhase0Readback(USpatialAudioComponent& Component, FCachedEd
 	// listener-side workarounds below: if that inner point already sees the listener directly,
 	// it's a strictly better outcome than a fan or a relay — the diffraction it stood in for
 	// isn't needed anymore, so nothing downstream has to keep working around the blocked point.
-	if (bBlocked && !EP.bRelayed && TryPromoteToInnerAnchor(Component, EP, World, LisPos)) {
+	if (bBlocked && !EP.bRelayed
+		&& TryPromoteToInnerAnchor(Component, EP, World, LisPos, /*bAllowSubSegmentRefine=*/false)) {
 		bBlocked = false;
 	}
 
@@ -125,30 +126,106 @@ void FEdgeCache::TickPhase0Readback(USpatialAudioComponent& Component, FCachedEd
 	}
 }
 
-// Shrinks the cached edge back to the previous point on its own polyline when that point
-// already has direct, unobstructed listener LoS — the listener can see past the recorded edge
-// to an interior anchor, so that anchor is the more accurate (and more robust) presentation
-// point: no diffraction is needed for what's now a direct final leg. PathDist is corrected by
-// removing the trimmed segment's straight-line length, which is exact when that segment was
-// verified and a close estimate otherwise (traveled distance for an unverified hop is usually
-// only slightly longer than the straight cut between its endpoints).
+// Forward+reverse listener LoS probe at P. Draws itself under the shortest-path view (key 0):
+// green = this point on the path sees the listener, red = blocked. Longer duration than
+// regular debug lines so probe patterns stay visible between the slow check intervals.
+// Shared by inner-anchor promotion and the relay→edge conversion.
+bool FEdgeCache::ProbeListenerLoSPoint(USpatialAudioComponent& Component, UWorld* World,
+                                       const FVector& LisPos, const FVector& P) {
+	FHitResult Hit;
+	const bool bClear = !Component.TraceLine(World, Hit, LisPos, P)
+		&& !Component.TraceLine(World, Hit, P, LisPos);
+	if (Component.bDrawDebugRays && Component.bShowShortestPaths) {
+		DrawDebugSphere(World, P, 7.f, 6, bClear ? FColor::Green : FColor::Red,
+		                false, Component.GetSettings().DebugLineDuration * 4.f, SDPG_Foreground, 1.5f);
+	}
+	return bClear;
+}
+
+// 5-step bisection along the straight segment between a listener-blocked end and a
+// listener-clear end, bracketing the LoS transition — physically the diffraction corner on
+// that segment. Returns the innermost point that itself traced clear (bOutFoundClear true),
+// or ClearEnd unchanged when no midpoint cleared (non-monotone shadowing); it never returns
+// an untraced-blocked point, so a broken monotonicity assumption can only miss an
+// improvement.
+FVector FEdgeCache::BisectListenerLoS(USpatialAudioComponent& Component, UWorld* World, const FVector& LisPos,
+                                      const FVector& BlockedEnd, const FVector& ClearEnd, bool& bOutFoundClear) {
+	FVector Lo = BlockedEnd;
+	FVector Hi = ClearEnd;
+	bOutFoundClear = false;
+	for (int32 Step = 0; Step < 5; ++Step) {
+		const FVector Mid = (Lo + Hi) * 0.5f;
+		if (ProbeListenerLoSPoint(Component, World, LisPos, Mid)) {
+			Hi = Mid;
+			bOutFoundClear = true;
+		}
+		else {
+			Lo = Mid;
+		}
+	}
+	return Hi;
+}
+
+// Shrinks the cached edge back along its own polyline toward the source. Two stages:
+// (1) the previous polyline vertex — if it already has direct, unobstructed listener LoS, the
+// edge jumps the whole segment there: no diffraction is needed for what's now a direct final
+// leg. PathDist is corrected by the trimmed segment's straight-line length (exact when the
+// segment was verified, a close estimate otherwise).
+// (2) when that vertex is blocked and bAllowSubSegmentRefine is set, a short binary search
+// along the final segment brackets the LoS transition point — physically the actual geometric
+// corner. Discovery quantizes edge points to CrawlStepSize/DiffractionEdgeSampleStep, so this
+// converges the emitter onto the real corner and lets it slide continuously along the wall as
+// the listener moves past, instead of staying parked until the whole next vertex clears.
+// Refinement only runs on a VERIFIED final segment (unverified hops hug geometry — a point
+// partway along one can sit inside a wall) and assumes LoS along the segment is roughly
+// monotone (closer to the corner = more visible), which bisection needs to bracket; every
+// accepted point has itself traced clear forward+reverse, so a broken assumption can only
+// miss an improvement, never move the edge to a blocked point. The rescue call site
+// (TickPhase0Readback) passes false: it re-fires every interval while the edge is blocked,
+// and the bisection traces would recur in pinhole states — the slow opportunistic round-robin
+// (TickInnerAnchorPromotion) is the intended home for refinement.
 bool FEdgeCache::TryPromoteToInnerAnchor(USpatialAudioComponent& Component, FCachedEdgePoint& EP, UWorld* World,
-                                         const FVector& LisPos) {
+                                         const FVector& LisPos, const bool bAllowSubSegmentRefine) {
 	if (EP.ShortestPath.Num() < 2) {
 		return false;
 	}
 	const FVector Inner = EP.ShortestPath[EP.ShortestPath.Num() - 2];
-	FHitResult Hit;
-	if (Component.TraceLine(World, Hit, LisPos, Inner) || Component.TraceLine(World, Hit, Inner, LisPos)) {
+	if (ProbeListenerLoSPoint(Component, World, LisPos, Inner)) {
+		EP.PathDist = FMath::Max(0.f, EP.PathDist - FVector::Dist(Inner, EP.EdgePoint));
+		EP.EdgePoint = Inner;
+		EP.ShortestPath.Pop();
+		if (!EP.ShortestPathSegmentVerified.IsEmpty()) {
+			EP.ShortestPathSegmentVerified.Pop();
+		}
+		EP.GeomDist = FVector::Dist(EP.CapturedSourcePos, EP.EdgePoint);
+		return true;
+	}
+
+	if (!bAllowSubSegmentRefine) {
+		return false;
+	}
+	const int32 SegIdx = EP.ShortestPath.Num() - 2;
+	if (!EP.ShortestPathSegmentVerified.IsValidIndex(SegIdx) || !EP.ShortestPathSegmentVerified[SegIdx]) {
+		return false;
+	}
+	// Minimum accepted movement: below this the refined point is within trace-noise range of
+	// the current edge and re-running every interval would just jitter it.
+	const float MinMove = FMath::Max(Component.GetSettings().RaySurfaceBias * 4.f, 4.f);
+	if (FVector::Dist(Inner, EP.EdgePoint) <= MinMove * 2.f) {
 		return false;
 	}
 
-	EP.PathDist = FMath::Max(0.f, EP.PathDist - FVector::Dist(Inner, EP.EdgePoint));
-	EP.EdgePoint = Inner;
-	EP.ShortestPath.Pop();
-	if (!EP.ShortestPathSegmentVerified.IsEmpty()) {
-		EP.ShortestPathSegmentVerified.Pop();
+	bool bFoundClear = false;
+	const FVector Hi = BisectListenerLoS(Component, World, LisPos, Inner, EP.EdgePoint, bFoundClear);
+	if (!bFoundClear || FVector::Dist(Hi, EP.EdgePoint) < MinMove) {
+		return false;
 	}
+
+	// Hi lies on the verified straight segment, so the trimmed length is exact. The edge stays
+	// on the same segment — the polyline's last vertex moves inward with it, no pop.
+	EP.PathDist = FMath::Max(0.f, EP.PathDist - FVector::Dist(Hi, EP.EdgePoint));
+	EP.EdgePoint = Hi;
+	EP.ShortestPath.Last() = Hi;
 	EP.GeomDist = FVector::Dist(EP.CapturedSourcePos, EP.EdgePoint);
 	return true;
 }
@@ -237,27 +314,20 @@ void FEdgeCache::TickPhase0OffsetReadback(USpatialAudioComponent& Component, FCa
 	}
 }
 
-// A "direct" edge is alive and not routed through a relay — its own Phase 0 keeps confirming
-// real listener→edge LoS.
-bool FEdgeCache::HasOtherDirectEdge(const USpatialAudioComponent& Component, const FCachedEdgePoint& Self) {
-	for (const FCachedEdgePoint& EP : Component.CachedEdgePoints) {
-		if (&EP != &Self && !EP.bEvicting && !EP.bRelayed) {
-			return true;
-		}
-	}
-	return false;
-}
-
 // Last resort before eviction: route the edge through the most recent listener position that
 // could still see it. Both legs (edge→relay, relay→current listener) run sync with reverse
 // hygiene — this fires once at the moment LoS is lost, not per frame. Single relay level:
-// an already-relayed edge whose relay went dark just evicts. Skipped entirely while a direct
-// edge exists — the relay only bridges an otherwise-empty presentation, and a voice parked at
-// an old listener position sounds like it comes from the wrong side of the corner once a real
-// edge is carrying the sound.
+// an already-relayed edge whose relay went dark just evicts. Deliberately independent of
+// sibling edges' state: the old "skip while any direct edge exists" gate made rescue depend
+// on processing order (with N edges going dark the same tick, the first N−1 processed saw
+// still-direct siblings and evicted), and once one relay converted into a direct edge it
+// permanently locked out every remaining rescue retry — 8 simultaneous losses produced 1
+// converted edge and 7 deaths. Every totally-blocked edge whose legs verify now preserves
+// itself; the conversion turns each into an honest corner entry and rank/clustering decide
+// audibility.
 bool FEdgeCache::TryRelayRescue(USpatialAudioComponent& Component, FCachedEdgePoint& EP, UWorld* World,
                                 const FVector& LisPos) {
-	if (EP.bRelayed || !EP.bHasLastLoSListenerPos || HasOtherDirectEdge(Component, EP)) {
+	if (EP.bRelayed || !EP.bHasLastLoSListenerPos) {
 		return false;
 	}
 	const FVector& Relay = EP.LastLoSListenerPos;
@@ -295,16 +365,12 @@ void FEdgeCache::TickRelayMaintenance(USpatialAudioComponent& Component, FCached
 	if (!EP.bRelayed) {
 		return;
 	}
-	// Yield to real edges, checked every frame rather than on the interval (it's a flag scan,
-	// no traces): the moment a directly-visible edge exists, the relay's bridging job is over
-	// (same wrong-side-of-corner rationale as the rescue gate). The relay must be dropped
-	// before evicting — see the severed-leg case below for why keeping it would resurrect
-	// the edge every interval.
-	if (HasOtherDirectEdge(Component, EP)) {
-		EP.ClearRelay();
-		StartEviction(Component, EP, SrcPos);
-		return;
-	}
+	// No yield-to-direct-edge check here anymore: it predated the relay→edge conversion, when
+	// a relay could persist parked at an old listener position while a real edge carried the
+	// sound. Now every relay converts on its first maintenance readback, and the yield's only
+	// remaining reachable effect was killing sibling relays mid-conversion — with N edges
+	// relayed at once, the first conversion made HasOtherDirectEdge true and evicted the other
+	// N−1 before their readbacks landed, instead of letting each convert to its own corner.
 
 	if (EP.bRelayCheckPending) {
 		FTraceDatum Data[4];
@@ -335,7 +401,39 @@ void FEdgeCache::TickRelayMaintenance(USpatialAudioComponent& Component, FCached
 		if (!IsClear(Data[2]) || !IsClear(Data[3])) {
 			EP.ClearRelay();
 			StartEviction(Component, EP, SrcPos);
+			return;
 		}
+
+		// Relay confirmed still valid — upgrade it to a real edge instead of staying a stopgap.
+		// The LoS transition along the verified edge→relay leg is the actual second corner the
+		// relay bends around: bisect for it and convert IN PLACE — append the corner to the
+		// polyline (a sub-segment of the traced-clear leg, so verified), extend PathDist by the
+		// exact straight piece, count the extra corner in LoSBounces so ranking stays honest.
+		// The entry becomes a first-class cached edge: standard Phase 0/promotion maintenance
+		// takes over, and it substitutes for rays / excludes its direction again — it is now
+		// backed by verified geometry, unlike the relay it replaces. Fallback when no midpoint
+		// traces clear (non-monotone shadowing): the relay point itself — same acoustics as the
+		// relay, and the promotion refinement walks it back toward the true corner on later
+		// intervals since the appended segment is exactly the bracket it bisects.
+		if (EP.ShortestPath.Num() < 2) {
+			// Defensive: entries without a stored polyline treat the straight source→edge flight
+			// as their path (same reading as the recheck's fallback).
+			EP.ShortestPath = {EP.CapturedSourcePos, EP.EdgePoint};
+			EP.ShortestPathSegmentVerified = {true};
+		}
+		bool bFoundClear = false;
+		const FVector Corner = BisectListenerLoS(Component, World, LisPos, EP.EdgePoint, EP.RelayPoint, bFoundClear);
+		EP.PathDist += FVector::Dist(EP.EdgePoint, Corner);
+		EP.EdgePoint = Corner;
+		EP.ShortestPath.Add(Corner);
+		EP.ShortestPathSegmentVerified.Add(true);
+		EP.LoSBounces += 1;
+		EP.GeomDist = FVector::Dist(EP.CapturedSourcePos, EP.EdgePoint);
+		EP.CapturedListenerPos = LisPos;
+		EP.bNewSinceFillArm = true;
+		EP.LastLoSListenerPos = LisPos;
+		EP.bHasLastLoSListenerPos = true;
+		EP.ClearRelay();
 		return;
 	}
 
@@ -587,5 +685,6 @@ void FEdgeCache::TickInnerAnchorPromotion(USpatialAudioComponent& Component, UWo
 		return;
 	}
 
-	TryPromoteToInnerAnchor(Component, Component.CachedEdgePoints[Idx], World, LisPos);
+	TryPromoteToInnerAnchor(Component, Component.CachedEdgePoints[Idx], World, LisPos,
+	                        /*bAllowSubSegmentRefine=*/true);
 }

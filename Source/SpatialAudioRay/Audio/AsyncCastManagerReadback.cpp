@@ -119,6 +119,14 @@ void FAsyncCastManager::MergeStoredPathsIntoCache(USpatialAudioComponent& Compon
 	};
 	auto IsBetter = [&](const FStoredLoSPath& SP, const FCachedEdgePoint& EP) -> bool
 	{
+		// A relayed incumbent never outranks a fresh sweep-confirmed find: the relay is a
+		// stopgap detour through an old listener position, not a verified acoustic path to the
+		// current one. Without this, a full cache of relayed entries deadlocks — their old
+		// low-bounce paths beat every new find on the bounce-count primary key, nothing enters
+		// the cache, so no direct edge ever exists to trigger the relay yield.
+		if (EP.bRelayed) {
+			return true;
+		}
 		return SP.LoSBounces < EP.LoSBounces ||
 			(SP.LoSBounces == EP.LoSBounces
 				&& RankScore(SP.PathDist, SP.LoSOrigin)
@@ -192,6 +200,14 @@ void FAsyncCastManager::MergeStoredPathsIntoCache(USpatialAudioComponent& Compon
 						continue;
 					}
 					const FCachedEdgePoint& Worst = Component.CachedEdgePoints[WorstIdx];
+					// Relayed entries are categorically the worst incumbents (see IsBetter above);
+					// only compare bounce/rank within the same relay class.
+					if (EP.bRelayed != Worst.bRelayed) {
+						if (EP.bRelayed) {
+							WorstIdx = i;
+						}
+						continue;
+					}
 					if (EP.LoSBounces > Worst.LoSBounces ||
 						(EP.LoSBounces == Worst.LoSBounces
 							&& RankScore(EP.EffectivePathDist(), EP.EffectivePoint())

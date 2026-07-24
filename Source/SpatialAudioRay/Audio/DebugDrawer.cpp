@@ -139,9 +139,14 @@ void USpatialAudioComponent::DrawEdgePointsDebug() {
 	}
 	for (const FCachedEdgePoint& EP : CachedEdgePoints) {
 		DrawDebugSphere(GetWorld(), EP.EdgePoint, 18.f, 8, FColor::Yellow, false, -1.f, SDPG_Foreground, 2.f);
+		// Settings-duration rather than per-frame: since the relay→edge conversion, a relay is
+		// a ~one-Phase-0-interval transitional state — a one-frame draw would flash for a tick
+		// or two, so let it linger long enough to actually see where the relay sat.
 		if (EP.bRelayed) {
-			DrawDebugSphere(GetWorld(), EP.RelayPoint, 14.f, 8, FColor::Yellow, false, -1.f, SDPG_Foreground, 1.f);
-			DrawDebugLine(GetWorld(), EP.EdgePoint, EP.RelayPoint, FColor::Yellow, false, -1.f, 0, 1.f);
+			DrawDebugSphere(GetWorld(), EP.RelayPoint, 14.f, 8, FColor::Yellow, false,
+			                GetSettings().DebugLineDuration, SDPG_Foreground, 1.f);
+			DrawDebugLine(GetWorld(), EP.EdgePoint, EP.RelayPoint, FColor::Yellow, false,
+			              GetSettings().DebugLineDuration, 0, 1.f);
 		}
 	}
 }
@@ -168,11 +173,14 @@ void USpatialAudioComponent::DrawShortestPathsDebug() {
 			                false, -1.f, SDPG_Foreground, 1.5f);
 		}
 		// Relay leg extends the stored path: the RelayDist added to this edge's PathDist
-		// is exactly this segment's length.
+		// is exactly this segment's length. Settings-duration like the key-6 relay draw —
+		// the relay state is transitional since the relay→edge conversion, and a one-frame
+		// draw would vanish before it registers.
 		if (EP.bRelayed && !EP.ShortestPath.IsEmpty()) {
 			DrawDebugLine(GetWorld(), EP.ShortestPath.Last(), EP.RelayPoint, FColor::Magenta,
-			              false, -1.f, 0, 2.f);
-			DrawDebugSphere(GetWorld(), EP.RelayPoint, 8.f, 8, FColor::Magenta, false, -1.f, SDPG_Foreground, 1.5f);
+			              false, GetSettings().DebugLineDuration, 0, 2.f);
+			DrawDebugSphere(GetWorld(), EP.RelayPoint, 8.f, 8, FColor::Magenta, false,
+			                GetSettings().DebugLineDuration, SDPG_Foreground, 1.5f);
 		}
 	}
 }

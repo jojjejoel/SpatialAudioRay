@@ -67,10 +67,13 @@ struct FCachedEdgePoint {
 	 *  neither, so the extended path stays gain-safe (listener-independence rule). The
 	 *  edge→relay leg is re-verified each Phase 0 interval (dynamic geometry can sever it);
 	 *  a severed leg drops the relay and evicts. Single level: a relayed edge that loses
-	 *  relay LoS evicts normally. The relay only bridges an otherwise-empty presentation:
-	 *  rescue is skipped while any directly-visible cached edge exists, and an existing
-	 *  relay yields (fades out) as soon as one appears — a voice parked at an old listener
-	 *  position reads as sound from the wrong side of the corner. */
+	 *  relay LoS evicts normally. Rescue depends only on this edge's own geometry (fan all
+	 *  blocked, both legs verify) — never on sibling edges' state, so N edges going dark at
+	 *  once produce N relays regardless of processing order. A relay is transitional — the
+	 *  first valid maintenance readback converts it in place to a real edge at the LoS
+	 *  transition corner on the edge→relay leg, each relayed edge independently (deliberately
+	 *  no yield-to-direct-edge eviction and no direct-edge rescue gate: both killed sibling
+	 *  relays/rescues the moment the first conversion landed). */
 	bool bRelayed = false;
 	FVector RelayPoint = FVector::ZeroVector;
 	float RelayDist = 0.f;
