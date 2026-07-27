@@ -25,6 +25,16 @@ enum class ENPCVoiceCategory : uint8 {
 	Transition
 };
 
+/** Which way the effort jumped for a Transition-category line. None on normal lines. */
+UENUM(BlueprintType)
+enum class ENPCVoiceTransitionDir : uint8 {
+	None,
+	/** Effort dropped — the listener closed in ("oh, you're right here"). */
+	Closer,
+	/** Effort rose — the listener is getting away ("hey, where are you going!"). */
+	Farther
+};
+
 /** One take of one line at one effort level. Rows are produced by
  *  Tools/VoiceGen/export_to_unreal.py — import its CSV with this row type. */
 USTRUCT(BlueprintType)
@@ -39,6 +49,10 @@ struct FNPCVoiceLineRow : public FTableRowBase {
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice")
 	ENPCVoiceCategory Category = ENPCVoiceCategory::Clear;
+
+	/** Transition lines only: which way the effort jumped. None on normal lines. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice")
+	ENPCVoiceTransitionDir Direction = ENPCVoiceTransitionDir::None;
 
 	/** Lines sharing a group go on cooldown together after one of them plays. None = no group. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice")

@@ -130,6 +130,17 @@ namespace Math {
 		return FMath::Clamp(BlendedDist / FMath::Max(MaxRayDistance, 1.f) * S.PathAttenuationStrength, 0.f, 1.f);
 	}
 
+	// How far the sound effectively travels to reach the listener: the straight line while
+	// clear, the diffraction path while occluded, blended by the smoothed occlusion so
+	// partial-LoS states interpolate instead of switching at a threshold. A selection/content
+	// input (NPC vocal effort), never gain math. PathDist is floored at DirectDist — the two
+	// legs are independently smoothed and can momentarily sum below the straight line, which
+	// no physical path can be shorter than.
+	inline float ComputeEffectiveAcousticDistance(float DirectDist, float PathDist, float Occlusion) {
+		return FMath::Lerp(DirectDist, FMath::Max(PathDist, DirectDist),
+		                   FMath::Clamp(Occlusion, 0.f, 1.f));
+	}
+
 	// Two weights per point. The source-side weight (eviction confidence + geometric falloff
 	// from the source) drives the PathDist average and TotalWeight (→ per-voice gain share) and
 	// must never depend on listener position. The rank weight additionally decays with

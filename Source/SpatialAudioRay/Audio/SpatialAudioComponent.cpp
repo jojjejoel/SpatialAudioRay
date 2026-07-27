@@ -183,6 +183,39 @@ void USpatialAudioComponent::ApplyAttenuationOverridesTo(UAudioComponent* AC) co
 	AC->bOverrideAttenuation = true;
 }
 
+void USpatialAudioComponent::ApplyFalloffScaleTo(UAudioComponent* AC, float Ratio) const {
+	if (!AC || FMath::IsNearlyEqual(Ratio, 1.f)) {
+		return;
+	}
+	if (!AC->bOverrideAttenuation) {
+		// Promote the asset settings to a per-component override copy first — scaling the
+		// shared attenuation asset would change every sound in the project using it.
+		if (!AC->AttenuationSettings) {
+			return;
+		}
+		AC->AttenuationOverrides = AC->AttenuationSettings->Attenuation;
+		AC->bOverrideAttenuation = true;
+	}
+	AC->AttenuationOverrides.FalloffDistance *= Ratio;
+}
+
+void USpatialAudioComponent::SetAttenuationFalloffScale(float NewScale) {
+	NewScale = FMath::Max(NewScale, 0.05f);
+	if (FMath::IsNearlyEqual(NewScale, AttenuationFalloffScale)) {
+		return;
+	}
+	const float Ratio = NewScale / AttenuationFalloffScale;
+	for (const TWeakObjectPtr<UAudioComponent>& Src : CachedAudioComponentSources) {
+		ApplyFalloffScaleTo(Src.Get(), Ratio);
+	}
+	// Template too, purely for consistency if the pool is ever rebuilt.
+	ApplyFalloffScaleTo(CachedAudioComponentVirtual.Get(), Ratio);
+	for (UAudioComponent* Slot : VirtualSlotComponents) {
+		ApplyFalloffScaleTo(Slot, Ratio);
+	}
+	AttenuationFalloffScale = NewScale;
+}
+
 void USpatialAudioComponent::ApplyAttenuationOverrides() {
 	// Sources and the virtual template get the same range: the virtual voices stand in for the
 	// source at the diffraction edges, so an audible-range override that only touched the
@@ -210,6 +243,9 @@ UAudioComponent* USpatialAudioComponent::PlaySoundThroughSpatialBus(USoundBase* 
 		Comp->AttachToComponent(Root, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
 	}
 	ApplyAttenuationOverridesTo(Comp);
+	// Bring the one-shot to the currently applied falloff scale — every cached component
+	// must sit at exactly AttenuationFalloffScale for the ratio-based rescale to stay exact.
+	ApplyFalloffScaleTo(Comp, AttenuationFalloffScale);
 	// Both parameters must land before Play so MetaSound initialization picks them up; the
 	// occlusion value refreshes every frame afterwards via the cached-sources loop.
 	Comp->SetObjectParameter(AudioBusParameterName, DiffractionBus);
@@ -299,6 +335,37 @@ float USpatialAudioComponent::ComputePathAttenuationCurved(const float AvgPathDi
 	const float BlendedDist = FMath::Lerp(AvgPathDist, Leg1Geom, S.PathAttenuationGeomBlend);
 	return FMath::Clamp((1.f - EvaluateVirtualAttenuationVolumeAt(BlendedDist)) * S.PathAttenuationStrength,
 	                    0.f, 1.f);
+}
+
+float USpatialAudioComponent::GetEffectiveAcousticDistance(const FVector& ListenerPos) const {
+	const AActor* Owner = GetOwner();
+	const FVector SourcePos = Owner ? Owner->GetActorLocation() : FVector::ZeroVector;
+	const float DirectDist = static_cast<float>(FVector::Dist(SourcePos, ListenerPos));
+
+	// Shortest total route through the cache — sound takes the most favorable path, so the
+	// per-edge minimum, never the averaged fields (the Leg1 average is dominated by
+	// short-path edges and the position centroid can sit far from the edge actually being
+	// heard through; both drag the sum toward the straight line). Evicting entries are
+	// skipped: a source-side eviction means that path no longer exists.
+	float MinPathDist = TNumericLimits<float>::Max();
+	for (const FCachedEdgePoint& Edge : CachedEdgePoints) {
+		if (Edge.bEvicting) {
+			continue;
+		}
+		const float Total = Edge.EffectivePathDist()
+			+ static_cast<float>(FVector::Dist(Edge.EffectivePoint(), ListenerPos));
+		MinPathDist = FMath::Min(MinPathDist, Total);
+	}
+	if (MinPathDist == TNumericLimits<float>::Max()) {
+		// Cache momentarily empty (between an eviction and the next sweep's re-discovery):
+		// the averaged fallback fields still beat snapping to the straight line.
+		if (!bHasKnownEdge) {
+			return DirectDist;
+		}
+		MinPathDist = CurrentSourceToVirtualDistance
+			+ static_cast<float>(FVector::Dist(CurrentVirtualSourceLocation, ListenerPos));
+	}
+	return Math::ComputeEffectiveAcousticDistance(DirectDist, MinPathDist, CurrentOcclusion);
 }
 
 void USpatialAudioComponent::PerformStartupLoSCheck() {

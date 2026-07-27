@@ -129,7 +129,7 @@ Finish with `Math.h` end to end (~300 lines, pure stateless functions). Most for
 
 `SpatialAudioDebugSubsystem` (world subsystem) registers every component and polls all debug keys. With `bDrawDebugRays` on a source: **N** cycles which source draws, **2** bounce rays, **7** crawl steps (cyan = crawling, white = flying), **6** edge points, **0** string-pulled shortest paths (magenta; dimmed = unverified segments), **1** virtual emitter spheres, **3** the per-source HUD, **G** the global trace-count HUD. Walking behind a wall while watching keys 2+7+0 is the fastest way to make Stops 5–7 concrete.
 
-The `Voice/` folder (`UNPCVoiceComponent`) is a *consumer* demo: it reads the component's occlusion + listener distance to pick a vocal-effort bucket for NPC voice lines and plays them through the same pipeline. Nothing in `Audio/` depends on it.
+The `Voice/` folder (`UNPCVoiceComponent`) is a *consumer* demo: it reads the component's effective acoustic distance (straight line while visible, diffraction path length while occluded) to pick a vocal-effort bucket for NPC voice lines — whisper when acoustically close, shout when far — and plays them through the same pipeline. Nothing in `Audio/` depends on it.
 
 Tests live at the module root (`SpatialAudio.Math.*`, `SpatialAudio.Async.*`, `SpatialAudio.Voice.*` in Session Frontend → Automation) and are a readable spec for the pure helpers — `SpatialAudioMathTests.cpp` is a good final read.
 

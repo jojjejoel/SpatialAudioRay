@@ -26,8 +26,11 @@ struct FNPCVoiceRuntimeLine {
 
 /**
  * Drives an NPC's voice from the acoustic state of its USpatialAudioComponent:
- * listener distance + occlusion select a vocal-effort bucket (with dwell hysteresis),
- * and a scheduler plays bank lines at that effort through the shared spatial bus.
+ * the effective acoustic distance to the listener (straight line while clear, diffraction
+ * path length while occluded — GetEffectiveAcousticDistance) selects a vocal-effort bucket
+ * (with dwell hysteresis), and a scheduler plays bank lines at that effort through the
+ * shared spatial bus. Occlusion itself only switches content category (Clear vs Occluded
+ * lines) — the path length already encodes how hard the NPC is to hear.
  *
  * Setup on the NPC actor:
  *  - a USpatialAudioComponent (the acoustic state source),
@@ -37,7 +40,10 @@ struct FNPCVoiceRuntimeLine {
  *    MetaSound whose wave input matches WaveParameterName,
  *  - this component, with a VoiceBank DataTable of FNPCVoiceLineRow.
  *
- * A playing line is never modified mid-flight: bucket changes apply to the NEXT line.
+ * A playing line is never modified mid-flight — bucket changes apply to the NEXT line —
+ * with one exception: a dramatic effort jump (≥ TransitionBucketDelta buckets from the
+ * playing line's effort) barges in with a short Transition-category line in the jump's
+ * direction, then resumes normal scheduling at the new effort.
  */
 UCLASS(ClassGroup=(Audio), meta=(BlueprintSpawnableComponent))
 class SPATIALAUDIORAY_API UNPCVoiceComponent : public UActorComponent {
@@ -76,16 +82,27 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "NPC Voice|Debug")
 	ENPCVoiceEffort CurrentBucket = ENPCVoiceEffort::Conversational;
 
-	/** Pure bucket mapping: distance band (near = quiet), then the occlusion shift toward
-	 *  Shout. Static for unit testing. */
-	static ENPCVoiceEffort MapToBucket(float DistanceCm, float Occlusion, const UNPCVoiceSettings& S);
+	/** Pure bucket mapping: effective-acoustic-distance band, near = quiet. Occlusion enters
+	 *  only through the distance (a bent path is longer), so a listener just around a small
+	 *  corner gets a small step up, not a jump to Shout. Static for unit testing. */
+	static ENPCVoiceEffort MapToBucket(float EffectiveDistanceCm, const UNPCVoiceSettings& S);
+
+	/** Pure transition-line pick for a barge-in: Transition-category rows matching Dir with
+	 *  cooldowns respected; exact TargetBucket preferred, then the nearest rendered bucket
+	 *  (a slightly-off effort still beats refusing to react), random among ties.
+	 *  INDEX_NONE when the bank has nothing usable. Static for unit testing. */
+	static int32 FindTransitionLine(const TArray<FNPCVoiceRuntimeLine>& InLines,
+	                                ENPCVoiceTransitionDir Dir, ENPCVoiceEffort TargetBucket,
+	                                float Now, const TMap<FName, float>& Cooldowns);
 
 private:
 	void ResolveOwnerComponents();
 	void LoadBank();
-	void UpdateBucket(float Now, float DistanceCm, float Occlusion);
+	void UpdateBucket(float Now, float EffectiveDistanceCm);
 	void SelectAndPlayLine(float Now, float Occlusion);
-	void DrawDebugText(float DistanceCm, float Occlusion, float Now) const;
+	void PlayLine(const FNPCVoiceRuntimeLine& Line, float Now);
+	void TickTransitionBargeIn(float Now);
+	void DrawDebugText(float DistanceCm, float EffectiveDistanceCm, float Occlusion, float Now) const;
 
 	UPROPERTY()
 	TArray<FNPCVoiceRuntimeLine> Lines;
@@ -104,4 +121,15 @@ private:
 	FString ActiveText;
 	FName LastLineId;
 	TMap<FName, float> CooldownUntil;
+
+	/** Effort the playing line was rendered at — the barge-in trigger compares the committed
+	 *  bucket against this, not against the previous frame's bucket, so drift accumulated
+	 *  over a long line still trips it. */
+	ENPCVoiceEffort ActiveLineBucket = ENPCVoiceEffort::Conversational;
+	bool bActiveLineIsTransition = false;
+	bool bBankHasTransitions = false;
+	bool bTransitionPending = false;
+	int32 PendingTransitionLine = INDEX_NONE;
+	float TransitionPlayTime = 0.f;
+	float LastTransitionTime = -1e9f;
 };

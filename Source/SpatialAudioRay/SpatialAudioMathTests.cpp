@@ -1026,3 +1026,37 @@ bool FClusterEdgePoints_EmitterPullback_MovesCentroidOnly::RunTest(const FString
 	}
 	return true;
 }
+
+// ─── ComputeEffectiveAcousticDistance ─────────────────────────────────────────
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FEffectiveAcousticDistance_BlendsByOcclusion,
+	"SpatialAudio.Math.EffectiveAcousticDistance.BlendsByOcclusion",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FEffectiveAcousticDistance_BlendsByOcclusion::RunTest(const FString& Parameters) {
+	TestTrue(TEXT("Clear LoS returns the straight-line distance"),
+		FMath::IsNearlyEqual(Math::ComputeEffectiveAcousticDistance(500.f, 2000.f, 0.f), 500.f));
+	TestTrue(TEXT("Fully occluded returns the path distance"),
+		FMath::IsNearlyEqual(Math::ComputeEffectiveAcousticDistance(500.f, 2000.f, 1.f), 2000.f));
+	TestTrue(TEXT("Partial occlusion interpolates"),
+		FMath::IsNearlyEqual(Math::ComputeEffectiveAcousticDistance(500.f, 2000.f, 0.5f), 1250.f));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FEffectiveAcousticDistance_FloorsPathAtDirect,
+	"SpatialAudio.Math.EffectiveAcousticDistance.FloorsPathAtDirect",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FEffectiveAcousticDistance_FloorsPathAtDirect::RunTest(const FString& Parameters) {
+	// Independently smoothed legs can momentarily sum below the straight line; no physical
+	// path can, so the result must never dip under the direct distance.
+	TestTrue(TEXT("Path shorter than direct clamps to direct"),
+		FMath::IsNearlyEqual(Math::ComputeEffectiveAcousticDistance(500.f, 300.f, 1.f), 500.f));
+	TestTrue(TEXT("Occlusion outside [0,1] is clamped"),
+		FMath::IsNearlyEqual(Math::ComputeEffectiveAcousticDistance(500.f, 2000.f, 1.5f), 2000.f));
+	return true;
+}

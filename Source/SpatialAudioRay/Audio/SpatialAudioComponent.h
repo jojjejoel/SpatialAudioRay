@@ -80,6 +80,25 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Spatial Audio")
 	UAudioComponent* PlaySoundThroughSpatialBus(USoundBase* Sound);
 
+	/** Distance (cm) the sound effectively travels to reach ListenerPos: the straight line
+	 *  while clear, the shortest cached diffraction route (min over cached edges of the
+	 *  string-pulled source→edge path + edge→ListenerPos) while occluded, blended by
+	 *  smoothed occlusion. Falls back to the straight line until a diffraction path has
+	 *  ever been found. Selection/content input (e.g. NPC vocal effort) — must never feed
+	 *  VirtualGain/PathAttenuation math. */
+	UFUNCTION(BlueprintPure, Category = "Spatial Audio")
+	float GetEffectiveAcousticDistance(const FVector& ListenerPos) const;
+
+	/** Scales the attenuation FalloffDistance of every cached source component AND the live
+	 *  virtual pool relative to their base (scale 1 = as authored/overridden). Lets a caller
+	 *  vary audible reach per content — e.g. NPC vocal effort: a whisper carries meters, a
+	 *  shout carries the map. Author the base attenuation for the LONGEST reach and scale
+	 *  DOWN (≤ 1): the ray/LoS ranges captured by ReadAttenuationSettings at BeginPlay stay
+	 *  at base and deliberately do not follow this scale, so scaling above 1 would make
+	 *  sounds audible beyond where the ray system searches for paths. */
+	UFUNCTION(BlueprintCallable, Category = "Spatial Audio")
+	void SetAttenuationFalloffScale(float NewScale);
+
 	/** Per-source override of the attenuation shape's inner radius (cm). 0 = keep the assigned
 	 *  attenuation's value. Applied at BeginPlay to the Source component AND the virtual voice
 	 *  template (so pooled voices inherit it); every other attenuation setting stays exactly as
@@ -409,6 +428,12 @@ private:
 	void CacheAudioComponents();
 	void ApplyAttenuationOverrides();
 	void ApplyAttenuationOverridesTo(UAudioComponent* AC) const;
+	void ApplyFalloffScaleTo(UAudioComponent* AC, float Ratio) const;
+
+	/** Currently applied falloff scale — new scales are applied as a ratio against this, so
+	 *  every cached component must always sit at exactly this scale (one-shots get it applied
+	 *  at spawn). */
+	float AttenuationFalloffScale = 1.f;
 	void CreateAndAssignAudioBus();
 	void CreateVirtualVoicePool();
 	void ApplyWaveParameterOverride() const;
@@ -514,7 +539,7 @@ private:
 	FSoundAttenuationSettings VirtualAttenuationSettings;
 	bool bHasVirtualAttenuationSettings = false;
 
-	float CurrentSourceToVirtualDistance;
+	float CurrentSourceToVirtualDistance = 0.f;
 
 	float LastDirectLoSFraction = 0.f;
 	float LoSBreakSweepCooldown = 0.f;
