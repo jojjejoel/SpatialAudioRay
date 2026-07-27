@@ -6,6 +6,7 @@
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
+#include "NPCVoiceLogic.h"
 #include "NPCVoiceSettings.h"
 #include "Sound/SoundWave.h"
 #include "SpatialAudioComponent.h"
@@ -24,9 +25,8 @@ void UNPCVoiceComponent::BeginPlay() {
 	ResolveOwnerComponents();
 	LoadBank();
 
-	const UNPCVoiceSettings& S = GetSettings();
 	const float Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.f;
-	NextLineTime = Now + FMath::RandRange(S.LineIntervalMin, S.LineIntervalMax);
+	Playback.NextLineTime = Now + VoiceLogic::ResolveNextLineDelay(false, GetSettings());
 }
 
 void UNPCVoiceComponent::ResolveOwnerComponents() {
@@ -67,40 +67,7 @@ void UNPCVoiceComponent::LoadBank() {
 		Line.Row = *Row;
 		Line.Wave = Wave;
 	}
-	bBankHasTransitions = Lines.ContainsByPredicate([](const FNPCVoiceRuntimeLine& L) {
-		return L.Row.Category == ENPCVoiceCategory::Transition;
-	});
-}
-
-ENPCVoiceEffort UNPCVoiceComponent::MapToBucket(float EffectiveDistanceCm,
-                                                const UNPCVoiceSettings& S) {
-	if (EffectiveDistanceCm <= S.WhisperMaxDistance) {
-		return ENPCVoiceEffort::Whisper;
-	}
-	if (EffectiveDistanceCm <= S.ConversationalMaxDistance) {
-		return ENPCVoiceEffort::Conversational;
-	}
-	if (EffectiveDistanceCm <= S.RaisedMaxDistance) {
-		return ENPCVoiceEffort::Raised;
-	}
-	return ENPCVoiceEffort::Shout;
-}
-
-void UNPCVoiceComponent::UpdateBucket(float Now, float EffectiveDistanceCm) {
-	const ENPCVoiceEffort Mapped = MapToBucket(EffectiveDistanceCm, GetSettings());
-	if (!bBucketInitialized) {
-		CurrentBucket = Mapped;
-		CandidateBucket = Mapped;
-		bBucketInitialized = true;
-		return;
-	}
-	if (Mapped != CandidateBucket) {
-		CandidateBucket = Mapped;
-		CandidateSince = Now;
-	}
-	if (CandidateBucket != CurrentBucket && Now - CandidateSince >= GetSettings().BucketDwellTime) {
-		CurrentBucket = CandidateBucket;
-	}
+	bBankHasBargeInContent = VoiceLogic::BankHasBargeInContent(Lines);
 }
 
 void UNPCVoiceComponent::TickComponent(float DeltaTime, ELevelTick TickType,
@@ -110,7 +77,7 @@ void UNPCVoiceComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 	UWorld* World = GetWorld();
 	AActor* Owner = GetOwner();
 	USpatialAudioComponent* Spatial = SpatialAudio.Get();
-	if (!World || !Owner || !Spatial || !VoiceAudio.IsValid() || Lines.Num() == 0) {
+	if (!World || !Owner || !Spatial || !VoiceAudio.IsValid() || Lines.IsEmpty()) {
 		return;
 	}
 	APlayerController* PC = World->GetFirstPlayerController();
@@ -120,200 +87,161 @@ void UNPCVoiceComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 
 	const float Now = World->GetTimeSeconds();
 	const FVector ListenerPos = PC->GetPawn()->GetActorLocation();
-	const float DistanceCm = static_cast<float>(FVector::Dist(Owner->GetActorLocation(), ListenerPos));
-	const float EffectiveDistanceCm = Spatial->GetEffectiveAcousticDistance(ListenerPos);
-	const float Occlusion = Spatial->CurrentOcclusion;
 
-	UpdateBucket(Now, EffectiveDistanceCm);
-	TickTransitionBargeIn(Now);
+	FNPCVoiceAcousticState Acoustic;
+	Acoustic.Occlusion = Spatial->CurrentOcclusion;
+	Acoustic.DirectDistanceCm =
+		static_cast<float>(FVector::Dist(Owner->GetActorLocation(), ListenerPos));
+	Acoustic.EffectiveDistanceCm = Spatial->GetEffectiveAcousticDistance(ListenerPos);
+	Acoustic.TimeSinceLoSLost = Spatial->GetTimeSinceDirectLoS();
+	Acoustic.LoSHeldDuration = Spatial->GetDirectLoSDuration();
 
-	if (bTransitionPending && Now >= TransitionPlayTime) {
-		bTransitionPending = false;
-		if (Lines.IsValidIndex(PendingTransitionLine)) {
-			PlayLine(Lines[PendingTransitionLine], Now);
-		}
-		PendingTransitionLine = INDEX_NONE;
-	}
+	const UNPCVoiceSettings& S = GetSettings();
+	VoiceLogic::AdvanceBucketHysteresis(
+		BucketState, VoiceLogic::MapToBucket(Acoustic.EffectiveDistanceCm, S), Now, S.BucketDwellTime);
 
-	if (bLinePlaying && Now >= LineEndTime) {
-		bLinePlaying = false;
-		ActiveLineId = NAME_None;
-		ActiveText.Reset();
-		const UNPCVoiceSettings& S = GetSettings();
-		// A transition announces a change — the full line at the new effort follows quickly
-		// instead of waiting out the normal interval.
-		NextLineTime = bActiveLineIsTransition
-			? Now + S.PostTransitionLineDelay
-			: Now + FMath::RandRange(S.LineIntervalMin, S.LineIntervalMax);
+	// Fired instantly rather than dwelled: the occlusion driving it is already smoothed and
+	// threshold-gated, and a delayed reaction misses the moment it is reacting to. The
+	// barge-in rate limit absorbs any residual chatter.
+	const bool bHidden = VoiceLogic::IsListenerHidden(Acoustic, S);
+	ENPCVoiceSightChange SightChange = ENPCVoiceSightChange::None;
+	if (bSightStateKnown && bHidden != bWasHidden) {
+		SightChange = bHidden ? ENPCVoiceSightChange::Lost : ENPCVoiceSightChange::Gained;
 	}
-	if (!bLinePlaying && !bTransitionPending && Now >= NextLineTime) {
-		SelectAndPlayLine(Now, Occlusion);
-	}
+	bWasHidden = bHidden;
+	bSightStateKnown = true;
+
+	TickBargeIn(Now, SightChange);
+	TickScheduler(Now, Acoustic);
 
 	if (bShowDebugText) {
-		DrawDebugText(DistanceCm, EffectiveDistanceCm, Occlusion, Now);
+		DrawDebugText(Acoustic, Now);
 	}
 }
 
-void UNPCVoiceComponent::SelectAndPlayLine(float Now, float Occlusion) {
+void UNPCVoiceComponent::TickBargeIn(float Now, ENPCVoiceSightChange SightChange) {
 	const UNPCVoiceSettings& S = GetSettings();
-	const ENPCVoiceCategory Desired =
-		Occlusion >= S.OcclusionShiftThreshold ? ENPCVoiceCategory::Occluded : ENPCVoiceCategory::Clear;
-	const ENPCVoiceCategory Fallback =
-		Desired == ENPCVoiceCategory::Clear ? ENPCVoiceCategory::Occluded : ENPCVoiceCategory::Clear;
-
-	auto Gather = [&](ENPCVoiceCategory Category, bool bAllowRepeat) {
-		TArray<int32> Pool;
-		for (int32 i = 0; i < Lines.Num(); ++i) {
-			const FNPCVoiceLineRow& Row = Lines[i].Row;
-			if (Row.Bucket != CurrentBucket || Row.Category != Category) {
-				continue;
-			}
-			if (!bAllowRepeat && Row.LineId == LastLineId) {
-				continue;
-			}
-			if (const float* Until = CooldownUntil.Find(Row.CooldownGroup);
-				Until && !Row.CooldownGroup.IsNone() && Now < *Until) {
-				continue;
-			}
-			Pool.Add(i);
-		}
-		return Pool;
-	};
-
-	// Category preference, then no-repeat, are soft constraints — a one-line bucket should
-	// still speak rather than fall silent.
-	TArray<int32> Pool = Gather(Desired, false);
-	if (Pool.IsEmpty()) { Pool = Gather(Fallback, false); }
-	if (Pool.IsEmpty()) { Pool = Gather(Desired, true); }
-	if (Pool.IsEmpty()) { Pool = Gather(Fallback, true); }
-	if (Pool.IsEmpty()) {
-		NextLineTime = Now + FMath::RandRange(S.LineIntervalMin, S.LineIntervalMax);
+	const VoiceLogic::FBargeInDecision Decision = VoiceLogic::EvaluateBargeIn(
+		Playback, Transition, BucketState.Committed, SightChange, bBankHasBargeInContent, Now, S);
+	if (!Decision.ShouldBargeIn()) {
 		return;
 	}
-
-	PlayLine(Lines[Pool[FMath::RandRange(0, Pool.Num() - 1)]], Now);
+	// Nothing usable for that reason (all on cooldown, or the bank lacks it) — leave the line
+	// running rather than cutting to silence.
+	const int32 LineIdx = VoiceLogic::FindBargeInLine(
+		Lines, VoiceLogic::BargeInCategory(Decision.Reason), Decision.Dir, BucketState.Committed,
+		Now, CooldownUntil);
+	if (LineIdx == INDEX_NONE) {
+		return;
+	}
+	if (UAudioComponent* Audio = VoiceAudio.Get()) {
+		Audio->FadeOut(S.TransitionFadeOutTime, 0.f);
+	}
+	VoiceLogic::BeginBargeIn(Playback, Transition, LineIdx, Now, S);
 }
 
-void UNPCVoiceComponent::PlayLine(const FNPCVoiceRuntimeLine& Line, float Now) {
+void UNPCVoiceComponent::TickScheduler(float Now, const FNPCVoiceAcousticState& Acoustic) {
+	if (Transition.bPending && Now >= Transition.PlayTime) {
+		Transition.bPending = false;
+		if (Lines.IsValidIndex(Transition.PendingLine)) {
+			PlayLine(Lines[Transition.PendingLine], Now, /*bAsBargeIn=*/true);
+		}
+		Transition.PendingLine = INDEX_NONE;
+	}
+	if (Playback.bPlaying && Now >= Playback.EndTime) {
+		VoiceLogic::EndLine(Playback, Now, GetSettings());
+	}
+	// The pending check keeps a cut line's stale NextLineTime (already in the past) from
+	// racing a normal line in ahead of the barge-in it was cut for.
+	if (!Playback.bPlaying && !Transition.bPending && Now >= Playback.NextLineTime) {
+		SelectAndPlayLine(Now, Acoustic);
+	}
+}
+
+void UNPCVoiceComponent::SelectAndPlayLine(float Now, const FNPCVoiceAcousticState& Acoustic) {
+	const UNPCVoiceSettings& S = GetSettings();
+	const int32 LineIdx = VoiceLogic::SelectLineIndex(Lines, BucketState.Committed, Acoustic,
+	                                                  Playback.LastLineId, Now, CooldownUntil, S);
+	if (LineIdx == INDEX_NONE) {
+		Playback.NextLineTime = Now + VoiceLogic::ResolveNextLineDelay(false, S);
+		return;
+	}
+	PlayLine(Lines[LineIdx], Now, /*bAsBargeIn=*/false);
+}
+
+void UNPCVoiceComponent::PlayLine(const FNPCVoiceRuntimeLine& Line, float Now, bool bAsBargeIn) {
 	UAudioComponent* Audio = VoiceAudio.Get();
 	if (!Audio) {
 		return;
 	}
 	const UNPCVoiceSettings& S = GetSettings();
-	// Effort sets audible reach (whisper carries meters, shout carries the map) — applied
-	// before Play so the new line never starts a frame at the previous line's range.
+	// Effort sets audible reach, derived from its own distance band (whisper carries meters,
+	// shout carries the map) — applied before Play so the new line never starts a frame at
+	// the previous line's range.
 	if (USpatialAudioComponent* Spatial = SpatialAudio.Get()) {
-		Spatial->SetAttenuationFalloffScale(S.GetFalloffScale(Line.Row.Bucket));
+		Spatial->SetAttenuationOuterRadius(S.GetEffortReachDistance(Line.Row.Bucket));
 	}
-	// Wave param must land before Play so MetaSound initialization picks it up (same
-	// contract as the spatial component's wave override).
+	// Both params must land before Play so MetaSound initialization picks them up (same
+	// contract as the spatial component's wave override). Gain is set once per line rather
+	// than per frame — a line's effort never changes mid-flight.
 	Audio->SetWaveParameter(WaveParameterName, Line.Wave);
+	Audio->SetFloatParameter(EffortGainParameterName, S.GetEffortGainDb(Line.Row.Bucket));
 	Audio->Play();
-	bLinePlaying = true;
-	LineEndTime = Now + Line.Row.Duration + S.LineEndPadding;
-	ActiveLineId = Line.Row.LineId;
-	ActiveText = Line.Row.Text;
-	LastLineId = Line.Row.LineId;
-	ActiveLineBucket = Line.Row.Bucket;
-	bActiveLineIsTransition = Line.Row.Category == ENPCVoiceCategory::Transition;
-	if (!Line.Row.CooldownGroup.IsNone()) {
-		CooldownUntil.Add(Line.Row.CooldownGroup, Now + S.CooldownGroupSeconds);
-	}
+
+	VoiceLogic::BeginLine(Playback, Line.Row, Now, S.LineEndPadding, bAsBargeIn);
+	VoiceLogic::StampCooldown(CooldownUntil, Line.Row.CooldownGroup, Now, S.CooldownGroupSeconds);
 }
 
-void UNPCVoiceComponent::TickTransitionBargeIn(float Now) {
-	const UNPCVoiceSettings& S = GetSettings();
-	if (!bLinePlaying || bActiveLineIsTransition || !bBankHasTransitions ||
-		S.TransitionBucketDelta <= 0) {
-		return;
-	}
-	const int32 Jump = FMath::Abs(
-		static_cast<int32>(CurrentBucket) - static_cast<int32>(ActiveLineBucket));
-	if (Jump < S.TransitionBucketDelta ||
-		Now - LastTransitionTime < S.TransitionCooldownSeconds ||
-		LineEndTime - Now < S.TransitionMinRemainingTime) {
-		return;
-	}
-	const ENPCVoiceTransitionDir Dir =
-		static_cast<int32>(CurrentBucket) > static_cast<int32>(ActiveLineBucket)
-			? ENPCVoiceTransitionDir::Farther
-			: ENPCVoiceTransitionDir::Closer;
-	const int32 LineIdx = FindTransitionLine(Lines, Dir, CurrentBucket, Now, CooldownUntil);
-	if (LineIdx == INDEX_NONE) {
-		return;
-	}
-
-	if (UAudioComponent* Audio = VoiceAudio.Get()) {
-		Audio->FadeOut(S.TransitionFadeOutTime, 0.f);
-	}
-	bLinePlaying = false;
-	ActiveLineId = NAME_None;
-	ActiveText.Reset();
-	bTransitionPending = true;
-	PendingTransitionLine = LineIdx;
-	// Small margin past the declick fade so Play doesn't race the fade-stop.
-	TransitionPlayTime = Now + S.TransitionFadeOutTime + 0.03f;
-	// Stamped at trigger (not at playback) so a failed race can't re-fire every tick.
-	LastTransitionTime = Now;
-}
-
-int32 UNPCVoiceComponent::FindTransitionLine(const TArray<FNPCVoiceRuntimeLine>& InLines,
-                                             ENPCVoiceTransitionDir Dir, ENPCVoiceEffort TargetBucket,
-                                             float Now, const TMap<FName, float>& Cooldowns) {
-	int32 BestDelta = MAX_int32;
-	TArray<int32> Pool;
-	for (int32 i = 0; i < InLines.Num(); ++i) {
-		const FNPCVoiceLineRow& Row = InLines[i].Row;
-		if (Row.Category != ENPCVoiceCategory::Transition || Row.Direction != Dir) {
-			continue;
-		}
-		if (const float* Until = Cooldowns.Find(Row.CooldownGroup);
-			Until && !Row.CooldownGroup.IsNone() && Now < *Until) {
-			continue;
-		}
-		const int32 Delta = FMath::Abs(
-			static_cast<int32>(Row.Bucket) - static_cast<int32>(TargetBucket));
-		if (Delta < BestDelta) {
-			BestDelta = Delta;
-			Pool.Reset();
-		}
-		if (Delta == BestDelta) {
-			Pool.Add(i);
-		}
-	}
-	return Pool.IsEmpty() ? INDEX_NONE : Pool[FMath::RandRange(0, Pool.Num() - 1)];
-}
-
-void UNPCVoiceComponent::DrawDebugText(float DistanceCm, float EffectiveDistanceCm,
-                                       float Occlusion, float Now) const {
+void UNPCVoiceComponent::DrawDebugText(const FNPCVoiceAcousticState& Acoustic, float Now) const {
 	if (!GEngine) {
 		return;
 	}
-	const UEnum* EffortEnum = StaticEnum<ENPCVoiceEffort>();
 	const uint64 Key = static_cast<uint64>(GetUniqueID()) * 10ull;
+	GEngine->AddOnScreenDebugMessage(Key, 0.f, FColor::Cyan, BuildDebugInputsLine(Acoustic, Now));
+	GEngine->AddOnScreenDebugMessage(Key + 1, 0.f, FColor::Cyan, BuildDebugStateLine(Now));
+}
 
-	FString Inputs = FString::Printf(
-		TEXT("VOICE dist=%.1fm eff=%.1fm occ=%.2f -> bucket=%s"),
-		DistanceCm / 100.f, EffectiveDistanceCm / 100.f, Occlusion,
-		*EffortEnum->GetNameStringByValue(static_cast<int64>(CurrentBucket)));
-	if (CandidateBucket != CurrentBucket) {
-		Inputs += FString::Printf(
+FString UNPCVoiceComponent::BuildDebugInputsLine(const FNPCVoiceAcousticState& Acoustic,
+                                                 float Now) const {
+	const UEnum* EffortEnum = StaticEnum<ENPCVoiceEffort>();
+	const UEnum* CategoryEnum = StaticEnum<ENPCVoiceCategory>();
+	const TArray<ENPCVoiceCategory, TInlineAllocator<4>> Preference =
+		VoiceLogic::ResolveCategoryPreference(Acoustic, GetSettings());
+
+	FString Line = FString::Printf(
+		TEXT("VOICE dist=%.1fm eff=%.1fm detour=%.2fx occ=%.2f -> %s / %s"),
+		Acoustic.DirectDistanceCm / 100.f, Acoustic.EffectiveDistanceCm / 100.f,
+		Acoustic.DetourRatio(), Acoustic.Occlusion,
+		*EffortEnum->GetNameStringByValue(static_cast<int64>(BucketState.Committed)),
+		*CategoryEnum->GetNameStringByValue(static_cast<int64>(Preference[0])));
+	if (BucketState.Candidate != BucketState.Committed) {
+		Line += FString::Printf(
 			TEXT(" (candidate=%s dwell %.1f/%.1fs)"),
-			*EffortEnum->GetNameStringByValue(static_cast<int64>(CandidateBucket)),
-			Now - CandidateSince, GetSettings().BucketDwellTime);
+			*EffortEnum->GetNameStringByValue(static_cast<int64>(BucketState.Candidate)),
+			Now - BucketState.CandidateSince, GetSettings().BucketDwellTime);
 	}
-	GEngine->AddOnScreenDebugMessage(Key, 0.f, FColor::Cyan, Inputs);
+	return Line;
+}
 
-	const FString State = bTransitionPending
-		? TEXT("  transition barge-in pending")
-		: bLinePlaying
-		? FString::Printf(TEXT("  playing %s @%s%s reach x%.2f (%.1fs left) \"%s\""),
-		                  *ActiveLineId.ToString(),
-		                  *EffortEnum->GetNameStringByValue(static_cast<int64>(ActiveLineBucket)),
-		                  bActiveLineIsTransition ? TEXT(" [transition]") : TEXT(""),
-		                  GetSettings().GetFalloffScale(ActiveLineBucket),
-		                  LineEndTime - Now, *ActiveText)
-		: FString::Printf(TEXT("  idle, next line in %.1fs"), FMath::Max(0.f, NextLineTime - Now));
-	GEngine->AddOnScreenDebugMessage(Key + 1, 0.f, FColor::Cyan, State);
+FString UNPCVoiceComponent::BuildDebugStateLine(float Now) const {
+	if (Transition.bPending) {
+		return TEXT("  transition barge-in pending");
+	}
+	if (!Playback.bPlaying) {
+		return FString::Printf(TEXT("  idle, next line in %.1fs"),
+		                       FMath::Max(0.f, Playback.NextLineTime - Now));
+	}
+	const UEnum* EffortEnum = StaticEnum<ENPCVoiceEffort>();
+	// Reach comes from the spatial component, not from the settings: it is the post-clamp
+	// distance the sound actually dies at (the inner radius floors it, the asset's own range
+	// caps it), which is what a mis-tuned band needs to show.
+	const USpatialAudioComponent* Spatial = SpatialAudio.Get();
+	return FString::Printf(
+		TEXT("  playing %s @%s%s reach %.1fm %+.0fdB (%.1fs left) \"%s\""),
+		*Playback.ActiveLineId.ToString(),
+		*EffortEnum->GetNameStringByValue(static_cast<int64>(Playback.ActiveBucket)),
+		Playback.bActiveIsBargeIn ? TEXT(" [barge-in]") : TEXT(""),
+		Spatial ? Spatial->GetAttenuationOuterRadius() / 100.f : 0.f,
+		GetSettings().GetEffortGainDb(Playback.ActiveBucket),
+		Playback.EndTime - Now, *Playback.ActiveText);
 }

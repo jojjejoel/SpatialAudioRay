@@ -8,21 +8,7 @@
 class UAudioComponent;
 class UDataTable;
 class UNPCVoiceSettings;
-class USoundWave;
 class USpatialAudioComponent;
-
-/** A bank row with its wave resolved — UPROPERTY so loaded waves stay GC-rooted
- *  (the DataTable itself only holds soft references). */
-USTRUCT()
-struct FNPCVoiceRuntimeLine {
-	GENERATED_BODY()
-
-	UPROPERTY()
-	FNPCVoiceLineRow Row;
-
-	UPROPERTY()
-	TObjectPtr<USoundWave> Wave = nullptr;
-};
 
 /**
  * Drives an NPC's voice from the acoustic state of its USpatialAudioComponent:
@@ -75,34 +61,30 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice")
 	FName WaveParameterName = TEXT("SoundWave");
 
+	/** Float input on the voice MetaSound carrying the effort's source gain in dB. Must be
+	 *  applied INSIDE the graph, ahead of the Audio Bus Writer — a component volume multiplier
+	 *  would only affect direct playback, leaving occluded playback (which replays the bus
+	 *  through the virtual emitters) at the wrong level. Graphs without the input ignore it. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice")
+	FName EffortGainParameterName = TEXT("EffortGainDb");
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice|Debug")
 	bool bShowDebugText = false;
 
 	/** Committed effort bucket (post-hysteresis) — what the next line will play at. */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "NPC Voice|Debug")
-	ENPCVoiceEffort CurrentBucket = ENPCVoiceEffort::Conversational;
-
-	/** Pure bucket mapping: effective-acoustic-distance band, near = quiet. Occlusion enters
-	 *  only through the distance (a bent path is longer), so a listener just around a small
-	 *  corner gets a small step up, not a jump to Shout. Static for unit testing. */
-	static ENPCVoiceEffort MapToBucket(float EffectiveDistanceCm, const UNPCVoiceSettings& S);
-
-	/** Pure transition-line pick for a barge-in: Transition-category rows matching Dir with
-	 *  cooldowns respected; exact TargetBucket preferred, then the nearest rendered bucket
-	 *  (a slightly-off effort still beats refusing to react), random among ties.
-	 *  INDEX_NONE when the bank has nothing usable. Static for unit testing. */
-	static int32 FindTransitionLine(const TArray<FNPCVoiceRuntimeLine>& InLines,
-	                                ENPCVoiceTransitionDir Dir, ENPCVoiceEffort TargetBucket,
-	                                float Now, const TMap<FName, float>& Cooldowns);
+	UFUNCTION(BlueprintPure, Category = "NPC Voice")
+	ENPCVoiceEffort GetCurrentEffort() const { return BucketState.Committed; }
 
 private:
 	void ResolveOwnerComponents();
 	void LoadBank();
-	void UpdateBucket(float Now, float EffectiveDistanceCm);
-	void SelectAndPlayLine(float Now, float Occlusion);
-	void PlayLine(const FNPCVoiceRuntimeLine& Line, float Now);
-	void TickTransitionBargeIn(float Now);
-	void DrawDebugText(float DistanceCm, float EffectiveDistanceCm, float Occlusion, float Now) const;
+	void TickBargeIn(float Now, ENPCVoiceSightChange SightChange);
+	void TickScheduler(float Now, const FNPCVoiceAcousticState& Acoustic);
+	void SelectAndPlayLine(float Now, const FNPCVoiceAcousticState& Acoustic);
+	void PlayLine(const FNPCVoiceRuntimeLine& Line, float Now, bool bAsBargeIn);
+	void DrawDebugText(const FNPCVoiceAcousticState& Acoustic, float Now) const;
+	FString BuildDebugInputsLine(const FNPCVoiceAcousticState& Acoustic, float Now) const;
+	FString BuildDebugStateLine(float Now) const;
 
 	UPROPERTY()
 	TArray<FNPCVoiceRuntimeLine> Lines;
@@ -110,26 +92,18 @@ private:
 	TWeakObjectPtr<UAudioComponent> VoiceAudio;
 	TWeakObjectPtr<USpatialAudioComponent> SpatialAudio;
 
-	ENPCVoiceEffort CandidateBucket = ENPCVoiceEffort::Conversational;
-	float CandidateSince = 0.f;
-	bool bBucketInitialized = false;
-
-	bool bLinePlaying = false;
-	float LineEndTime = 0.f;
-	float NextLineTime = 0.f;
-	FName ActiveLineId;
-	FString ActiveText;
-	FName LastLineId;
+	// Scheduler state — see NPCVoiceTypes.h. Held as structs so the pure decisions in
+	// NPCVoiceLogic.h can take them by reference.
+	FNPCVoiceBucketHysteresis BucketState;
+	FNPCVoicePlaybackState Playback;
+	FNPCVoiceTransitionState Transition;
 	TMap<FName, float> CooldownUntil;
 
-	/** Effort the playing line was rendered at — the barge-in trigger compares the committed
-	 *  bucket against this, not against the previous frame's bucket, so drift accumulated
-	 *  over a long line still trips it. */
-	ENPCVoiceEffort ActiveLineBucket = ENPCVoiceEffort::Conversational;
-	bool bActiveLineIsTransition = false;
-	bool bBankHasTransitions = false;
-	bool bTransitionPending = false;
-	int32 PendingTransitionLine = INDEX_NONE;
-	float TransitionPlayTime = 0.f;
-	float LastTransitionTime = -1e9f;
+	/** Cached at load: with no barge-in categories present the feature stays dormant. */
+	bool bBankHasBargeInContent = false;
+
+	/** Previous visibility, for detecting the tick sight breaks or returns. bSightStateKnown
+	 *  suppresses a spurious change on the very first tick. */
+	bool bWasHidden = false;
+	bool bSightStateKnown = false;
 };

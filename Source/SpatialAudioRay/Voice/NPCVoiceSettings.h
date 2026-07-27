@@ -43,9 +43,9 @@ public:
 		meta = (ClampMin = "0.0"))
 	float RaisedMaxDistance = 3000.f;
 
-	/** At or above this occlusion, line selection switches to Occluded-category content
-	 *  ("I can hear you back there"). No longer shifts the effort bucket — path length
-	 *  already encodes being hidden. */
+	/** At or above this occlusion the listener counts as hidden, and line selection switches
+	 *  from the visible content contexts to the occluded ones. Does not shift the effort
+	 *  bucket — path length already encodes being hidden. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice|Effort Buckets",
 		meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float OcclusionShiftThreshold = 0.75f;
@@ -57,52 +57,134 @@ public:
 	float BucketDwellTime = 1.0f;
 
 	// ── Effort Reach ──────────────────────────────────────────────────────────
-	// Per-effort attenuation falloff scale, applied via SetAttenuationFalloffScale at each
-	// line start: a whisper carries meters, a shout carries the map. The wavs stay at one
-	// LUFS (effort = timbre); reach differences live entirely in the engine attenuation.
-	// Author the actor's attenuation for SHOUT reach and scale the rest DOWN — the spatial
-	// component's ray/LoS ranges are captured at base scale, so a scale above 1 would make
-	// a line audible beyond where the ray system searches for diffraction paths.
+	// Audible reach is DERIVED from the bands above rather than authored separately: an effort
+	// exists to be heard across its own band, so a whisper only has to carry as far as the
+	// distance at which the NPC would switch to conversational anyway. Applied at each line
+	// start via USpatialAudioComponent::SetAttenuationOuterRadius. The wavs stay at one LUFS
+	// (effort = timbre); reach differences live entirely in the engine attenuation.
 
-	/** Falloff-distance scale while whispering. */
+	/** Reach = the effort's own band max × this. Above 1 the effort stays audible past the
+	 *  band edge, which the scheduler needs: the bucket only commits after BucketDwellTime,
+	 *  and a line already playing finishes at its starting effort, so the listener is
+	 *  regularly a little past the boundary while an older effort is still speaking — without
+	 *  headroom that reads as the audio cutting out mid-word. Note reach is where the sound
+	 *  reaches SILENCE, so it is already quiet at the band edge; raise this if an effort feels
+	 *  too faint at the top of its own band. 1 = dies exactly at the boundary (tightest,
+	 *  most dramatic: walking out of earshot silences the line until a barge-in reacts). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice|Effort Reach",
-		meta = (ClampMin = "0.05", ClampMax = "1.0"))
-	float WhisperFalloffScale = 0.15f;
+		meta = (ClampMin = "1.0"))
+	float EffortReachHeadroom = 1.25f;
 
-	/** Falloff-distance scale for conversational lines. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice|Effort Reach",
-		meta = (ClampMin = "0.05", ClampMax = "1.0"))
-	float ConversationalFalloffScale = 0.4f;
-
-	/** Falloff-distance scale for raised lines. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice|Effort Reach",
-		meta = (ClampMin = "0.05", ClampMax = "1.0"))
-	float RaisedFalloffScale = 0.7f;
-
-	/** Falloff-distance scale while shouting — the base the attenuation is authored for. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice|Effort Reach",
-		meta = (ClampMin = "0.05", ClampMax = "1.0"))
-	float ShoutFalloffScale = 1.0f;
-
-	float GetFalloffScale(ENPCVoiceEffort Effort) const {
+	/** Audible reach (cm) for Effort. Shout returns 0 = the attenuation asset's own range:
+	 *  the top band is unbounded, so it is the anchor every other effort scales down from
+	 *  (author the actor's attenuation for shout reach). */
+	float GetEffortReachDistance(ENPCVoiceEffort Effort) const {
 		switch (Effort) {
-			case ENPCVoiceEffort::Whisper: return WhisperFalloffScale;
-			case ENPCVoiceEffort::Conversational: return ConversationalFalloffScale;
-			case ENPCVoiceEffort::Raised: return RaisedFalloffScale;
-			default: return ShoutFalloffScale;
+			case ENPCVoiceEffort::Whisper: return WhisperMaxDistance * EffortReachHeadroom;
+			case ENPCVoiceEffort::Conversational: return ConversationalMaxDistance * EffortReachHeadroom;
+			case ENPCVoiceEffort::Raised: return RaisedMaxDistance * EffortReachHeadroom;
+			default: return 0.f;
 		}
 	}
 
-	// ── Transitions (barge-in) ────────────────────────────────────────────────
-	// A playing line is normally never modified mid-flight; the one exception is a dramatic
-	// effort jump. When the committed bucket drifts far enough from the bucket the playing
-	// line STARTED at, the line is cut (short declick fade) and a dedicated
-	// Transition-category line fires in the jump's direction ("oh, you're right here" /
-	// "hey, you're running off!"), followed quickly by a full line at the new effort.
+	// ── Content Contexts ──────────────────────────────────────────────────────
+	// Thresholds that pick WHICH acoustic situation the listener is in, so the bank can carry
+	// a line specific to it. Purely content selection — none of this reaches gain or path
+	// math. Any context with no line in the bank falls back to the generic Clear/Occluded
+	// entry for that half, so partial banks degrade instead of breaking.
 
-	/** Minimum bucket-step jump (|committed − playing line's bucket|) that triggers a
-	 *  barge-in. 1 = any band change interrupts (dwell time + cooldown keep it from
-	 *  chattering); 2 = only whisper↔raised-scale jumps. 0 = barge-in disabled. */
+	/** Visible listeners at or beyond this straight-line distance (cm) select FarVisible
+	 *  content — seen clearly, just a long way off. Defaults to ConversationalMaxDistance so
+	 *  the visible half partitions exactly on a band edge: Clear covers whisper and
+	 *  conversational, FarVisible covers raised and shout, and no visible listener lands in a
+	 *  bucket where neither has content. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice|Content Contexts",
+		meta = (ClampMin = "0.0"))
+	float FarVisibleMinDistance = 1500.f;
+
+	/** Hidden listeners within this straight-line distance (cm) AND past
+	 *  BehindWallMinDetourRatio select BehindWall content: physically close, acoustically far. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice|Content Contexts",
+		meta = (ClampMin = "0.0"))
+	float BehindWallMaxDirectDistance = 800.f;
+
+	/** How many times longer than the straight line the sound's route must be to count as
+	 *  "all the way around". 2 = the path is twice the direct distance. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice|Content Contexts",
+		meta = (ClampMin = "1.0"))
+	float BehindWallMinDetourRatio = 2.0f;
+
+	/** Hidden listeners whose route is no longer than this multiple of the straight line
+	 *  select AroundCorner content — out of sight, but only just. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice|Content Contexts",
+		meta = (ClampMin = "1.0"))
+	float AroundCornerMaxDetourRatio = 1.35f;
+
+	/** Seconds after sight is lost or regained during which LostSight / SightRegained content
+	 *  outranks the spatial contexts, so the NPC reacts to the change before describing the
+	 *  new state. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice|Content Contexts",
+		meta = (ClampMin = "0.0"))
+	float SightChangeReactionWindow = 6.f;
+
+	// ── Effort Gain ───────────────────────────────────────────────────────────
+	// How much louder the effort is AT THE SOURCE, sent to the voice MetaSound's EffortGainDb
+	// input at each line start. Reach (above) decides where a sound dies; this decides how
+	// loud it is at a given distance — orthogonal, and both are real: a shout is louder AND
+	// carries further. Without this, crossing a band boundary changes almost nothing, because
+	// two falloff curves that end near each other differ by only a decibel or two where they
+	// overlap.
+	//
+	// This is what the bank's single LUFS target was FOR: normalizing the renders strips the
+	// TTS's accidental loudness variation so that deliberate, designed variation can be
+	// applied here instead. Effort is still timbre in the asset; level is the engine's job.
+	//
+	// Values are dB, unlike reach these are NOT derivable from the distance bands (loudness at
+	// the source has nothing to do with where the band edges sit). Shout anchors at 0 and
+	// everything scales DOWN: the sources share one mixing bus, so boosting above 0 risks
+	// clipping it when several sounds sum, and it mirrors how reach anchors on shout too.
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice|Effort Gain",
+		meta = (ClampMax = "0.0"))
+	float WhisperGainDb = -12.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice|Effort Gain",
+		meta = (ClampMax = "0.0"))
+	float ConversationalGainDb = -6.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice|Effort Gain",
+		meta = (ClampMax = "0.0"))
+	float RaisedGainDb = -3.f;
+
+	/** The anchor — leave at 0 and tune the others down against it. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice|Effort Gain",
+		meta = (ClampMax = "0.0"))
+	float ShoutGainDb = 0.f;
+
+	float GetEffortGainDb(ENPCVoiceEffort Effort) const {
+		switch (Effort) {
+			case ENPCVoiceEffort::Whisper: return WhisperGainDb;
+			case ENPCVoiceEffort::Conversational: return ConversationalGainDb;
+			case ENPCVoiceEffort::Raised: return RaisedGainDb;
+			default: return ShoutGainDb;
+		}
+	}
+
+	// ── Barge-in ──────────────────────────────────────────────────────────────
+	// A playing line is normally never modified mid-flight. The exceptions are the three
+	// moments worth reacting to: direct line of sight breaking, sight coming back, and the
+	// committed effort drifting far from what the playing line was rendered at. The line is
+	// cut with a short declick fade, a line from the matching category fires, and the next
+	// full line follows quickly.
+	//
+	// Visibility outranks effort drift when both land on the same tick, which is the common
+	// case: losing sight inflates the acoustic path, which climbs the effort bands. Without
+	// that priority the NPC reports a listener "moving away" who only stepped behind a wall.
+
+	/** Minimum bucket-step jump (|committed − playing line's bucket|) that triggers an
+	 *  effort barge-in. 1 = any band change interrupts (dwell time + cooldown keep it from
+	 *  chattering); 2 = only whisper↔raised-scale jumps. 0 disables effort barge-ins only —
+	 *  the sight-lost and sight-regained triggers are unaffected. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice|Transitions",
 		meta = (ClampMin = "0", ClampMax = "3"))
 	int32 TransitionBucketDelta = 1;

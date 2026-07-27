@@ -1060,3 +1060,46 @@ bool FEffectiveAcousticDistance_FloorsPathAtDirect::RunTest(const FString& Param
 		FMath::IsNearlyEqual(Math::ComputeEffectiveAcousticDistance(500.f, 2000.f, 1.5f), 2000.f));
 	return true;
 }
+
+// ─── ComputeFalloffScaleForOuterRadius ────────────────────────────────────────
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FFalloffScaleForOuterRadius_HitsTheTarget,
+	"SpatialAudio.Math.FalloffScaleForOuterRadius.HitsTheTarget",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FFalloffScaleForOuterRadius_HitsTheTarget::RunTest(const FString& Parameters) {
+	// Inner 100 + falloff 3900 = 4000cm authored range. Asking for 2050 should use half the
+	// falloff: 100 + 0.5 * 3900 = 2050.
+	TestTrue(TEXT("Scale places the audible edge at the requested distance"),
+		FMath::IsNearlyEqual(Math::ComputeFalloffScaleForOuterRadius(2050.f, 100.f, 3900.f), 0.5f, 0.001f));
+	TestTrue(TEXT("Asking for the full authored range yields scale 1"),
+		FMath::IsNearlyEqual(Math::ComputeFalloffScaleForOuterRadius(4000.f, 100.f, 3900.f), 1.f, 0.001f));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FFalloffScaleForOuterRadius_Clamps,
+	"SpatialAudio.Math.FalloffScaleForOuterRadius.Clamps",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FFalloffScaleForOuterRadius_Clamps::RunTest(const FString& Parameters) {
+	// Inside the inner radius the engine plays at full volume, so a target there cannot be
+	// honored — it yields the shortest legal falloff rather than silence.
+	TestTrue(TEXT("Target inside the inner radius floors at the minimum scale"),
+		FMath::IsNearlyEqual(Math::ComputeFalloffScaleForOuterRadius(50.f, 400.f, 3600.f),
+		                     Math::MinFalloffScale, 0.001f));
+
+	// Never past the authored range: the ray/LoS search is sized at base scale, so a sound
+	// audible beyond it would have no diffraction paths to play through.
+	TestTrue(TEXT("Target beyond the authored range caps at scale 1"),
+		FMath::IsNearlyEqual(Math::ComputeFalloffScaleForOuterRadius(99000.f, 100.f, 3900.f), 1.f, 0.001f));
+
+	TestTrue(TEXT("Zero target means the asset's own range"),
+		FMath::IsNearlyEqual(Math::ComputeFalloffScaleForOuterRadius(0.f, 100.f, 3900.f), 1.f, 0.001f));
+	TestTrue(TEXT("No attenuation asset (zero base falloff) means the asset's own range"),
+		FMath::IsNearlyEqual(Math::ComputeFalloffScaleForOuterRadius(2000.f, 100.f, 0.f), 1.f, 0.001f));
+	return true;
+}

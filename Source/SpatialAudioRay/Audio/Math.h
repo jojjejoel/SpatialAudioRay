@@ -130,6 +130,24 @@ namespace Math {
 		return FMath::Clamp(BlendedDist / FMath::Max(MaxRayDistance, 1.f) * S.PathAttenuationStrength, 0.f, 1.f);
 	}
 
+	/** Floor on the attenuation falloff scale — a zero-length falloff would cut straight from
+	 *  full volume to silence at the inner radius. */
+	constexpr float MinFalloffScale = 0.05f;
+
+	// Scale to apply to the attenuation FalloffDistance so the audible edge lands at
+	// TargetOuterCm. Two clamps, both load-bearing: inside InnerRadius the engine plays at full
+	// volume, so that radius is a hard floor on reach (a target at or below it yields the
+	// shortest legal falloff, not silence); and the scale never exceeds 1 because the ray/LoS
+	// ranges are captured at base scale, so a sound must never be audible past where the ray
+	// system searches for diffraction paths. TargetOuterCm <= 0 means "the asset's own range".
+	inline float ComputeFalloffScaleForOuterRadius(float TargetOuterCm, float InnerRadius,
+	                                               float BaseFalloffDistance) {
+		if (TargetOuterCm <= 0.f || BaseFalloffDistance <= 0.f) {
+			return 1.f;
+		}
+		return FMath::Clamp((TargetOuterCm - InnerRadius) / BaseFalloffDistance, MinFalloffScale, 1.f);
+	}
+
 	// How far the sound effectively travels to reach the listener: the straight line while
 	// clear, the diffraction path while occluded, blended by the smoothed occlusion so
 	// partial-LoS states interpolate instead of switching at a threshold. A selection/content

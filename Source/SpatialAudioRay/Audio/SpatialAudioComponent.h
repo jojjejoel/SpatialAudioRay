@@ -92,12 +92,35 @@ public:
 	/** Scales the attenuation FalloffDistance of every cached source component AND the live
 	 *  virtual pool relative to their base (scale 1 = as authored/overridden). Lets a caller
 	 *  vary audible reach per content — e.g. NPC vocal effort: a whisper carries meters, a
-	 *  shout carries the map. Author the base attenuation for the LONGEST reach and scale
-	 *  DOWN (≤ 1): the ray/LoS ranges captured by ReadAttenuationSettings at BeginPlay stay
-	 *  at base and deliberately do not follow this scale, so scaling above 1 would make
-	 *  sounds audible beyond where the ray system searches for paths. */
+	 *  shout carries the map. Clamped to [Math::MinFalloffScale, 1]: author the base
+	 *  attenuation for the LONGEST reach and scale DOWN, because the ray/LoS ranges captured
+	 *  by ReadAttenuationSettings at BeginPlay stay at base and deliberately do not follow
+	 *  this scale — a sound audible past them would have no diffraction paths to play through. */
 	UFUNCTION(BlueprintCallable, Category = "Spatial Audio")
 	void SetAttenuationFalloffScale(float NewScale);
+
+	/** Puts the audible edge at TargetOuterCm from the source (0 = restore the asset's own
+	 *  range). Same mechanism as SetAttenuationFalloffScale, addressed in absolute distance so
+	 *  callers can tie reach to a design distance they already own — e.g. the NPC voice bands.
+	 *  The result is clamped, so ask GetAttenuationOuterRadius what you actually got. */
+	UFUNCTION(BlueprintCallable, Category = "Spatial Audio")
+	void SetAttenuationOuterRadius(float TargetOuterCm);
+
+	/** Distance (cm) at which the sources currently fall silent, after clamping. */
+	UFUNCTION(BlueprintPure, Category = "Spatial Audio")
+	float GetAttenuationOuterRadius() const {
+		return AttenuationInnerRadius + BaseAttenuationFalloffDistance * AttenuationFalloffScale;
+	}
+
+	/** Seconds since the listener last had direct line of sight; 0 while they have it. Large
+	 *  when they never have. Lets consumers react to the moment sight breaks. */
+	UFUNCTION(BlueprintPure, Category = "Spatial Audio")
+	float GetTimeSinceDirectLoS() const { return TimeSinceHadDirectLoS; }
+
+	/** Seconds of unbroken direct line of sight; 0 the moment it is lost. The mirror of
+	 *  GetTimeSinceDirectLoS, for reacting to sight being regained. */
+	UFUNCTION(BlueprintPure, Category = "Spatial Audio")
+	float GetDirectLoSDuration() const { return DirectLoSConfirmedDuration; }
 
 	/** Per-source override of the attenuation shape's inner radius (cm). 0 = keep the assigned
 	 *  attenuation's value. Applied at BeginPlay to the Source component AND the virtual voice
@@ -530,6 +553,10 @@ private:
 	 *  Ray count priority is clamped to 1.0 within 2x this distance, then scales to 0 at MaxRayDistance.
 	 *  0 means no attenuation asset found — falls back to scaling from distance 0. */
 	float AttenuationInnerRadius = 0.f;
+
+	/** The widest source's authored FalloffDistance, captured before any scaling — the base
+	 *  every AttenuationFalloffScale is relative to. */
+	float BaseAttenuationFalloffDistance = 0.f;
 
 	/** Copy of the virtual template's effective attenuation settings (falling back to the
 	 *  widest source's when the template has none), captured in ReadAttenuationSettings after

@@ -199,8 +199,13 @@ void USpatialAudioComponent::ApplyFalloffScaleTo(UAudioComponent* AC, float Rati
 	AC->AttenuationOverrides.FalloffDistance *= Ratio;
 }
 
+void USpatialAudioComponent::SetAttenuationOuterRadius(const float TargetOuterCm) {
+	SetAttenuationFalloffScale(Math::ComputeFalloffScaleForOuterRadius(
+		TargetOuterCm, AttenuationInnerRadius, BaseAttenuationFalloffDistance));
+}
+
 void USpatialAudioComponent::SetAttenuationFalloffScale(float NewScale) {
-	NewScale = FMath::Max(NewScale, 0.05f);
+	NewScale = FMath::Clamp(NewScale, Math::MinFalloffScale, 1.f);
 	if (FMath::IsNearlyEqual(NewScale, AttenuationFalloffScale)) {
 		return;
 	}
@@ -306,6 +311,7 @@ void USpatialAudioComponent::ReadAttenuationSettings() {
 
 	if (Widest) {
 		AttenuationInnerRadius = Widest->AttenuationShapeExtents.X;
+		BaseAttenuationFalloffDistance = Widest->FalloffDistance;
 
 		if (GetSettings().bAutoMaxDistance) {
 			MaxRayDistance = WidestRange;
