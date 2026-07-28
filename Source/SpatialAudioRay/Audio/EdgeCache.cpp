@@ -149,11 +149,32 @@ bool FEdgeCache::ProbeListenerLoSPoint(USpatialAudioComponent& Component, UWorld
 // an untraced-blocked point, so a broken monotonicity assumption can only miss an
 // improvement.
 FVector FEdgeCache::BisectListenerLoS(USpatialAudioComponent& Component, UWorld* World, const FVector& LisPos,
-                                      const FVector& BlockedEnd, const FVector& ClearEnd, bool& bOutFoundClear) {
+                                      const FVector& BlockedEnd, const FVector& ClearEnd, bool& bOutFoundClear,
+                                      const int32 ExplicitSteps) {
 	FVector Lo = BlockedEnd;
 	FVector Hi = ClearEnd;
 	bOutFoundClear = false;
-	for (int32 Step = 0; Step < 5; ++Step) {
+
+	// Derived step count (ExplicitSteps 0) follows the bracket rather than a constant: N halvings
+	// only localise the corner to span/2^N, so a fixed count makes accuracy scale with how long
+	// the segment happens to be. That matters most for relay→edge conversion, whose bracket is
+	// the whole edge→relay leg — at a fixed 5 steps a 20m leg resolved the corner to only ~60cm,
+	// so two relays converging on the SAME corner from different legs each landed somewhere in
+	// their own ~60cm window, well outside CachedEdgeMergeRadius, and MergeCoincidentEdges could
+	// never collapse them. Converging to the merge radius instead makes "same corner" mean the
+	// same thing to both: resolving finer than the distance at which two points ARE one corner is
+	// wasted traces, resolving coarser guarantees siblings stay split. Floor of 5 keeps every
+	// caller at least as precise as the original fixed count; ceiling of 10 bounds the cost on a
+	// very long leg (still ~20cm on a 200m bracket, inside a default merge radius).
+	int32 Steps = ExplicitSteps;
+	if (Steps <= 0) {
+		const float Tolerance = FMath::Max(Component.GetSettings().CachedEdgeMergeRadius * 0.5f, 1.f);
+		const float Span = FVector::Dist(Lo, Hi);
+		Steps = FMath::Clamp(
+			FMath::CeilToInt(FMath::Log2(FMath::Max(Span / Tolerance, 1.f))), 5, 10);
+	}
+
+	for (int32 Step = 0; Step < Steps; ++Step) {
 		const FVector Mid = (Lo + Hi) * 0.5f;
 		if (ProbeListenerLoSPoint(Component, World, LisPos, Mid)) {
 			Hi = Mid;
@@ -216,7 +237,8 @@ bool FEdgeCache::TryPromoteToInnerAnchor(USpatialAudioComponent& Component, FCac
 	}
 
 	bool bFoundClear = false;
-	const FVector Hi = BisectListenerLoS(Component, World, LisPos, Inner, EP.EdgePoint, bFoundClear);
+	const FVector Hi = BisectListenerLoS(Component, World, LisPos, Inner, EP.EdgePoint, bFoundClear,
+	                                     Component.GetSettings().ShortestPathPromotionBisectSteps);
 	if (!bFoundClear || FVector::Dist(Hi, EP.EdgePoint) < MinMove) {
 		return false;
 	}
@@ -560,6 +582,79 @@ void FEdgeCache::TickCachedEdgeEviction(USpatialAudioComponent& Component, const
 	TickShortestPathReadback(Component, World, SrcPos, Settings);
 	TickShortestPathRecheck(Component, World, SrcPos, DeltaTime, Settings);
 	TickInnerAnchorPromotion(Component, World, LisPos, DeltaTime, Settings);
+
+	// Last: every EdgePoint move above (relay conversion, promotion, refinement) can land an
+	// entry on top of another, and this is the only place that notices.
+	MergeCoincidentEdges(Component, Settings);
+}
+
+// The sweep's merge radius only ever gated ADMISSION — an incoming find within
+// CachedEdgeMergeRadius of an existing entry re-confirms it instead of adding a second one.
+// Entries already in the cache were never compared against each other, and they do not hold
+// still: relay→edge conversion bisects to a corner, and promotion/refinement walk the edge
+// inward along its own path. The relay case is the one that piles up, because it is inherently
+// simultaneous — several edges bending around the SAME physical corner lose LoS on the same
+// tick, each converts along its own edge→relay leg, and those legs all terminate at that one
+// corner. The duplicates then cost real things: cache slots, one SubstituteCount each against
+// the sweep ray budget, one exclusion direction each (so sweeps under-search a region holding a
+// single corner), and — since Math::ClusterEdgePoints sums member weights into Cluster
+// .TotalWeight — a larger share of the voice mix than a genuinely distinct opening gets.
+//
+// Survivor = shortest EffectivePathDist(). At one point the listener leg is identical and the
+// rank score's listener term cancels exactly, so the only thing left that distinguishes two
+// entries is how far the sound travelled to arrive — the same shortest-path rule occlusion and
+// GetEffectiveAcousticDistance already run on. Bounce count deliberately does NOT enter here
+// (unlike the sweep's IsBetter, which compares entries at DIFFERENT positions): a 3-bounce 8m
+// route to a corner beats a 1-bounce 40m route to the same corner.
+//
+// Relayed entries are excluded, and the test is on EdgePoint rather than EffectivePoint():
+// relays rescued through the same clear fan point share a RelayPoint while their EdgePoints are
+// genuinely distinct corners, so keying on the presented point would delete real edges — the
+// same class of failure as the removed relay-yield rule, which killed sibling relays the moment
+// the first one converted. A relay clears bRelayed on conversion, so it is picked up on the
+// very next tick anyway. Evicting entries are skipped for the mirror reason: they are already
+// leaving, and merging into one would hand the survivor a fade that is on its way out.
+void FEdgeCache::MergeCoincidentEdges(USpatialAudioComponent& Component,
+                                      const USpatialAudioSettings& Settings) {
+	const float MergeRadiusSq = FMath::Square(Settings.CachedEdgeMergeRadius);
+	if (MergeRadiusSq <= 0.f) {
+		return;
+	}
+	auto IsMergeable = [](const FCachedEdgePoint& EP) {
+		return !EP.bRelayed && !EP.bEvicting;
+	};
+
+	// Both loops run backward so a removal can only shift entries already visited.
+	for (int32 i = Component.CachedEdgePoints.Num() - 1; i >= 0; --i) {
+		if (!IsMergeable(Component.CachedEdgePoints[i])) {
+			continue;
+		}
+		for (int32 j = i - 1; j >= 0; --j) {
+			if (!IsMergeable(Component.CachedEdgePoints[j]) ||
+				FVector::DistSquared(Component.CachedEdgePoints[i].EdgePoint,
+				                     Component.CachedEdgePoints[j].EdgePoint) >= MergeRadiusSq) {
+				continue;
+			}
+			// The discovery flag survives either way: if either entry found this corner since
+			// the cache-fill burst armed, the corner was found, and dropping that would make the
+			// burst re-survey a position it has already covered.
+			const bool bNewEither = Component.CachedEdgePoints[i].bNewSinceFillArm ||
+				Component.CachedEdgePoints[j].bNewSinceFillArm;
+
+			if (Component.CachedEdgePoints[i].EffectivePathDist() <
+				Component.CachedEdgePoints[j].EffectivePathDist()) {
+				Component.CachedEdgePoints[i].bNewSinceFillArm = bNewEither;
+				Component.CachedEdgePoints.RemoveAt(j);
+				// i slid down with the removal; keep scanning the remaining lower entries so a
+				// three-way pile collapses in one pass rather than one merge per tick.
+				--i;
+				continue;
+			}
+			Component.CachedEdgePoints[j].bNewSinceFillArm = bNewEither;
+			Component.CachedEdgePoints.RemoveAt(i);
+			break;
+		}
+	}
 }
 
 // Source-side counterpart of Phase 0: re-traces the stored string-pulled polyline PathDist was

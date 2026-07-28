@@ -168,7 +168,19 @@ void FAsyncCastManager::MergeStoredPathsIntoCache(USpatialAudioComponent& Compon
 
 		if (BestIdx >= 0) {
 			FCachedEdgePoint& EP = Component.CachedEdgePoints[BestIdx];
-			if (IsBetter(SP, EP)) {
+			// Inside the merge radius the two describe the SAME corner, so the comparison
+			// collapses: the listener leg is identical and the rank score's listener term
+			// cancels exactly, leaving only how far the sound travelled to arrive. Shortest
+			// wins outright — the min-path rule occlusion already runs on. Bounce count is
+			// deliberately not the primary key here as it is in IsBetter (which compares
+			// candidates at DIFFERENT positions, where it still carries information): a
+			// 3-bounce short route to this corner beats a 1-bounce long one to it. A relayed
+			// incumbent still yields unconditionally — a stopgap detour through an old listener
+			// position is not evidence about this corner at all. The 1% margin is the same
+			// anti-churn hysteresis the rank comparison carried: without it two near-equal
+			// routes to one corner rewrite the entry every sweep, each rewrite dropping an
+			// in-flight Phase 0 probe and resetting the eviction fade.
+			if (EP.bRelayed || SP.PathDist < EP.EffectivePathDist() * 0.99f) {
 				WriteEntry(EP, SP);
 			}
 			else {

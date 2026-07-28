@@ -889,9 +889,12 @@ public:
 		meta = (ClampMin = "1", ClampMax = "32", EditCondition = "bCacheEdgePoints"))
 	int32 CachedEdgeMaxCount = 4;
 
-	/** Distance in cm within which a new diffraction candidate merges with an existing cached
-	 *  point rather than creating a duplicate. Keeps multiple nearby traces of the same
-	 *  geometric corner consolidated into one entry. */
+	/** Distance in cm within which two diffraction points count as the same geometric corner and
+	 *  are consolidated into one cache entry. Applies both to a new candidate arriving from a
+	 *  sweep and to entries that have drifted together in the cache (relay→edge conversion and
+	 *  inner-anchor promotion both move an admitted entry's point). Whichever route travelled
+	 *  least to reach the corner survives: at one point the listener leg is shared, so path
+	 *  length is all that separates them. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Edge Cache",
 		meta = (ClampMin = "5.0", ClampMax = "200.0", EditCondition = "bCacheEdgePoints"))
 	float CachedEdgeMergeRadius = 25.f;
@@ -960,6 +963,28 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Edge Cache",
 		meta = (ClampMin = "0.0", ClampMax = "5.0", EditCondition = "bCacheEdgePoints"))
 	float ShortestPathPromotionInterval = 0.f;
+
+	/**
+	 * Binary-search steps the promotion's sub-segment refinement spends locating the corner on
+	 * the final polyline segment (the stage that runs when the previous vertex is blocked).
+	 * Each step costs 2 traces and halves the remaining bracket, so the corner lands within
+	 * segmentLength / 2^steps of its true position.
+	 *
+	 * 0 = derive the count from the segment, stopping once the bracket is inside half
+	 * CachedEdgeMergeRadius (clamped to 5..10 steps) — the corner is then located finely enough
+	 * that two entries refining onto the same corner land close enough to be merged, which is
+	 * what "same corner" means everywhere else. Set a fixed count only to pin the cost: a low
+	 * value on a long segment leaves the edge visibly short of the real corner and can strand
+	 * near-duplicate cache entries just outside the merge radius.
+	 *
+	 * Only the opportunistic promotion path reads this. Relay→edge conversion always derives its
+	 * own count, because its bracket is the entire edge→relay leg and a fixed count there scales
+	 * the error with leg length — the reason simultaneous relay conversions used to leave
+	 * permanently unmergeable duplicates.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Edge Cache",
+		meta = (ClampMin = "0", ClampMax = "12", EditCondition = "bCacheEdgePoints"))
+	int32 ShortestPathPromotionBisectSteps = 0;
 
 
 	// ── Debug ─────────────────────────────────────────────────────────────────
