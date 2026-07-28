@@ -66,8 +66,20 @@ void UNPCVoiceComponent::LoadBank() {
 		FNPCVoiceRuntimeLine& Line = Lines.AddDefaulted_GetRef();
 		Line.Row = *Row;
 		Line.Wave = Wave;
+
+		// The wave overrules the manifest: Row.Duration is the scheduler's only end-of-line
+		// signal, so a re-render that never made it back into the CSV would silently truncate
+		// every following line or leave dead air — invisible until it ruins a take.
+		Line.Row.Duration = VoiceLogic::ResolveLineDuration(Row->Duration, Wave->Duration);
+		if (!FMath::IsNearlyEqual(Line.Row.Duration, Row->Duration,
+		                          VoiceLogic::DurationMismatchTolerance)) {
+			UE_LOG(LogSpatialAudio, Warning,
+			       TEXT("NPCVoice: row %s declares %.2fs but its wave is %.2fs — using the wave. "
+			            "Re-export the bank CSV."),
+			       *Pair.Key.ToString(), Row->Duration, Line.Row.Duration);
+		}
 	}
-	bBankHasBargeInContent = VoiceLogic::BankHasBargeInContent(Lines);
+	BargeInAvailability = VoiceLogic::ResolveBargeInAvailability(Lines);
 }
 
 void UNPCVoiceComponent::TickComponent(float DeltaTime, ELevelTick TickType,
@@ -93,25 +105,20 @@ void UNPCVoiceComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 	Acoustic.DirectDistanceCm =
 		static_cast<float>(FVector::Dist(Owner->GetActorLocation(), ListenerPos));
 	Acoustic.EffectiveDistanceCm = Spatial->GetEffectiveAcousticDistance(ListenerPos);
-	Acoustic.TimeSinceLoSLost = Spatial->GetTimeSinceDirectLoS();
-	Acoustic.LoSHeldDuration = Spatial->GetDirectLoSDuration();
 
 	const UNPCVoiceSettings& S = GetSettings();
 	VoiceLogic::AdvanceBucketHysteresis(
 		BucketState, VoiceLogic::MapToBucket(Acoustic.EffectiveDistanceCm, S), Now, S.BucketDwellTime);
 
-	// Fired instantly rather than dwelled: the occlusion driving it is already smoothed and
-	// threshold-gated, and a delayed reaction misses the moment it is reacting to. The
-	// barge-in rate limit absorbs any residual chatter.
-	const bool bHidden = VoiceLogic::IsListenerHidden(Acoustic, S);
-	ENPCVoiceSightChange SightChange = ENPCVoiceSightChange::None;
-	if (bSightStateKnown && bHidden != bWasHidden) {
-		SightChange = bHidden ? ENPCVoiceSightChange::Lost : ENPCVoiceSightChange::Gained;
-	}
-	bWasHidden = bHidden;
-	bSightStateKnown = true;
+	// Crossings fire instantly rather than dwelled: the occlusion behind them is already
+	// smoothed and threshold-gated, and a delayed reaction misses the moment it is reacting to.
+	// The barge-in rate limit absorbs any residual chatter. Stamped before the acoustic state
+	// reads the timer, so a crossing this tick opens its own reaction window immediately.
+	const ENPCVoiceSightChange SightChange = VoiceLogic::AdvanceSightState(
+		SightState, VoiceLogic::IsListenerHidden(Acoustic, S), Now);
+	Acoustic.TimeSinceSightChange = Now - SightState.LastChangeTime;
 
-	TickBargeIn(Now, SightChange);
+	TickSightReaction(Now, SightChange);
 	TickScheduler(Now, Acoustic);
 
 	if (bShowDebugText) {
@@ -119,11 +126,17 @@ void UNPCVoiceComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 	}
 }
 
-void UNPCVoiceComponent::TickBargeIn(float Now, ENPCVoiceSightChange SightChange) {
+void UNPCVoiceComponent::TickSightReaction(float Now, ENPCVoiceSightChange SightChange) {
 	const UNPCVoiceSettings& S = GetSettings();
 	const VoiceLogic::FBargeInDecision Decision = VoiceLogic::EvaluateBargeIn(
-		Playback, Transition, BucketState.Committed, SightChange, bBankHasBargeInContent, Now, S);
+		Playback, Transition, BucketState.Committed, SightChange, BargeInAvailability, Now, S);
 	if (!Decision.ShouldBargeIn()) {
+		// Nothing was interrupted. If sight just changed and the NPC happens to be between
+		// lines, the reaction has to come from scheduling one sooner — the normal silence
+		// outlasts the window the LostSight / SightRegained content is gated on.
+		if (SightChange != ENPCVoiceSightChange::None && !Playback.bPlaying && !Transition.bPending) {
+			VoiceLogic::PullInNextLine(Playback, Now, S);
+		}
 		return;
 	}
 	// Nothing usable for that reason (all on cooldown, or the bank lacks it) — leave the line
@@ -219,6 +232,13 @@ FString UNPCVoiceComponent::BuildDebugInputsLine(const FNPCVoiceAcousticState& A
 			TEXT(" (candidate=%s dwell %.1f/%.1fs)"),
 			*EffortEnum->GetNameStringByValue(static_cast<int64>(BucketState.Candidate)),
 			Now - BucketState.CandidateSince, GetSettings().BucketDwellTime);
+	}
+	// Only while it is actually gating content — outside the window it explains nothing about
+	// the category the ladder just picked.
+	if (Acoustic.TimeSinceSightChange <= GetSettings().SightChangeReactionWindow) {
+		Line += FString::Printf(TEXT(" (%s %.1fs ago)"),
+		                        SightState.bHidden ? TEXT("hidden") : TEXT("seen"),
+		                        Acoustic.TimeSinceSightChange);
 	}
 	return Line;
 }

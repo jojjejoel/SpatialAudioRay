@@ -15,8 +15,10 @@ class USpatialAudioComponent;
  * the effective acoustic distance to the listener (straight line while clear, diffraction
  * path length while occluded — GetEffectiveAcousticDistance) selects a vocal-effort bucket
  * (with dwell hysteresis), and a scheduler plays bank lines at that effort through the
- * shared spatial bus. Occlusion itself only switches content category (Clear vs Occluded
- * lines) — the path length already encodes how hard the NPC is to hear.
+ * shared spatial bus. Occlusion itself never shifts the effort — path length already encodes
+ * how hard the NPC is to hear — it only decides whether the listener counts as hidden, which
+ * picks the content half (Clear vs Occluded lines) and, on the tick it flips, drives the
+ * sight reactions.
  *
  * Setup on the NPC actor:
  *  - a USpatialAudioComponent (the acoustic state source),
@@ -27,9 +29,12 @@ class USpatialAudioComponent;
  *  - this component, with a VoiceBank DataTable of FNPCVoiceLineRow.
  *
  * A playing line is never modified mid-flight — bucket changes apply to the NEXT line —
- * with one exception: a dramatic effort jump (≥ TransitionBucketDelta buckets from the
- * playing line's effort) barges in with a short Transition-category line in the jump's
- * direction, then resumes normal scheduling at the new effort.
+ * with one exception: a barge-in cuts the line short with a declick fade and replaces it,
+ * then resumes normal scheduling at the new effort. Three moments qualify, ranked: sight
+ * lost, sight regained, and an effort jump of ≥ TransitionBucketDelta buckets from the
+ * playing line's effort. When a sight change finds nothing playing there is no line to cut,
+ * so the next one is pulled forward instead — otherwise the reaction would arrive after the
+ * window its content is gated on had already closed.
  */
 UCLASS(ClassGroup=(Audio), meta=(BlueprintSpawnableComponent))
 class SPATIALAUDIORAY_API UNPCVoiceComponent : public UActorComponent {
@@ -78,7 +83,7 @@ public:
 private:
 	void ResolveOwnerComponents();
 	void LoadBank();
-	void TickBargeIn(float Now, ENPCVoiceSightChange SightChange);
+	void TickSightReaction(float Now, ENPCVoiceSightChange SightChange);
 	void TickScheduler(float Now, const FNPCVoiceAcousticState& Acoustic);
 	void SelectAndPlayLine(float Now, const FNPCVoiceAcousticState& Acoustic);
 	void PlayLine(const FNPCVoiceRuntimeLine& Line, float Now, bool bAsBargeIn);
@@ -97,13 +102,9 @@ private:
 	FNPCVoiceBucketHysteresis BucketState;
 	FNPCVoicePlaybackState Playback;
 	FNPCVoiceTransitionState Transition;
+	FNPCVoiceSightState SightState;
 	TMap<FName, float> CooldownUntil;
 
-	/** Cached at load: with no barge-in categories present the feature stays dormant. */
-	bool bBankHasBargeInContent = false;
-
-	/** Previous visibility, for detecting the tick sight breaks or returns. bSightStateKnown
-	 *  suppresses a spurious change on the very first tick. */
-	bool bWasHidden = false;
-	bool bSightStateKnown = false;
+	/** Cached at load: which barge-in reasons the bank can actually replace a line for. */
+	FNPCVoiceBargeInAvailability BargeInAvailability;
 };

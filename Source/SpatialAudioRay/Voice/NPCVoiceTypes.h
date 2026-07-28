@@ -125,6 +125,29 @@ struct FNPCVoiceRuntimeLine {
 	TObjectPtr<USoundWave> Wave = nullptr;
 };
 
+/** Which barge-in reasons the loaded bank can actually service, resolved once at load.
+ *
+ *  Per-reason rather than one "has barge-in content" flag because the triggers are ranked and
+ *  the first that fires wins: a bank carrying Transition lines but no SightRegained lines would
+ *  otherwise let a sight-gained tick claim the barge-in, find nothing to play, and abort —
+ *  swallowing the effort drift that fired on the same tick and did have content. Since a sight
+ *  change is a one-tick edge and the playing line's bucket stays put, that barge-in is simply
+ *  lost. */
+struct FNPCVoiceBargeInAvailability {
+	bool bTransition = false;
+	bool bLostSight = false;
+	bool bSightRegained = false;
+
+	bool Has(ENPCVoiceBargeInReason Reason) const {
+		switch (Reason) {
+			case ENPCVoiceBargeInReason::EffortDrift: return bTransition;
+			case ENPCVoiceBargeInReason::SightLost: return bLostSight;
+			case ENPCVoiceBargeInReason::SightGained: return bSightRegained;
+			default: return false;
+		}
+	}
+};
+
 /** The acoustic situation, sampled once per tick and fed to content selection. Everything
  *  here is a listener-relative measurement — legitimate for choosing WHAT to say and how
  *  loudly, never for the virtual path's own gain (see the listener-independence rule in
@@ -136,10 +159,12 @@ struct FNPCVoiceAcousticState {
 	/** How far the sound actually travels: the straight line while clear, the diffraction
 	 *  route while occluded. Drives the effort bucket. */
 	float EffectiveDistanceCm = 0.f;
-	/** Seconds since direct line of sight was last held; 0 while it is held. */
-	float TimeSinceLoSLost = 1e9f;
-	/** Seconds of unbroken direct line of sight; 0 the moment it is lost. */
-	float LoSHeldDuration = 0.f;
+	/** Seconds since the listener last crossed between visible and hidden, by the voice layer's
+	 *  own definition of hidden (see VoiceLogic::AdvanceSightState). Large when that has never
+	 *  happened, so a scene nobody has moved through offers no reaction content. Which of
+	 *  LostSight / SightRegained the window opens is decided by the half the listener is in
+	 *  now, so one field serves both. */
+	float TimeSinceSightChange = 1e9f;
 
 	/** How much further the sound travels than the straight line. 1 = no detour. This is the
 	 *  measurement no non-diffraction audio system can make, and the one BehindWall keys on. */
@@ -148,11 +173,25 @@ struct FNPCVoiceAcousticState {
 	}
 };
 
-// The three structs below are the voice scheduler's entire mutable state. They are plain
+// The four structs below are the voice scheduler's entire mutable state. They are plain
 // C++ (no reflection needed — no GC pointers, nothing designer-facing) and live here rather
 // than as loose component members so the pure decision functions in NPCVoiceLogic.h can take
 // them as explicit parameters, which is what makes those decisions unit-testable without a
 // component, world, or audio device.
+
+/** Edge detector for the listener crossing between visible and hidden. The voice layer's
+ *  SOLE sight signal — both the content ladder's reaction window and the sight barge-in
+ *  triggers read it, so the two cannot disagree about whether a break happened. */
+struct FNPCVoiceSightState {
+	/** Whether the listener counted as hidden at the last sample. */
+	bool bHidden = false;
+	/** False until the first sample, which seeds bHidden without reporting a change — the
+	 *  listener's starting side is not something the NPC just watched happen. */
+	bool bInitialized = false;
+	/** When the state last flipped. Far in the past so an unchanged scene offers no reaction
+	 *  content. */
+	float LastChangeTime = -1e9f;
+};
 
 /** Dwell-time hysteresis for the effort bucket: a mapped bucket must persist before it
  *  commits, so a player walking a band edge can't flip-flop the NPC's delivery. */

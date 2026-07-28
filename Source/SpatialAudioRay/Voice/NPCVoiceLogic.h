@@ -20,6 +20,10 @@ namespace VoiceLogic {
 	 *  fade-out's stop. Not a design knob — an ordering guard on the audio component. */
 	constexpr float TransitionPlayMargin = 0.03f;
 
+	/** Seconds a bank row's Duration may disagree with its wave before the mismatch is worth
+	 *  warning about. Below this it is manifest rounding, not a stale export. */
+	constexpr float DurationMismatchTolerance = 0.05f;
+
 	// ── Bank queries ──────────────────────────────────────────────────────────
 
 	/** The category a barge-in draws its replacement line from. */
@@ -31,15 +35,30 @@ namespace VoiceLogic {
 		}
 	}
 
-	/** Whether the bank can service a barge-in at all. Cached at load: with none of the
-	 *  barge-in categories present the feature stays dormant rather than cutting lines it
-	 *  can't replace. */
-	inline bool BankHasBargeInContent(const TArray<FNPCVoiceRuntimeLine>& Lines) {
-		return Lines.ContainsByPredicate([](const FNPCVoiceRuntimeLine& Line) {
-			return Line.Row.Category == ENPCVoiceCategory::Transition ||
-				Line.Row.Category == ENPCVoiceCategory::LostSight ||
-				Line.Row.Category == ENPCVoiceCategory::SightRegained;
-		});
+	/** Which barge-in reasons this bank can service. Cached at load; a reason with no content
+	 *  never fires, so it can't claim a tick away from a reason that does have content, and a
+	 *  bank with none of the three keeps the plain wait-for-line-end behavior. */
+	inline FNPCVoiceBargeInAvailability ResolveBargeInAvailability(
+		const TArray<FNPCVoiceRuntimeLine>& Lines) {
+		FNPCVoiceBargeInAvailability Available;
+		for (const FNPCVoiceRuntimeLine& Line : Lines) {
+			switch (Line.Row.Category) {
+				case ENPCVoiceCategory::Transition: Available.bTransition = true; break;
+				case ENPCVoiceCategory::LostSight: Available.bLostSight = true; break;
+				case ENPCVoiceCategory::SightRegained: Available.bSightRegained = true; break;
+				default: break;
+			}
+		}
+		return Available;
+	}
+
+	/** The duration the scheduler should trust. The wave is ground truth — Row.Duration is the
+	 *  only end-of-line signal there is, and a re-render that never made it back into the
+	 *  manifest would truncate every following line or leave dead air. Falls back to the
+	 *  manifest only if the wave reports nothing usable; bank rows are imported one-shot
+	 *  renders, so there is no looping duration to defend against. */
+	inline float ResolveLineDuration(float RowDuration, float WaveDuration) {
+		return WaveDuration > 0.f ? WaveDuration : RowDuration;
 	}
 
 	// ── Effort selection ──────────────────────────────────────────────────────
@@ -81,6 +100,40 @@ namespace VoiceLogic {
 		}
 	}
 
+	// ── Sight ─────────────────────────────────────────────────────────────────
+
+	/** Whether the listener counts as hidden. The only thing occlusion still selects directly;
+	 *  effort comes from path length. */
+	inline bool IsListenerHidden(const FNPCVoiceAcousticState& Acoustic, const UNPCVoiceSettings& S) {
+		return Acoustic.Occlusion >= S.OcclusionShiftThreshold;
+	}
+
+	/** Advances the visible/hidden edge detector and reports this tick's crossing, if any.
+	 *
+	 *  This is deliberately the voice layer's ONLY sight signal, and it is derived from the same
+	 *  IsListenerHidden predicate content selection uses. The spatial component also exposes
+	 *  direct-line-of-sight timers, and keying anything here off those instead lets the two
+	 *  disagree, in both directions: that flag is the raw instant sample and drops on a single
+	 *  grazing trace while the listener moves, so a visible listener would be told "there you
+	 *  are" about a break that was never announced and they never heard; and in a pinhole state
+	 *  (occlusion past the threshold while a sliver of direct sight technically survives) it
+	 *  never breaks at all, which pinned the LostSight content at the head of the ladder for as
+	 *  long as the listener stood in the doorway. One predicate, one edge, no disagreement. */
+	inline ENPCVoiceSightChange AdvanceSightState(FNPCVoiceSightState& State, bool bHidden,
+	                                              float Now) {
+		if (!State.bInitialized) {
+			State.bInitialized = true;
+			State.bHidden = bHidden;
+			return ENPCVoiceSightChange::None;
+		}
+		if (bHidden == State.bHidden) {
+			return ENPCVoiceSightChange::None;
+		}
+		State.bHidden = bHidden;
+		State.LastChangeTime = Now;
+		return bHidden ? ENPCVoiceSightChange::Lost : ENPCVoiceSightChange::Gained;
+	}
+
 	// ── Line selection ────────────────────────────────────────────────────────
 
 	/** Whether Group is currently blocked. A None group is never on cooldown — ungrouped
@@ -98,12 +151,6 @@ namespace VoiceLogic {
 		if (!Group.IsNone()) {
 			Cooldowns.Add(Group, Now + Seconds);
 		}
-	}
-
-	/** Whether the listener counts as hidden. The only thing occlusion still selects directly;
-	 *  effort comes from path length. */
-	inline bool IsListenerHidden(const FNPCVoiceAcousticState& Acoustic, const UNPCVoiceSettings& S) {
-		return Acoustic.Occlusion >= S.OcclusionShiftThreshold;
 	}
 
 	/** Indices of every line playable at Bucket/Category right now. bAllowRepeat waives the
@@ -143,9 +190,12 @@ namespace VoiceLogic {
 		const FNPCVoiceAcousticState& Acoustic, const UNPCVoiceSettings& S) {
 		TArray<ENPCVoiceCategory, TInlineAllocator<4>> Allowed;
 
+		// Reacting to the crossing outranks describing the new state, but only briefly. Both
+		// halves read the same window; which reaction it opens follows from the half.
+		const bool bJustChanged = Acoustic.TimeSinceSightChange <= S.SightChangeReactionWindow;
+
 		if (!IsListenerHidden(Acoustic, S)) {
-			// Reacting to the change outranks describing the new state, but only briefly.
-			if (Acoustic.LoSHeldDuration <= S.SightChangeReactionWindow) {
+			if (bJustChanged) {
 				Allowed.Add(ENPCVoiceCategory::SightRegained);
 			}
 			if (Acoustic.DirectDistanceCm >= S.FarVisibleMinDistance) {
@@ -155,7 +205,7 @@ namespace VoiceLogic {
 			return Allowed;
 		}
 
-		if (Acoustic.TimeSinceLoSLost <= S.SightChangeReactionWindow) {
+		if (bJustChanged) {
 			Allowed.Add(ENPCVoiceCategory::LostSight);
 		}
 		const float Detour = Acoustic.DetourRatio();
@@ -239,32 +289,34 @@ namespace VoiceLogic {
 
 	/** Decision only — the caller owns the fade-out and the state writes. Shared gates first:
 	 *  something is playing, it isn't itself a barge-in (barge-ins are never interrupted), the
-	 *  bank has replacement content, the rate limit has elapsed, and enough of the line remains
-	 *  that cutting it reads as deliberate rather than as a glitch.
+	 *  rate limit has elapsed, and enough of the line remains that cutting it reads as
+	 *  deliberate rather than as a glitch.
 	 *
 	 *  Then the triggers, and their ORDER is the point. Losing sight inflates the acoustic path,
 	 *  which climbs the effort bands, so a visibility change almost always arrives together with
 	 *  effort drift. Ranking visibility first keeps the NPC from reporting a listener "moving
-	 *  away" who never moved at all — they stepped behind a wall. */
+	 *  away" who never moved at all — they stepped behind a wall. Each trigger is gated on its
+	 *  OWN replacement content, so a reason the bank can't service steps aside for one it can
+	 *  instead of claiming the tick and aborting. */
 	inline FBargeInDecision EvaluateBargeIn(const FNPCVoicePlaybackState& Playback,
 	                                        const FNPCVoiceTransitionState& Transition,
 	                                        ENPCVoiceEffort Committed, ENPCVoiceSightChange SightChange,
-	                                        bool bBankHasBargeInContent, float Now,
+	                                        const FNPCVoiceBargeInAvailability& Available, float Now,
 	                                        const UNPCVoiceSettings& S) {
-		if (!Playback.bPlaying || Playback.bActiveIsBargeIn || !bBankHasBargeInContent) {
+		if (!Playback.bPlaying || Playback.bActiveIsBargeIn) {
 			return {};
 		}
 		if (Now - Transition.LastTime < S.TransitionCooldownSeconds ||
 			Playback.EndTime - Now < S.TransitionMinRemainingTime) {
 			return {};
 		}
-		if (SightChange == ENPCVoiceSightChange::Lost) {
+		if (SightChange == ENPCVoiceSightChange::Lost && Available.bLostSight) {
 			return {ENPCVoiceBargeInReason::SightLost};
 		}
-		if (SightChange == ENPCVoiceSightChange::Gained) {
+		if (SightChange == ENPCVoiceSightChange::Gained && Available.bSightRegained) {
 			return {ENPCVoiceBargeInReason::SightGained};
 		}
-		if (S.TransitionBucketDelta <= 0) {
+		if (S.TransitionBucketDelta <= 0 || !Available.bTransition) {
 			return {};
 		}
 		const int32 Jump = FMath::Abs(
@@ -284,6 +336,19 @@ namespace VoiceLogic {
 	inline float ResolveNextLineDelay(bool bAfterTransition, const UNPCVoiceSettings& S) {
 		return bAfterTransition ? S.PostTransitionLineDelay
 		                        : FMath::RandRange(S.LineIntervalMin, S.LineIntervalMax);
+	}
+
+	/** Brings the next line forward so a reaction still lands inside the window LostSight /
+	 *  SightRegained content is gated on.
+	 *
+	 *  A sight change with nothing playing produces no barge-in — there is no line to
+	 *  interrupt — and the normal LineIntervalMin..Max silence easily outlasts
+	 *  SightChangeReactionWindow, so the NPC would sit through the break and then never mention
+	 *  it, having moved on to describing the new state. Only ever moves the next line EARLIER,
+	 *  so it cannot delay one already due. */
+	inline void PullInNextLine(FNPCVoicePlaybackState& Playback, float Now,
+	                           const UNPCVoiceSettings& S) {
+		Playback.NextLineTime = FMath::Min(Playback.NextLineTime, Now + S.PostTransitionLineDelay);
 	}
 
 	/** Drops the playing line without scheduling a replacement. Deliberately leaves
