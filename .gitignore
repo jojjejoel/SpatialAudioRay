@@ -14,3 +14,6 @@ __pycache__/
 # Generated voice bank. Reproducible from Tools/VoiceGen: refs, lines CSV and
 # generate_bank.py are all tracked, so the renders are build output.
 Content/Voice/
+
+# Tuning is project-specific; consumers create their own settings asset.
+Content/DA_SpatialAudio.uasset
