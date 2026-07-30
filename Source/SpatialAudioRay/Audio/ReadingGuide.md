@@ -131,7 +131,7 @@ Finish with `Math.h` end to end (~300 lines, pure stateless functions). Most for
 
 The `Voice/` folder (`UNPCVoiceComponent`) is a *consumer* demo: it reads the component's effective acoustic distance (straight line while visible, diffraction path length while occluded) to pick a vocal-effort bucket for NPC voice lines — whisper when acoustically close, shout when far — and plays them through the same pipeline. Nothing in `Audio/` depends on it.
 
-Tests live at the module root (`SpatialAudioRay.Math.*`, `SpatialAudioRay.Async.*`, `SpatialAudioRay.Voice.*` in Session Frontend → Automation) and are a readable spec for the pure helpers — `SpatialAudioMathTests.cpp` is a good final read.
+Tests live in `Source/SpatialAudioRay/Tests/` (`SpatialAudioRay.Math.*`, `SpatialAudioRay.Async.*`, `SpatialAudioRay.Voice.*` in Session Frontend → Automation) and are a readable spec for the pure helpers — `MathTests.cpp` is a good final read.
 
 ---
 
