@@ -144,7 +144,10 @@ public:
 	float OverrideAttenuationFalloffDistance = 0.f;
 
 
-	/** Master switch — no debug rendering when false. */
+	/** Master switch: no debug rendering when false. Every sub-view below also defaults
+	 *  to false, so enabling this alone draws nothing until you turn on the specific
+	 *  views you want, either here or with their runtime keys. The views overlap heavily
+	 *  and several are only readable in isolation, so opting in beats opting out. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Debug")
 	bool bDrawDebugRays = false;
 
@@ -153,17 +156,17 @@ public:
 	 *  under bShowEdgePoints and the steering-prediction spheres under bShowSteeringPrediction. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Debug",
 		meta = (EditCondition = "bDrawDebugRays"))
-	bool bShowVirtualSourceRays = true;
+	bool bShowVirtualSourceRays = false;
 
 	/** Show bounce ray segments (white → orange → red) and hit point spheres. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Debug",
 		meta = (EditCondition = "bDrawDebugRays"))
-	bool bShowBounceRays = true;
+	bool bShowBounceRays = false;
 
 	/** Show on-screen debug text. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Debug",
 		meta = (EditCondition = "bDrawDebugRays"))
-	bool bShowDebugText = true;
+	bool bShowDebugText = false;
 
 	/** Key that toggles bShowVirtualSourceRays at runtime. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Debug",
@@ -206,14 +209,14 @@ public:
 	 *  the direct-path LoS sampling lines from the full cast. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Debug",
 		meta = (EditCondition = "bDrawDebugRays"))
-	bool bShowDiffractionPaths = true;
+	bool bShowDiffractionPaths = false;
 
 	/** Show edge detection results: green backtracked-edge spheres per ray,
 	 *  yellow stored-path recheck lines, LoS state spheres at source/listener, and the
 	 *  yellow cached-edge spheres (+ relay legs) from the live cache. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Debug",
 		meta = (EditCondition = "bDrawDebugRays"))
-	bool bShowEdgePoints = true;
+	bool bShowEdgePoints = false;
 
 	/** Key that toggles bShowDiffractionPaths at runtime. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Debug",
@@ -264,7 +267,7 @@ public:
 	 *  source → anchors → edge, with a sphere at each intermediate anchor. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Debug",
 		meta = (EditCondition = "bDrawDebugRays"))
-	bool bShowShortestPaths = true;
+	bool bShowShortestPaths = false;
 
 	/** Key that toggles bShowShortestPaths at runtime. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Debug",
@@ -275,7 +278,7 @@ public:
 	 *  window after LoS loss), drawn while SteeringPredictionLeadTime > 0. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Debug",
 		meta = (EditCondition = "bDrawDebugRays"))
-	bool bShowSteeringPrediction = true;
+	bool bShowSteeringPrediction = false;
 
 	/** Key that toggles bShowSteeringPrediction at runtime. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Debug",

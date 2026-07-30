@@ -61,15 +61,18 @@ private:
 	bool bCycleModeActive = false;
 
 	/** Independent of the per-source bShowDebugText so global-only and per-source-only
-	 *  displays are both possible. Toggled by ToggleGlobalDebugTextKey. */
-	bool bShowGlobalDebugText = true;
+	 *  displays are both possible. Toggled by ToggleGlobalDebugTextKey. Defaults off like
+	 *  the rest of the views; see bDrawDebugRays for why. */
+	bool bShowGlobalDebugText = false;
 	bool bPrevToggleKeyDown = false;
 	bool bPrevCycleKeyDown = false;
 	bool bPrevSubModeKeyDown[11] = {};
 
 	/** World-space name labels, toggled by ToggleActorLabelsKey. Only drawn on sources that
 	 *  currently have bDrawDebugRays true (the cycle-selected source, or the proximity-limited
-	 *  in-range set) — not every registered source. */
+	 *  in-range set), not every registered source. The one view left on by default: it names
+	 *  what you are looking at rather than drawing over it, and since it needs a source to be
+	 *  debug-enabled first, it stays invisible until you have already opted in. */
 	bool bShowActorLabels = true;
 	bool bPrevActorLabelsKeyDown = false;
 };
