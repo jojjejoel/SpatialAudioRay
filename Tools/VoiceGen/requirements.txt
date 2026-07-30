@@ -1,0 +1,22 @@
+# torch is the one dependency worth installing deliberately, BEFORE this file:
+# see https://pytorch.org/get-started/locally/.
+#
+#   NVIDIA        install a CUDA build. Plain `pip install torch` pulls the CPU
+#                 build, which still works but is many times slower.
+#   AMD / Intel   CPU is the practical option on Windows. PyTorch's ROCm wheels
+#                 are Linux-only, and torch-directml pins to older torch releases
+#                 and exposes a device this script doesn't target. Generation
+#                 works fine on CPU, it just takes minutes per line rather than
+#                 seconds — render with --takes 1 and reroll individual lines
+#                 afterwards rather than rendering an audition pool up front.
+#   Apple         MPS is not wired up here; --device is passed straight through
+#                 to torch, so it may work, but it is untested.
+#
+# generate_bank.py prints the device it loaded on and the generation time per
+# take — check both on a short run before committing to a full bank.
+chatterbox-tts
+pyloudnorm
+# perth (chatterbox's watermarker) still imports pkg_resources, which
+# setuptools removed in v81 — without this pin the watermarker silently
+# becomes None and model init crashes.
+setuptools<81

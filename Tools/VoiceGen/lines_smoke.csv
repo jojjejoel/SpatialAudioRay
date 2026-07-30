@@ -1,0 +1,5 @@
+id,category,cooldown_group,buckets,direction,text
+T001,clear,,whisper,,"Testing the new reference clips at every level of effort. Same words each time, so the only thing that should change is how it is said."
+T002,clear,,conversational,,"Testing the new reference clips at every level of effort. Same words each time, so the only thing that should change is how it is said."
+T003,clear,,raised,,"Testing the new reference clips at every level of effort. Same words each time, so the only thing that should change is how it is said."
+T004,clear,,shout,,"Testing the new reference clips at every level of effort. Same words each time, so the only thing that should change is how it is said."

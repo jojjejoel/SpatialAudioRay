@@ -3,3 +3,10 @@
 Binaries/
 Intermediate/
 Saved/
+
+# VoiceGen: generated banks, exports and local venv are not reproducible inputs.
+# refs/*.wav ARE tracked - they are the voice cloning references and cannot be regenerated.
+Tools/VoiceGen/out*/
+Tools/VoiceGen/export*/
+Tools/VoiceGen/.venv/
+__pycache__/
