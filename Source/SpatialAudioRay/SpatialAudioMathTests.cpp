@@ -1061,6 +1061,42 @@ bool FEffectiveAcousticDistance_FloorsPathAtDirect::RunTest(const FString& Param
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FEffectiveAcousticDistance_FloorDelaysTheDetour,
+	"SpatialAudio.Math.EffectiveAcousticDistance.FloorDelaysTheDetour",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FEffectiveAcousticDistance_FloorDelaysTheDetour::RunTest(const FString& Parameters) {
+	// Edge caching finds routes well before the source is hidden (the pre-sweep band pre-warms
+	// the cache during partial LoS). Counting them while most of the sound still arrives
+	// straight overstates the distance, so the floor holds the result at the straight line
+	// until the listener is actually hidden.
+	const float Floor = 0.75f;
+
+	TestTrue(TEXT("Below the floor the detour is ignored entirely"),
+		FMath::IsNearlyEqual(
+			Math::ComputeEffectiveAcousticDistance(500.f, 2000.f, 0.5f, Floor), 500.f));
+	TestTrue(TEXT("At the floor it is still exactly the straight line — no jump on crossing"),
+		FMath::IsNearlyEqual(
+			Math::ComputeEffectiveAcousticDistance(500.f, 2000.f, Floor, Floor), 500.f));
+	TestTrue(TEXT("Halfway past the floor is halfway to the route"),
+		FMath::IsNearlyEqual(
+			Math::ComputeEffectiveAcousticDistance(500.f, 2000.f, 0.875f, Floor), 1250.f));
+	TestTrue(TEXT("Full occlusion still reaches the whole route, floor or not"),
+		FMath::IsNearlyEqual(
+			Math::ComputeEffectiveAcousticDistance(500.f, 2000.f, 1.f, Floor), 2000.f));
+
+	// Floor 0 is the identity, so callers that don't opt in are unaffected.
+	TestTrue(TEXT("A zero floor reproduces the plain blend"),
+		FMath::IsNearlyEqual(Math::ComputeEffectiveAcousticDistance(500.f, 2000.f, 0.5f, 0.f),
+		                     Math::ComputeEffectiveAcousticDistance(500.f, 2000.f, 0.5f)));
+	// A floor of 1 would divide by zero; it clamps instead of exploding.
+	TestTrue(TEXT("A floor of 1 is clamped, not a division by zero"),
+		FMath::IsFinite(Math::ComputeEffectiveAcousticDistance(500.f, 2000.f, 1.f, 1.f)));
+	return true;
+}
+
 // ─── ComputeFalloffScaleForOuterRadius ────────────────────────────────────────
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(

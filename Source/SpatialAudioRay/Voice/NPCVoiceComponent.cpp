@@ -100,13 +100,18 @@ void UNPCVoiceComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 	const float Now = World->GetTimeSeconds();
 	const FVector ListenerPos = PC->GetPawn()->GetActorLocation();
 
+	const UNPCVoiceSettings& S = GetSettings();
+
 	FNPCVoiceAcousticState Acoustic;
 	Acoustic.Occlusion = Spatial->CurrentOcclusion;
 	Acoustic.DirectDistanceCm =
 		static_cast<float>(FVector::Dist(Owner->GetActorLocation(), ListenerPos));
-	Acoustic.EffectiveDistanceCm = Spatial->GetEffectiveAcousticDistance(ListenerPos);
+	// Same threshold that decides the listener is hidden, so effort and content agree about
+	// whether the detour is real: while the NPC is still saying "I can see you" lines, its
+	// effort must not be driven by a route around a corner the listener can see past.
+	Acoustic.EffectiveDistanceCm =
+		Spatial->GetEffectiveAcousticDistance(ListenerPos, S.OcclusionShiftThreshold);
 
-	const UNPCVoiceSettings& S = GetSettings();
 	VoiceLogic::AdvanceBucketHysteresis(
 		BucketState, VoiceLogic::MapToBucket(Acoustic.EffectiveDistanceCm, S), Now, S.BucketDwellTime);
 
@@ -116,7 +121,7 @@ void UNPCVoiceComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 	// reads the timer, so a crossing this tick opens its own reaction window immediately.
 	const ENPCVoiceSightChange SightChange = VoiceLogic::AdvanceSightState(
 		SightState, VoiceLogic::IsListenerHidden(Acoustic, S), Now);
-	Acoustic.TimeSinceSightChange = Now - SightState.LastChangeTime;
+	Acoustic.bSightReactionPending = VoiceLogic::IsSightReactionPending(SightState, Now, S);
 
 	TickSightReaction(Now, SightChange);
 	TickScheduler(Now, Acoustic);
@@ -203,6 +208,9 @@ void UNPCVoiceComponent::PlayLine(const FNPCVoiceRuntimeLine& Line, float Now, b
 
 	VoiceLogic::BeginLine(Playback, Line.Row, Now, S.LineEndPadding, bAsBargeIn);
 	VoiceLogic::StampCooldown(CooldownUntil, Line.Row.CooldownGroup, Now, S.CooldownGroupSeconds);
+	// Both scheduling paths land here, so a reaction settles its crossing whether it arrived as
+	// a barge-in or as an ordinary line — the NPC remarks on losing or regaining sight once.
+	VoiceLogic::MarkSightReactionDelivered(SightState, Line.Row.Category);
 }
 
 void UNPCVoiceComponent::DrawDebugText(const FNPCVoiceAcousticState& Acoustic, float Now) const {
@@ -210,8 +218,21 @@ void UNPCVoiceComponent::DrawDebugText(const FNPCVoiceAcousticState& Acoustic, f
 		return;
 	}
 	const uint64 Key = static_cast<uint64>(GetUniqueID()) * 10ull;
-	GEngine->AddOnScreenDebugMessage(Key, 0.f, FColor::Cyan, BuildDebugInputsLine(Acoustic, Now));
-	GEngine->AddOnScreenDebugMessage(Key + 1, 0.f, FColor::Cyan, BuildDebugStateLine(Now));
+	const float Scale = GetSettings().DebugTextScale;
+	const FVector2D TextScale(Scale, Scale);
+	GEngine->AddOnScreenDebugMessage(Key, 0.f, FColor::Cyan, BuildDebugInputsLine(Acoustic, Now),
+	                                 /*bNewerOnTop=*/true, TextScale);
+	GEngine->AddOnScreenDebugMessage(Key + 1, 0.f, FColor::Cyan, BuildDebugStateLine(Now),
+	                                 /*bNewerOnTop=*/true, TextScale);
+	// The spoken words get their own row: it is by far the longest field, and inlining it
+	// pushed the numbers off the right edge at any text scale worth reading on video. Added
+	// only while a line is actually playing — these messages last a single frame unless
+	// re-added, so it clears itself the moment the NPC goes quiet.
+	if (Playback.bPlaying && !Playback.ActiveText.IsEmpty()) {
+		GEngine->AddOnScreenDebugMessage(Key + 2, 0.f, FColor::White,
+		                                 FString::Printf(TEXT("  \"%s\""), *Playback.ActiveText),
+		                                 /*bNewerOnTop=*/true, TextScale);
+	}
 }
 
 FString UNPCVoiceComponent::BuildDebugInputsLine(const FNPCVoiceAcousticState& Acoustic,
@@ -233,12 +254,14 @@ FString UNPCVoiceComponent::BuildDebugInputsLine(const FNPCVoiceAcousticState& A
 			*EffortEnum->GetNameStringByValue(static_cast<int64>(BucketState.Candidate)),
 			Now - BucketState.CandidateSince, GetSettings().BucketDwellTime);
 	}
-	// Only while it is actually gating content — outside the window it explains nothing about
-	// the category the ladder just picked.
-	if (Acoustic.TimeSinceSightChange <= GetSettings().SightChangeReactionWindow) {
-		Line += FString::Printf(TEXT(" (%s %.1fs ago)"),
-		                        SightState.bHidden ? TEXT("hidden") : TEXT("seen"),
-		                        Acoustic.TimeSinceSightChange);
+	// Only while it is actually gating content. Once the reaction has been spoken the flag is
+	// what the ladder reads, so showing the raw age would explain the wrong thing — spent says
+	// "the window is open but the NPC has already remarked on it".
+	const float SinceChange = Now - SightState.LastChangeTime;
+	if (SinceChange <= GetSettings().SightChangeReactionWindow) {
+		Line += FString::Printf(TEXT(" (%s %.1fs ago%s)"),
+		                        SightState.bHidden ? TEXT("hidden") : TEXT("seen"), SinceChange,
+		                        Acoustic.bSightReactionPending ? TEXT("") : TEXT(", spent"));
 	}
 	return Line;
 }
@@ -256,12 +279,13 @@ FString UNPCVoiceComponent::BuildDebugStateLine(float Now) const {
 	// distance the sound actually dies at (the inner radius floors it, the asset's own range
 	// caps it), which is what a mis-tuned band needs to show.
 	const USpatialAudioComponent* Spatial = SpatialAudio.Get();
+	// The spoken words are deliberately not here — DrawDebugText gives them their own row.
 	return FString::Printf(
-		TEXT("  playing %s @%s%s reach %.1fm %+.0fdB (%.1fs left) \"%s\""),
+		TEXT("  playing %s @%s%s reach %.1fm %+.0fdB (%.1fs left)"),
 		*Playback.ActiveLineId.ToString(),
 		*EffortEnum->GetNameStringByValue(static_cast<int64>(Playback.ActiveBucket)),
 		Playback.bActiveIsBargeIn ? TEXT(" [barge-in]") : TEXT(""),
 		Spatial ? Spatial->GetAttenuationOuterRadius() / 100.f : 0.f,
 		GetSettings().GetEffortGainDb(Playback.ActiveBucket),
-		Playback.EndTime - Now, *Playback.ActiveText);
+		Playback.EndTime - Now);
 }

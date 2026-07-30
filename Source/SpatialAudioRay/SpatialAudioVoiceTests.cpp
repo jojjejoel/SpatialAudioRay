@@ -23,7 +23,7 @@ namespace {
 	}
 
 	/** Acoustic state with no detour and no recent sight crossing — the plain visible/hidden
-	 *  case. Direct distance stays under FarVisibleMinDistance so visible resolves to Clear. */
+	 *  case. An unobstructed visible listener always resolves to Clear. */
 	FNPCVoiceAcousticState MakeVoiceAcoustic(float Occlusion, float DirectCm = 500.f,
 	                                         float EffectiveCm = 500.f) {
 		FNPCVoiceAcousticState Acoustic;
@@ -185,10 +185,10 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 )
 
 bool FVoiceSight_WindowGatesReactionContentOnBothSides::RunTest(const FString& Parameters) {
-	// One timer serves both reactions; the half the listener is in now decides which it opens.
-	// A settled scene must offer neither — this is what a listener standing still in a doorway
-	// used to break, because the reaction was keyed off direct line of sight instead, which in
-	// that state never breaks at all and pinned LostSight at the head of the ladder forever.
+	// One pending flag serves both reactions; the half the listener is in now decides which it
+	// opens. A settled scene must offer neither — this is what a listener standing still in a
+	// doorway used to break, because the reaction was keyed off direct line of sight instead,
+	// which in that state never breaks at all and pinned LostSight at the head of the ladder.
 	const UNPCVoiceSettings* S = GetDefault<UNPCVoiceSettings>();
 
 	FNPCVoiceAcousticState Settled = MakeVoiceGenericOccluded();
@@ -201,19 +201,62 @@ bool FVoiceSight_WindowGatesReactionContentOnBothSides::RunTest(const FString& P
 	          VoiceLogic::ResolveCategoryPreference(SettledVisible, *S)
 	              .Contains(ENPCVoiceCategory::SightRegained));
 
-	Settled.TimeSinceSightChange = S->SightChangeReactionWindow;
-	TestTrue(TEXT("Inside the window the hidden half opens LostSight"),
+	Settled.bSightReactionPending = true;
+	TestTrue(TEXT("A pending reaction on the hidden half opens LostSight"),
 	         VoiceLogic::ResolveCategoryPreference(Settled, *S)[0] == ENPCVoiceCategory::LostSight);
 
-	SettledVisible.TimeSinceSightChange = S->SightChangeReactionWindow;
-	TestTrue(TEXT("The same timer opens SightRegained on the visible half"),
+	SettledVisible.bSightReactionPending = true;
+	TestTrue(TEXT("The same flag opens SightRegained on the visible half"),
 	         VoiceLogic::ResolveCategoryPreference(SettledVisible, *S)[0] ==
 	         ENPCVoiceCategory::SightRegained);
+	return true;
+}
 
-	Settled.TimeSinceSightChange = S->SightChangeReactionWindow + 0.01f;
-	TestFalse(TEXT("Past the window the reaction closes again"),
-	          VoiceLogic::ResolveCategoryPreference(Settled, *S)
-	              .Contains(ENPCVoiceCategory::LostSight));
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FVoiceSight_ReactionIsSpokenOncePerCrossing,
+	"SpatialAudio.Voice.Sight.ReactionIsSpokenOncePerCrossing",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FVoiceSight_ReactionIsSpokenOncePerCrossing::RunTest(const FString& Parameters) {
+	// A reaction is a one-time statement about an event, not a description of a state. The
+	// window has to be generous enough to survive an in-flight line finishing, so on time alone
+	// the line AFTER a reaction re-announces the same crossing — and since what typically
+	// schedules that line is the listener crossing an effort band, it re-announces it in a
+	// different voice ("there you are!" shouted, then again at raised effort).
+	const UNPCVoiceSettings* S = GetDefault<UNPCVoiceSettings>();
+	FNPCVoiceSightState State;
+	VoiceLogic::AdvanceSightState(State, /*bHidden=*/true, /*Now=*/0.f);   // seed hidden
+	VoiceLogic::AdvanceSightState(State, /*bHidden=*/false, /*Now=*/10.f); // regained sight
+
+	TestTrue(TEXT("The crossing owes a reaction"),
+	         VoiceLogic::IsSightReactionPending(State, 10.f, *S));
+
+	// A non-reaction line leaves the debt outstanding.
+	VoiceLogic::MarkSightReactionDelivered(State, ENPCVoiceCategory::AroundCorner);
+	TestTrue(TEXT("An unrelated line does not settle the crossing"),
+	         VoiceLogic::IsSightReactionPending(State, 10.5f, *S));
+
+	VoiceLogic::MarkSightReactionDelivered(State, ENPCVoiceCategory::SightRegained);
+	TestFalse(TEXT("Once spoken the reaction stops being offered, window still open"),
+	          VoiceLogic::IsSightReactionPending(State, 10.5f, *S));
+
+	// The window still expires on its own for a crossing that was never reacted to.
+	FNPCVoiceSightState Unreacted;
+	VoiceLogic::AdvanceSightState(Unreacted, true, 0.f);
+	VoiceLogic::AdvanceSightState(Unreacted, false, 10.f);
+	TestTrue(TEXT("Still owed at the window edge"),
+	         VoiceLogic::IsSightReactionPending(Unreacted, 10.f + S->SightChangeReactionWindow, *S));
+	TestFalse(TEXT("Expired past it"),
+	          VoiceLogic::IsSightReactionPending(Unreacted,
+	                                             10.f + S->SightChangeReactionWindow + 0.01f, *S));
+
+	// A fresh crossing is a fresh thing to remark on, whatever was said about the last one.
+	TestTrue(TEXT("Losing sight again reports the crossing"),
+	         VoiceLogic::AdvanceSightState(State, /*bHidden=*/true, 12.f) ==
+	         ENPCVoiceSightChange::Lost);
+	TestTrue(TEXT("...and re-arms the reaction"),
+	         VoiceLogic::IsSightReactionPending(State, 12.f, *S));
 	return true;
 }
 
@@ -799,16 +842,14 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 bool FVoiceContext_PicksTheAcousticSituation::RunTest(const FString& Parameters) {
 	const UNPCVoiceSettings* S = GetDefault<UNPCVoiceSettings>();
 
-	// Visible and near: nothing special to say about the acoustics.
+	// Visible and unobstructed, near or far alike: nothing special to say about the acoustics,
+	// because distance is already carried by the effort bucket rather than by a category.
 	TestTrue(TEXT("Near and visible resolves to Clear"),
 	         VoiceLogic::ResolveCategoryPreference(MakeVoiceAcoustic(0.f, 300.f, 300.f), *S)[0] ==
 	         ENPCVoiceCategory::Clear);
-
-	// Visible and far: only the distance changed.
-	TestTrue(TEXT("Far and visible resolves to FarVisible"),
-	         VoiceLogic::ResolveCategoryPreference(
-	             MakeVoiceAcoustic(0.f, S->FarVisibleMinDistance + 1.f, S->FarVisibleMinDistance + 1.f),
-	             *S)[0] == ENPCVoiceCategory::FarVisible);
+	TestTrue(TEXT("Far and visible resolves to Clear as well"),
+	         VoiceLogic::ResolveCategoryPreference(MakeVoiceAcoustic(0.f, 5000.f, 5000.f), *S)[0] ==
+	         ENPCVoiceCategory::Clear);
 
 	// The signature case: a couple of steps apart, but the sound travels many times further.
 	FNPCVoiceAcousticState BehindWall = MakeVoiceAcoustic(1.f, /*DirectCm=*/300.f, /*EffectiveCm=*/2400.f);
@@ -822,12 +863,57 @@ bool FVoiceContext_PicksTheAcousticSituation::RunTest(const FString& Parameters)
 
 	// Same geometry as BehindWall, but sight was just lost — reacting outranks describing.
 	FNPCVoiceAcousticState JustLost = BehindWall;
-	JustLost.TimeSinceSightChange = 0.5f;
+	JustLost.bSightReactionPending = true;
 	TestTrue(TEXT("A fresh line-of-sight break outranks the spatial contexts"),
 	         VoiceLogic::ResolveCategoryPreference(JustLost, *S)[0] == ENPCVoiceCategory::LostSight);
 	TestTrue(TEXT("The spatial context is still available behind it"),
 	         VoiceLogic::ResolveCategoryPreference(JustLost, *S).Contains(ENPCVoiceCategory::BehindWall));
 
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FVoiceContext_VisibleHalfSplitsOnObstruction,
+	"SpatialAudio.Voice.Context.VisibleHalfSplitsOnObstruction",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FVoiceContext_VisibleHalfSplitsOnObstruction::RunTest(const FString& Parameters) {
+	// Clear asserts an unobstructed straight path. That stops being true as soon as one offset
+	// sample blocks — far below the occlusion that counts as hidden — so the visible half needs
+	// a second context or the NPC narrates "nothing between us" at a listener behind a pillar.
+	const UNPCVoiceSettings* S = GetDefault<UNPCVoiceSettings>();
+	const float Far = 5000.f;
+
+	TestTrue(TEXT("An unobstructed listener resolves to Clear at any distance"),
+	         VoiceLogic::ResolveCategoryPreference(MakeVoiceAcoustic(0.f, Far, Far), *S)[0] ==
+	         ENPCVoiceCategory::Clear);
+
+	// Same geometry, just something clipping the line.
+	const TArray<ENPCVoiceCategory, TInlineAllocator<4>> Obstructed =
+		VoiceLogic::ResolveCategoryPreference(
+			MakeVoiceAcoustic(S->PartialOcclusionThreshold, Far, Far), *S);
+	TestTrue(TEXT("A blocked sample switches the visible half's context"),
+	         Obstructed[0] == ENPCVoiceCategory::PartiallyOccluded);
+	TestTrue(TEXT("Generic Clear stays the last resort so a partial bank still speaks"),
+	         Obstructed.Last() == ENPCVoiceCategory::Clear);
+
+	// The partial band reaches all the way up to hidden.
+	TestTrue(TEXT("Just short of hidden is still the visible half, partially blocked"),
+	         VoiceLogic::ResolveCategoryPreference(
+		         MakeVoiceAcoustic(S->OcclusionShiftThreshold - 0.01f), *S)[0] ==
+	         ENPCVoiceCategory::PartiallyOccluded);
+	TestTrue(TEXT("At the hidden threshold it crosses to the occluded half"),
+	         !VoiceLogic::ResolveCategoryPreference(
+		          MakeVoiceAcoustic(S->OcclusionShiftThreshold), *S)
+		          .Contains(ENPCVoiceCategory::PartiallyOccluded));
+
+	// 0 = off collapses the visible half back to one band.
+	UNPCVoiceSettings* Off = NewObject<UNPCVoiceSettings>();
+	Off->PartialOcclusionThreshold = 0.f;
+	TestTrue(TEXT("Disabled, a partially blocked listener is Clear again"),
+	         VoiceLogic::ResolveCategoryPreference(MakeVoiceAcoustic(0.5f), *Off)[0] ==
+	         ENPCVoiceCategory::Clear);
 	return true;
 }
 
@@ -844,7 +930,7 @@ bool FVoiceContext_NeverCrossesTheVisibilitySplit::RunTest(const FString& Parame
 	// the other — that invariant is what keeps a line from contradicting what the player sees.
 	const TArray<ENPCVoiceCategory, TInlineAllocator<4>> Visible =
 		VoiceLogic::ResolveCategoryPreference(
-			MakeVoiceAcoustic(0.f, S->FarVisibleMinDistance + 1.f, S->FarVisibleMinDistance + 1.f), *S);
+			MakeVoiceAcoustic(0.f, 5000.f, 5000.f), *S);
 	TestTrue(TEXT("A visible ladder ends in Clear"), Visible.Last() == ENPCVoiceCategory::Clear);
 	TestFalse(TEXT("A visible ladder never offers occluded content"),
 	          Visible.Contains(ENPCVoiceCategory::Occluded) ||
@@ -853,14 +939,14 @@ bool FVoiceContext_NeverCrossesTheVisibilitySplit::RunTest(const FString& Parame
 	          Visible.Contains(ENPCVoiceCategory::LostSight));
 
 	FNPCVoiceAcousticState Hidden = MakeVoiceAcoustic(1.f, 300.f, 2400.f);
-	Hidden.TimeSinceSightChange = 0.5f;
+	Hidden.bSightReactionPending = true;
 	const TArray<ENPCVoiceCategory, TInlineAllocator<4>> Occluded =
 		VoiceLogic::ResolveCategoryPreference(Hidden, *S);
 	TestTrue(TEXT("An occluded ladder ends in Occluded"),
 	         Occluded.Last() == ENPCVoiceCategory::Occluded);
 	TestFalse(TEXT("An occluded ladder never offers visible content"),
 	          Occluded.Contains(ENPCVoiceCategory::Clear) ||
-	          Occluded.Contains(ENPCVoiceCategory::FarVisible));
+	          Occluded.Contains(ENPCVoiceCategory::PartiallyOccluded));
 
 	// Barge-in lines are reachable only through FindBargeInLine.
 	TestFalse(TEXT("Transition content is never offered to normal scheduling"),

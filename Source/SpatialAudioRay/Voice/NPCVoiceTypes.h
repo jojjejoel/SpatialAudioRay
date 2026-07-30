@@ -30,8 +30,6 @@ enum class ENPCVoiceCategory : uint8 {
 	Occluded,
 	/** Barge-in lines for dramatic bucket jumps; never picked by normal scheduling. */
 	Transition,
-	/** Visible but distant — the sound crosses open air, only the distance changed. */
-	FarVisible,
 	/** Occluded, but the path is barely longer than the straight line: one corner away. */
 	AroundCorner,
 	/** Occluded, physically close, yet the sound has to travel far to arrive. The signature
@@ -42,7 +40,13 @@ enum class ENPCVoiceCategory : uint8 {
 	 *  contexts briefly so the NPC can react to the change before describing the new state. */
 	LostSight,
 	/** The mirror of LostSight: direct line of sight just came back. */
-	SightRegained
+	SightRegained,
+	/** Visible, but something is genuinely in the way — a pillar, a railing, a crate clipping
+	 *  the centre line — while enough of the source stays exposed that the sound arrives nearly
+	 *  intact. The state Clear lies about: it asserts an unobstructed straight path, which
+	 *  stops being true the moment any of the offset samples blocks, long before occlusion is
+	 *  high enough to count as hidden. */
+	PartiallyOccluded
 };
 
 /** Why a playing line was cut short. Each reason draws its replacement from a different
@@ -159,12 +163,11 @@ struct FNPCVoiceAcousticState {
 	/** How far the sound actually travels: the straight line while clear, the diffraction
 	 *  route while occluded. Drives the effort bucket. */
 	float EffectiveDistanceCm = 0.f;
-	/** Seconds since the listener last crossed between visible and hidden, by the voice layer's
-	 *  own definition of hidden (see VoiceLogic::AdvanceSightState). Large when that has never
-	 *  happened, so a scene nobody has moved through offers no reaction content. Which of
-	 *  LostSight / SightRegained the window opens is decided by the half the listener is in
-	 *  now, so one field serves both. */
-	float TimeSinceSightChange = 1e9f;
+	/** Whether the NPC still owes a reaction to the last visibility crossing — recent enough to
+	 *  be worth remarking on AND not already remarked on (VoiceLogic::IsSightReactionPending).
+	 *  Which of LostSight / SightRegained it opens is decided by the half the listener is in
+	 *  now, so one flag serves both. */
+	bool bSightReactionPending = false;
 
 	/** How much further the sound travels than the straight line. 1 = no detour. This is the
 	 *  measurement no non-diffraction audio system can make, and the one BehindWall keys on. */
@@ -191,6 +194,11 @@ struct FNPCVoiceSightState {
 	/** When the state last flipped. Far in the past so an unchanged scene offers no reaction
 	 *  content. */
 	float LastChangeTime = -1e9f;
+	/** Whether a line reacting to that crossing has already been spoken. Cleared by the next
+	 *  crossing. Without it the window is purely temporal, so the line following a reaction
+	 *  re-announces the same event — and since a bucket change is what usually schedules that
+	 *  next line, it re-announces it at a different vocal effort, which is the tell. */
+	bool bReactionDelivered = false;
 };
 
 /** Dwell-time hysteresis for the effort bucket: a mapped bucket must persist before it

@@ -343,7 +343,8 @@ float USpatialAudioComponent::ComputePathAttenuationCurved(const float AvgPathDi
 	                    0.f, 1.f);
 }
 
-float USpatialAudioComponent::GetEffectiveAcousticDistance(const FVector& ListenerPos) const {
+float USpatialAudioComponent::GetEffectiveAcousticDistance(const FVector& ListenerPos,
+                                                           const float DetourOcclusionFloor) const {
 	const AActor* Owner = GetOwner();
 	const FVector SourcePos = Owner ? Owner->GetActorLocation() : FVector::ZeroVector;
 	const float DirectDist = static_cast<float>(FVector::Dist(SourcePos, ListenerPos));
@@ -371,7 +372,8 @@ float USpatialAudioComponent::GetEffectiveAcousticDistance(const FVector& Listen
 		MinPathDist = CurrentSourceToVirtualDistance
 			+ static_cast<float>(FVector::Dist(CurrentVirtualSourceLocation, ListenerPos));
 	}
-	return Math::ComputeEffectiveAcousticDistance(DirectDist, MinPathDist, CurrentOcclusion);
+	return Math::ComputeEffectiveAcousticDistance(DirectDist, MinPathDist, CurrentOcclusion,
+	                                              DetourOcclusionFloor);
 }
 
 void USpatialAudioComponent::PerformStartupLoSCheck() {

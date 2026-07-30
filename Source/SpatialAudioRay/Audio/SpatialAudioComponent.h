@@ -85,9 +85,16 @@ public:
 	 *  string-pulled source→edge path + edge→ListenerPos) while occluded, blended by
 	 *  smoothed occlusion. Falls back to the straight line until a diffraction path has
 	 *  ever been found. Selection/content input (e.g. NPC vocal effort) — must never feed
-	 *  VirtualGain/PathAttenuation math. */
+	 *  VirtualGain/PathAttenuation math.
+	 *
+	 *  DetourOcclusionFloor holds the result at the straight line until occlusion passes it,
+	 *  then phases the route in across the remaining range. Cached routes exist well before the
+	 *  source is hidden (the pre-sweep band pre-warms the cache during partial LoS), and
+	 *  counting them while most of the sound still arrives straight overstates the distance.
+	 *  Pass the same threshold you use to decide the listener is hidden. */
 	UFUNCTION(BlueprintPure, Category = "Spatial Audio")
-	float GetEffectiveAcousticDistance(const FVector& ListenerPos) const;
+	float GetEffectiveAcousticDistance(const FVector& ListenerPos,
+	                                   float DetourOcclusionFloor = 0.f) const;
 
 	/** Scales the attenuation FalloffDistance of every cached source component AND the live
 	 *  virtual pool relative to their base (scale 1 = as authored/overridden). Lets a caller

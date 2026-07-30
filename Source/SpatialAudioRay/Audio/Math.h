@@ -154,9 +154,22 @@ namespace Math {
 	// input (NPC vocal effort), never gain math. PathDist is floored at DirectDist — the two
 	// legs are independently smoothed and can momentarily sum below the straight line, which
 	// no physical path can be shorter than.
-	inline float ComputeEffectiveAcousticDistance(float DirectDist, float PathDist, float Occlusion) {
-		return FMath::Lerp(DirectDist, FMath::Max(PathDist, DirectDist),
-		                   FMath::Clamp(Occlusion, 0.f, 1.f));
+	// OcclusionFloor delays the detour: below it the result is the straight line exactly, above
+	// it the diffraction route phases in across the remaining range, reaching PathDist at full
+	// occlusion. Remapped rather than switched, so crossing the floor doesn't jump the result.
+	//
+	// The floor exists because edge caching starts finding routes well before the source is
+	// actually hidden — the pre-sweep band deliberately pre-warms the cache while partial line
+	// of sight remains. Blending those routes in from occlusion 0 charges a listener for a
+	// detour the sound is not taking: most of what they hear is still arriving straight, and a
+	// long way round to a corner they can see past inflates the distance for no audible reason.
+	// A caller that consumes this to describe the listener's situation should pass the same
+	// threshold it uses to call them hidden, so the two never disagree.
+	inline float ComputeEffectiveAcousticDistance(float DirectDist, float PathDist, float Occlusion,
+	                                              float OcclusionFloor = 0.f) {
+		const float Floor = FMath::Clamp(OcclusionFloor, 0.f, 0.99f);
+		const float Alpha = FMath::Clamp((Occlusion - Floor) / (1.f - Floor), 0.f, 1.f);
+		return FMath::Lerp(DirectDist, FMath::Max(PathDist, DirectDist), Alpha);
 	}
 
 	// Two weights per point. The source-side weight (eviction confidence + geometric falloff

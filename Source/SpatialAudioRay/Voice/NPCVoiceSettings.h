@@ -44,8 +44,16 @@ public:
 	float RaisedMaxDistance = 3000.f;
 
 	/** At or above this occlusion the listener counts as hidden, and line selection switches
-	 *  from the visible content contexts to the occluded ones. Does not shift the effort
-	 *  bucket — path length already encodes being hidden. */
+	 *  from the visible content contexts to the occluded ones.
+	 *
+	 *  It never shifts the effort bucket directly — path length already encodes being hidden —
+	 *  but it IS the point from which the diffraction route starts counting toward the
+	 *  effective acoustic distance (passed to GetEffectiveAcousticDistance as its detour
+	 *  floor). Below it the effort follows the straight line: cached routes exist well before
+	 *  the source is hidden, and charging the NPC for a long way round while most of the sound
+	 *  still arrives straight makes it strain at a listener it can plainly see. Tying both to
+	 *  one threshold keeps effort and content from disagreeing about whether the detour is
+	 *  real. Nothing jumps at the crossing — the route phases in across the range above it. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice|Effort Buckets",
 		meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float OcclusionShiftThreshold = 0.75f;
@@ -93,14 +101,19 @@ public:
 	// math. Any context with no line in the bank falls back to the generic Clear/Occluded
 	// entry for that half, so partial banks degrade instead of breaking.
 
-	/** Visible listeners at or beyond this straight-line distance (cm) select FarVisible
-	 *  content — seen clearly, just a long way off. Defaults to ConversationalMaxDistance so
-	 *  the visible half partitions exactly on a band edge: Clear covers whisper and
-	 *  conversational, FarVisible covers raised and shout, and no visible listener lands in a
-	 *  bucket where neither has content. */
+	/** Occlusion at or above which a still-visible listener selects PartiallyOccluded content
+	 *  instead of Clear. 0 = off (the visible half stays one band).
+	 *
+	 *  Sits well below OcclusionShiftThreshold on purpose: those two thresholds answer different
+	 *  questions. OcclusionShiftThreshold asks "can they still see me at all", this asks "is the
+	 *  path actually unobstructed" — and the answer to the second turns false as soon as any
+	 *  offset sample blocks, which is a long way below hidden. Default 0.15 catches roughly one
+	 *  blocked sample out of the five-point ring: a pillar or railing clipping the centre line
+	 *  while the sound still arrives nearly intact. Without it the NPC narrates "nothing between
+	 *  us, a perfectly straight line" at a listener standing behind a crate. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice|Content Contexts",
-		meta = (ClampMin = "0.0"))
-	float FarVisibleMinDistance = 1500.f;
+		meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float PartialOcclusionThreshold = 0.15f;
 
 	/** Hidden listeners within this straight-line distance (cm) AND past
 	 *  BehindWallMinDetourRatio select BehindWall content: physically close, acoustically far. */
@@ -122,7 +135,9 @@ public:
 
 	/** Seconds after sight is lost or regained during which LostSight / SightRegained content
 	 *  outranks the spatial contexts, so the NPC reacts to the change before describing the
-	 *  new state. */
+	 *  new state. An upper bound only — the reaction is also spent the moment one of those
+	 *  lines plays, so raising this lets a reaction wait out a long in-flight line without
+	 *  ever letting the NPC remark on the same crossing twice. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice|Content Contexts",
 		meta = (ClampMin = "0.0"))
 	float SightChangeReactionWindow = 6.f;
@@ -235,4 +250,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice|Line Scheduling",
 		meta = (ClampMin = "0.0"))
 	float LineEndPadding = 0.2f;
+
+	// ── Debug ─────────────────────────────────────────────────────────────────
+
+	/** Size multiplier for the voice component's on-screen debug lines. 1 = the engine's
+	 *  default. Worth raising for video capture, where the default is unreadable once the
+	 *  footage is scaled down. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice|Debug",
+		meta = (ClampMin = "0.5", ClampMax = "4.0"))
+	float DebugTextScale = 2.f;
 };

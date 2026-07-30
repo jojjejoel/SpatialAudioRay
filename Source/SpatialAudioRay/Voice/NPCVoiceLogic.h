@@ -108,6 +108,14 @@ namespace VoiceLogic {
 		return Acoustic.Occlusion >= S.OcclusionShiftThreshold;
 	}
 
+	/** Whether a still-visible listener has something in the way. Only meaningful on the visible
+	 *  half — "hidden" is a separate, much higher threshold, because these answer different
+	 *  questions: can they see me at all, versus is the path actually unobstructed. */
+	inline bool IsPathPartiallyBlocked(const FNPCVoiceAcousticState& Acoustic,
+	                                   const UNPCVoiceSettings& S) {
+		return S.PartialOcclusionThreshold > 0.f && Acoustic.Occlusion >= S.PartialOcclusionThreshold;
+	}
+
 	/** Advances the visible/hidden edge detector and reports this tick's crossing, if any.
 	 *
 	 *  This is deliberately the voice layer's ONLY sight signal, and it is derived from the same
@@ -131,7 +139,39 @@ namespace VoiceLogic {
 		}
 		State.bHidden = bHidden;
 		State.LastChangeTime = Now;
+		// A new crossing is a new thing to remark on, whatever was said about the last one.
+		State.bReactionDelivered = false;
 		return bHidden ? ENPCVoiceSightChange::Lost : ENPCVoiceSightChange::Gained;
+	}
+
+	/** The categories that exist to remark on a visibility crossing. Playing one settles the
+	 *  debt for that crossing, whether it was scheduled as a barge-in or as an ordinary line. */
+	inline bool IsSightReactionCategory(ENPCVoiceCategory Category) {
+		return Category == ENPCVoiceCategory::LostSight ||
+			Category == ENPCVoiceCategory::SightRegained;
+	}
+
+	/** Whether a reaction to the last crossing is still owed: recent enough to be worth
+	 *  remarking on, and not already remarked on.
+	 *
+	 *  The second half is what stops the NPC saying it twice. The window is generous on purpose
+	 *  — the reaction has to survive an in-flight line finishing — but a reaction is a one-time
+	 *  statement about an event, not a description of a state, so once spoken it must stop being
+	 *  offered even though the window is still open. Left purely temporal, the line after a
+	 *  reaction re-announces the same crossing, and because the thing that typically schedules
+	 *  that line is the listener crossing an effort band, it re-announces it in a different
+	 *  voice: "there you are!" shouted, then "there you are!" again at raised effort. */
+	inline bool IsSightReactionPending(const FNPCVoiceSightState& State, float Now,
+	                                   const UNPCVoiceSettings& S) {
+		return !State.bReactionDelivered &&
+			Now - State.LastChangeTime <= S.SightChangeReactionWindow;
+	}
+
+	/** Settles the reaction debt when Category is one of the reaction categories. */
+	inline void MarkSightReactionDelivered(FNPCVoiceSightState& State, ENPCVoiceCategory Category) {
+		if (IsSightReactionCategory(Category)) {
+			State.bReactionDelivered = true;
+		}
 	}
 
 	// ── Line selection ────────────────────────────────────────────────────────
@@ -190,16 +230,25 @@ namespace VoiceLogic {
 		const FNPCVoiceAcousticState& Acoustic, const UNPCVoiceSettings& S) {
 		TArray<ENPCVoiceCategory, TInlineAllocator<4>> Allowed;
 
-		// Reacting to the crossing outranks describing the new state, but only briefly. Both
-		// halves read the same window; which reaction it opens follows from the half.
-		const bool bJustChanged = Acoustic.TimeSinceSightChange <= S.SightChangeReactionWindow;
+		// Reacting to the crossing outranks describing the new state, but only until it has been
+		// reacted to. Both halves read the same flag; which reaction it opens follows from the
+		// half the listener is in now.
+		const bool bJustChanged = Acoustic.bSightReactionPending;
 
 		if (!IsListenerHidden(Acoustic, S)) {
 			if (bJustChanged) {
 				Allowed.Add(ENPCVoiceCategory::SightRegained);
 			}
-			if (Acoustic.DirectDistanceCm >= S.FarVisibleMinDistance) {
-				Allowed.Add(ENPCVoiceCategory::FarVisible);
+			// There is deliberately no "visible but far" context: for a visible listener the
+			// effective acoustic distance is essentially the straight line, so the effort
+			// bucket ALREADY partitions the visible half by distance, and a Clear line at
+			// Shout is by construction a distant one. A separate category restated the bucket
+			// and needed its own threshold kept in sync with a band edge by hand.
+			//
+			// Generic Clear stays the last resort so a bank with no partial content still
+			// speaks — the least-bad fallback, since "I can see you" is at least still true.
+			if (IsPathPartiallyBlocked(Acoustic, S)) {
+				Allowed.Add(ENPCVoiceCategory::PartiallyOccluded);
 			}
 			Allowed.Add(ENPCVoiceCategory::Clear);
 			return Allowed;
