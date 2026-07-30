@@ -7,7 +7,7 @@
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FReflectDirection_HeadOn,
-	"SpatialAudio.Math.ReflectDirection.HeadOn",
+	"SpatialAudioRay.Math.ReflectDirection.HeadOn",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -26,7 +26,7 @@ bool FReflectDirection_HeadOn::RunTest(const FString& Parameters) {
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FReflectDirection_Tangent,
-	"SpatialAudio.Math.ReflectDirection.Tangent",
+	"SpatialAudioRay.Math.ReflectDirection.Tangent",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -45,7 +45,7 @@ bool FReflectDirection_Tangent::RunTest(const FString& Parameters) {
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FReflectDirection_PreservesMagnitude,
-	"SpatialAudio.Math.ReflectDirection.PreservesMagnitude",
+	"SpatialAudioRay.Math.ReflectDirection.PreservesMagnitude",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -67,7 +67,7 @@ bool FReflectDirection_PreservesMagnitude::RunTest(const FString& Parameters) {
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FReflectDirection_DoubleReflection,
-	"SpatialAudio.Math.ReflectDirection.DoubleReflection",
+	"SpatialAudioRay.Math.ReflectDirection.DoubleReflection",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -90,7 +90,7 @@ bool FReflectDirection_DoubleReflection::RunTest(const FString& Parameters) {
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FPathAttenuation_NoExcess,
-	"SpatialAudio.Math.PathAttenuation.NoExcess",
+	"SpatialAudioRay.Math.PathAttenuation.NoExcess",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -106,7 +106,7 @@ bool FPathAttenuation_NoExcess::RunTest(const FString& Parameters) {
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FPathAttenuation_FullExcess,
-	"SpatialAudio.Math.PathAttenuation.FullExcess",
+	"SpatialAudioRay.Math.PathAttenuation.FullExcess",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -121,7 +121,7 @@ bool FPathAttenuation_FullExcess::RunTest(const FString& Parameters) {
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FPathAttenuation_GeomBlend,
-	"SpatialAudio.Math.PathAttenuation.GeomBlend",
+	"SpatialAudioRay.Math.PathAttenuation.GeomBlend",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -150,7 +150,7 @@ bool FPathAttenuation_GeomBlend::RunTest(const FString& Parameters) {
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FFibonacci_OutputCount,
-	"SpatialAudio.Math.Fibonacci.OutputCount",
+	"SpatialAudioRay.Math.Fibonacci.OutputCount",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -163,7 +163,7 @@ bool FFibonacci_OutputCount::RunTest(const FString& Parameters) {
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FFibonacci_DirectionsNormalized,
-	"SpatialAudio.Math.Fibonacci.DirectionsNormalized",
+	"SpatialAudioRay.Math.Fibonacci.DirectionsNormalized",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -181,7 +181,7 @@ bool FFibonacci_DirectionsNormalized::RunTest(const FString& Parameters) {
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FFibonacci_ZeroRays,
-	"SpatialAudio.Math.Fibonacci.ZeroRays",
+	"SpatialAudioRay.Math.Fibonacci.ZeroRays",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -195,7 +195,7 @@ bool FFibonacci_ZeroRays::RunTest(const FString& Parameters) {
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FFibonacci_SingleRay,
-	"SpatialAudio.Math.Fibonacci.SingleRay",
+	"SpatialAudioRay.Math.Fibonacci.SingleRay",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -213,7 +213,7 @@ bool FFibonacci_SingleRay::RunTest(const FString& Parameters) {
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FFibonacci_PolesPresent,
-	"SpatialAudio.Math.Fibonacci.PolesPresent",
+	"SpatialAudioRay.Math.Fibonacci.PolesPresent",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -233,7 +233,7 @@ bool FFibonacci_PolesPresent::RunTest(const FString& Parameters) {
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FFibonacci_CustomPoleAligned,
-	"SpatialAudio.Math.Fibonacci.CustomPoleAligned",
+	"SpatialAudioRay.Math.Fibonacci.CustomPoleAligned",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -254,7 +254,7 @@ bool FFibonacci_CustomPoleAligned::RunTest(const FString& Parameters) {
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FFibonacci_DeterministicForSamePole,
-	"SpatialAudio.Math.Fibonacci.DeterministicForSamePole",
+	"SpatialAudioRay.Math.Fibonacci.DeterministicForSamePole",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -276,7 +276,7 @@ bool FFibonacci_DeterministicForSamePole::RunTest(const FString& Parameters) {
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FOcclusionRatio_DirectPath,
-	"SpatialAudio.Math.OcclusionRatio.DirectPath",
+	"SpatialAudioRay.Math.OcclusionRatio.DirectPath",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -290,7 +290,7 @@ bool FOcclusionRatio_DirectPath::RunTest(const FString& Parameters) {
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FOcclusionRatio_Clamped,
-	"SpatialAudio.Math.OcclusionRatio.Clamped",
+	"SpatialAudioRay.Math.OcclusionRatio.Clamped",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -305,7 +305,7 @@ bool FOcclusionRatio_Clamped::RunTest(const FString& Parameters) {
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FRayDirectionWeight_Perpendicular,
-	"SpatialAudio.Math.RayDirectionWeight.Perpendicular",
+	"SpatialAudioRay.Math.RayDirectionWeight.Perpendicular",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -327,7 +327,7 @@ bool FRayDirectionWeight_Perpendicular::RunTest(const FString& Parameters) {
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FRayDirectionWeight_ForwardPenalized,
-	"SpatialAudio.Math.RayDirectionWeight.ForwardPenalized",
+	"SpatialAudioRay.Math.RayDirectionWeight.ForwardPenalized",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -349,7 +349,7 @@ bool FRayDirectionWeight_ForwardPenalized::RunTest(const FString& Parameters) {
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FRayDirectionWeight_DirectLoSFraction,
-	"SpatialAudio.Math.RayDirectionWeight.DirectLoSFraction",
+	"SpatialAudioRay.Math.RayDirectionWeight.DirectLoSFraction",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -372,7 +372,7 @@ bool FRayDirectionWeight_DirectLoSFraction::RunTest(const FString& Parameters) {
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FOcclusionRatio_ZeroDirectDistance,
-	"SpatialAudio.Math.OcclusionRatio.ZeroDirectDistance",
+	"SpatialAudioRay.Math.OcclusionRatio.ZeroDirectDistance",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -395,7 +395,7 @@ bool FOcclusionRatio_ZeroDirectDistance::RunTest(const FString& Parameters) {
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FHasAnyDirectLoS_Empty,
-	"SpatialAudio.Math.HasAnyDirectLoS.Empty",
+	"SpatialAudioRay.Math.HasAnyDirectLoS.Empty",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
 
 bool FHasAnyDirectLoS_Empty::RunTest(const FString& Parameters)
@@ -407,7 +407,7 @@ bool FHasAnyDirectLoS_Empty::RunTest(const FString& Parameters)
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FHasAnyDirectLoS_IndirectOnly,
-	"SpatialAudio.Math.HasAnyDirectLoS.IndirectOnly",
+	"SpatialAudioRay.Math.HasAnyDirectLoS.IndirectOnly",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
 
 bool FHasAnyDirectLoS_IndirectOnly::RunTest(const FString& Parameters)
@@ -425,7 +425,7 @@ bool FHasAnyDirectLoS_IndirectOnly::RunTest(const FString& Parameters)
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FVirtualAudio_Gain_Formula,
-	"SpatialAudio.Math.VirtualAudio.Gain.Formula",
+	"SpatialAudioRay.Math.VirtualAudio.Gain.Formula",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -448,7 +448,7 @@ bool FVirtualAudio_Gain_Formula::RunTest(const FString& Parameters) {
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FVirtualAudio_PathAttenuation_ReducesGain,
-	"SpatialAudio.Math.VirtualAudio.PathAttenuation.ReducesGain",
+	"SpatialAudioRay.Math.VirtualAudio.PathAttenuation.ReducesGain",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -467,7 +467,7 @@ bool FVirtualAudio_PathAttenuation_ReducesGain::RunTest(const FString& Parameter
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FVirtualAudio_PathBend_NoLeg1Excess_IsZero,
-	"SpatialAudio.Math.VirtualAudio.PathBend.NoLeg1Excess_IsZero",
+	"SpatialAudioRay.Math.VirtualAudio.PathBend.NoLeg1Excess_IsZero",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -488,7 +488,7 @@ bool FVirtualAudio_PathBend_NoLeg1Excess_IsZero::RunTest(const FString& Paramete
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FVirtualAudio_PathBend_WithLeg1Excess_NonZero,
-	"SpatialAudio.Math.VirtualAudio.PathBend.WithLeg1Excess_NonZero",
+	"SpatialAudioRay.Math.VirtualAudio.PathBend.WithLeg1Excess_NonZero",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -508,7 +508,7 @@ bool FVirtualAudio_PathBend_WithLeg1Excess_NonZero::RunTest(const FString& Param
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FVirtualAudio_PathBend_FullExcess_SetsSaturationPoint,
-	"SpatialAudio.Math.VirtualAudio.PathBend.FullExcess_SetsSaturationPoint",
+	"SpatialAudioRay.Math.VirtualAudio.PathBend.FullExcess_SetsSaturationPoint",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -531,7 +531,7 @@ bool FVirtualAudio_PathBend_FullExcess_SetsSaturationPoint::RunTest(const FStrin
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FVirtualAudio_PathBend_DistanceStrength_AddsTraveledDistanceTerm,
-	"SpatialAudio.Math.VirtualAudio.PathBend.DistanceStrength_AddsTraveledDistanceTerm",
+	"SpatialAudioRay.Math.VirtualAudio.PathBend.DistanceStrength_AddsTraveledDistanceTerm",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -563,7 +563,7 @@ bool FVirtualAudio_PathBend_DistanceStrength_AddsTraveledDistanceTerm::RunTest(c
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FVirtualCrossfadeTarget_StartAtOne_IsBinaryGate,
-	"SpatialAudio.Math.VirtualAudio.CrossfadeTarget.StartAtOne_IsBinaryGate",
+	"SpatialAudioRay.Math.VirtualAudio.CrossfadeTarget.StartAtOne_IsBinaryGate",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -581,7 +581,7 @@ bool FVirtualCrossfadeTarget_StartAtOne_IsBinaryGate::RunTest(const FString& Par
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FVirtualCrossfadeTarget_Ramp_MapsBandToZeroOne,
-	"SpatialAudio.Math.VirtualAudio.CrossfadeTarget.Ramp_MapsBandToZeroOne",
+	"SpatialAudioRay.Math.VirtualAudio.CrossfadeTarget.Ramp_MapsBandToZeroOne",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -601,7 +601,7 @@ bool FVirtualCrossfadeTarget_Ramp_MapsBandToZeroOne::RunTest(const FString& Para
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FVirtualCrossfadeTarget_LoSLoss_ForcesFullOpenBelowBand,
-	"SpatialAudio.Math.VirtualAudio.CrossfadeTarget.LoSLoss_ForcesFullOpenBelowBand",
+	"SpatialAudioRay.Math.VirtualAudio.CrossfadeTarget.LoSLoss_ForcesFullOpenBelowBand",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -615,7 +615,7 @@ bool FVirtualCrossfadeTarget_LoSLoss_ForcesFullOpenBelowBand::RunTest(const FStr
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FVirtualCrossfadeTarget_StationarySuppression_RampGovernsAlone,
-	"SpatialAudio.Math.VirtualAudio.CrossfadeTarget.StationarySuppression_RampGovernsAlone",
+	"SpatialAudioRay.Math.VirtualAudio.CrossfadeTarget.StationarySuppression_RampGovernsAlone",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -633,7 +633,7 @@ bool FVirtualCrossfadeTarget_StationarySuppression_RampGovernsAlone::RunTest(con
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FVirtualCrossfadeSlew_FadeIn_RampsAtFadeInRate,
-	"SpatialAudio.Math.VirtualAudio.CrossfadeSlew.FadeIn_RampsAtFadeInRate",
+	"SpatialAudioRay.Math.VirtualAudio.CrossfadeSlew.FadeIn_RampsAtFadeInRate",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -651,7 +651,7 @@ bool FVirtualCrossfadeSlew_FadeIn_RampsAtFadeInRate::RunTest(const FString& Para
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FVirtualCrossfadeSlew_FadeOut_RampsAtFadeOutRate,
-	"SpatialAudio.Math.VirtualAudio.CrossfadeSlew.FadeOut_RampsAtFadeOutRate",
+	"SpatialAudioRay.Math.VirtualAudio.CrossfadeSlew.FadeOut_RampsAtFadeOutRate",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -669,7 +669,7 @@ bool FVirtualCrossfadeSlew_FadeOut_RampsAtFadeOutRate::RunTest(const FString& Pa
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FVirtualCrossfadeSlew_AsymmetricTimes_UseCorrectDirection,
-	"SpatialAudio.Math.VirtualAudio.CrossfadeSlew.AsymmetricTimes_UseCorrectDirection",
+	"SpatialAudioRay.Math.VirtualAudio.CrossfadeSlew.AsymmetricTimes_UseCorrectDirection",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -687,7 +687,7 @@ bool FVirtualCrossfadeSlew_AsymmetricTimes_UseCorrectDirection::RunTest(const FS
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FVirtualCrossfadeSlew_ZeroFadeTime_IsInstant,
-	"SpatialAudio.Math.VirtualAudio.CrossfadeSlew.ZeroFadeTime_IsInstant",
+	"SpatialAudioRay.Math.VirtualAudio.CrossfadeSlew.ZeroFadeTime_IsInstant",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -700,7 +700,7 @@ bool FVirtualCrossfadeSlew_ZeroFadeTime_IsInstant::RunTest(const FString& Parame
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FVirtualCrossfadeSlew_DoesNotOvershoot,
-	"SpatialAudio.Math.VirtualAudio.CrossfadeSlew.DoesNotOvershoot",
+	"SpatialAudioRay.Math.VirtualAudio.CrossfadeSlew.DoesNotOvershoot",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -729,7 +729,7 @@ namespace {
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FClusterEdgePoints_TightGroup_YieldsSingleCluster,
-	"SpatialAudio.Math.ClusterEdgePoints.TightGroup_YieldsSingleCluster",
+	"SpatialAudioRay.Math.ClusterEdgePoints.TightGroup_YieldsSingleCluster",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -755,7 +755,7 @@ bool FClusterEdgePoints_TightGroup_YieldsSingleCluster::RunTest(const FString& P
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FClusterEdgePoints_SeparatedGroups_YieldTwoClusters,
-	"SpatialAudio.Math.ClusterEdgePoints.SeparatedGroups_YieldTwoClusters",
+	"SpatialAudioRay.Math.ClusterEdgePoints.SeparatedGroups_YieldTwoClusters",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -782,7 +782,7 @@ bool FClusterEdgePoints_SeparatedGroups_YieldTwoClusters::RunTest(const FString&
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FClusterEdgePoints_DriftedCentroids_AreMerged,
-	"SpatialAudio.Math.ClusterEdgePoints.DriftedCentroids_AreMerged",
+	"SpatialAudioRay.Math.ClusterEdgePoints.DriftedCentroids_AreMerged",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -809,7 +809,7 @@ bool FClusterEdgePoints_DriftedCentroids_AreMerged::RunTest(const FString& Param
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FClusterEdgePoints_MaxClusters_KeepsHeaviest,
-	"SpatialAudio.Math.ClusterEdgePoints.MaxClusters_KeepsHeaviest",
+	"SpatialAudioRay.Math.ClusterEdgePoints.MaxClusters_KeepsHeaviest",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -838,7 +838,7 @@ bool FClusterEdgePoints_MaxClusters_KeepsHeaviest::RunTest(const FString& Parame
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FClusterEdgePoints_ListenerFalloff_RanksWithoutTouchingGain,
-	"SpatialAudio.Math.ClusterEdgePoints.ListenerFalloff_RanksWithoutTouchingGain",
+	"SpatialAudioRay.Math.ClusterEdgePoints.ListenerFalloff_RanksWithoutTouchingGain",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -868,7 +868,7 @@ bool FClusterEdgePoints_ListenerFalloff_RanksWithoutTouchingGain::RunTest(const 
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FClusterEdgePoints_EvictionAlpha_ScalesWeight,
-	"SpatialAudio.Math.ClusterEdgePoints.EvictionAlpha_ScalesWeight",
+	"SpatialAudioRay.Math.ClusterEdgePoints.EvictionAlpha_ScalesWeight",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -908,7 +908,7 @@ namespace {
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FEmitterPoint_ZeroPullback_IsEffectivePoint,
-	"SpatialAudio.Math.EmitterPoint.ZeroPullback_IsEffectivePoint",
+	"SpatialAudioRay.Math.EmitterPoint.ZeroPullback_IsEffectivePoint",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -925,7 +925,7 @@ bool FEmitterPoint_ZeroPullback_IsEffectivePoint::RunTest(const FString& Paramet
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FEmitterPoint_Pullback_WalksAlongPath,
-	"SpatialAudio.Math.EmitterPoint.Pullback_WalksAlongPath",
+	"SpatialAudioRay.Math.EmitterPoint.Pullback_WalksAlongPath",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -943,7 +943,7 @@ bool FEmitterPoint_Pullback_WalksAlongPath::RunTest(const FString& Parameters) {
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FEmitterPoint_Pullback_StopsAtVerifiedBoundary,
-	"SpatialAudio.Math.EmitterPoint.Pullback_StopsAtVerifiedBoundary",
+	"SpatialAudioRay.Math.EmitterPoint.Pullback_StopsAtVerifiedBoundary",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -959,7 +959,7 @@ bool FEmitterPoint_Pullback_StopsAtVerifiedBoundary::RunTest(const FString& Para
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FEmitterPoint_Pullback_DoesNotResumePastGap,
-	"SpatialAudio.Math.EmitterPoint.Pullback_DoesNotResumePastGap",
+	"SpatialAudioRay.Math.EmitterPoint.Pullback_DoesNotResumePastGap",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -982,7 +982,7 @@ bool FEmitterPoint_Pullback_DoesNotResumePastGap::RunTest(const FString& Paramet
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FEmitterPoint_Relayed_WalksRelayLegFirst,
-	"SpatialAudio.Math.EmitterPoint.Relayed_WalksRelayLegFirst",
+	"SpatialAudioRay.Math.EmitterPoint.Relayed_WalksRelayLegFirst",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -1000,7 +1000,7 @@ bool FEmitterPoint_Relayed_WalksRelayLegFirst::RunTest(const FString& Parameters
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FClusterEdgePoints_EmitterPullback_MovesCentroidOnly,
-	"SpatialAudio.Math.ClusterEdgePoints.EmitterPullback_MovesCentroidOnly",
+	"SpatialAudioRay.Math.ClusterEdgePoints.EmitterPullback_MovesCentroidOnly",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -1031,7 +1031,7 @@ bool FClusterEdgePoints_EmitterPullback_MovesCentroidOnly::RunTest(const FString
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FEffectiveAcousticDistance_BlendsByOcclusion,
-	"SpatialAudio.Math.EffectiveAcousticDistance.BlendsByOcclusion",
+	"SpatialAudioRay.Math.EffectiveAcousticDistance.BlendsByOcclusion",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -1047,7 +1047,7 @@ bool FEffectiveAcousticDistance_BlendsByOcclusion::RunTest(const FString& Parame
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FEffectiveAcousticDistance_FloorsPathAtDirect,
-	"SpatialAudio.Math.EffectiveAcousticDistance.FloorsPathAtDirect",
+	"SpatialAudioRay.Math.EffectiveAcousticDistance.FloorsPathAtDirect",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -1063,7 +1063,7 @@ bool FEffectiveAcousticDistance_FloorsPathAtDirect::RunTest(const FString& Param
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FEffectiveAcousticDistance_FloorDelaysTheDetour,
-	"SpatialAudio.Math.EffectiveAcousticDistance.FloorDelaysTheDetour",
+	"SpatialAudioRay.Math.EffectiveAcousticDistance.FloorDelaysTheDetour",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -1101,7 +1101,7 @@ bool FEffectiveAcousticDistance_FloorDelaysTheDetour::RunTest(const FString& Par
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FFalloffScaleForOuterRadius_HitsTheTarget,
-	"SpatialAudio.Math.FalloffScaleForOuterRadius.HitsTheTarget",
+	"SpatialAudioRay.Math.FalloffScaleForOuterRadius.HitsTheTarget",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -1117,7 +1117,7 @@ bool FFalloffScaleForOuterRadius_HitsTheTarget::RunTest(const FString& Parameter
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FFalloffScaleForOuterRadius_Clamps,
-	"SpatialAudio.Math.FalloffScaleForOuterRadius.Clamps",
+	"SpatialAudioRay.Math.FalloffScaleForOuterRadius.Clamps",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 

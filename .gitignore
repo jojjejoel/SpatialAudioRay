@@ -1,0 +1,5 @@
+# Build output. The hosting project's .gitignore covers these while the plugin
+# sits inside it; this file is what protects the plugin as a standalone repo.
+Binaries/
+Intermediate/
+Saved/

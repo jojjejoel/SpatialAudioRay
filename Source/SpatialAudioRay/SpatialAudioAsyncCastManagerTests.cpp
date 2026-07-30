@@ -5,7 +5,7 @@
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	Accumulate_EmptyArray,
-	"SpatialAudio.Async.Accumulate.EmptyArray",
+	"SpatialAudioRay.Async.Accumulate.EmptyArray",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -29,7 +29,7 @@ bool Accumulate_EmptyArray::RunTest(const FString& Parameters) {
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	Accumulate_SinglePoint_Alpha1,
-	"SpatialAudio.Async.Accumulate.SinglePoint.Alpha1",
+	"SpatialAudioRay.Async.Accumulate.SinglePoint.Alpha1",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -60,7 +60,7 @@ bool Accumulate_SinglePoint_Alpha1::RunTest(const FString& Parameters) {
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	Accumulate_SinglePoint_AlphaHalf,
-	"SpatialAudio.Async.Accumulate.SinglePoint.AlphaHalf",
+	"SpatialAudioRay.Async.Accumulate.SinglePoint.AlphaHalf",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -94,7 +94,7 @@ bool Accumulate_SinglePoint_AlphaHalf::RunTest(const FString& Parameters) {
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FComputeAudio_VirtualSource_WeightedAverage,
-	"SpatialAudio.Async.ComputeAudio.VirtualSource.WeightedAverage",
+	"SpatialAudioRay.Async.ComputeAudio.VirtualSource.WeightedAverage",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -116,7 +116,7 @@ bool FComputeAudio_VirtualSource_WeightedAverage::RunTest(const FString& Paramet
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FComputeAudio_DirectLoS_NoVirtualSource,
-	"SpatialAudio.Async.ComputeAudio.DirectLoS.NoVirtualSource",
+	"SpatialAudioRay.Async.ComputeAudio.DirectLoS.NoVirtualSource",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -139,7 +139,7 @@ bool FComputeAudio_DirectLoS_NoVirtualSource::RunTest(const FString& Parameters)
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FUpdateMissDir_GeometryChangeDetected,
-	"SpatialAudio.Async.UpdateMissDir.GeometryChangeDetected",
+	"SpatialAudioRay.Async.UpdateMissDir.GeometryChangeDetected",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -163,7 +163,7 @@ bool FUpdateMissDir_GeometryChangeDetected::RunTest(const FString& Parameters) {
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FUpdateMissDir_EvictsMatchingDir,
-	"SpatialAudio.Async.UpdateMissDir.EvictsMatchingDir",
+	"SpatialAudioRay.Async.UpdateMissDir.EvictsMatchingDir",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -191,7 +191,7 @@ bool FUpdateMissDir_EvictsMatchingDir::RunTest(const FString& Parameters) {
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FUpdateMissDir_AddsMissDir,
-	"SpatialAudio.Async.UpdateMissDir.AddsMissDir",
+	"SpatialAudioRay.Async.UpdateMissDir.AddsMissDir",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -217,7 +217,7 @@ bool FUpdateMissDir_AddsMissDir::RunTest(const FString& Parameters) {
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FUpdateMissDir_NoDuplicate,
-	"SpatialAudio.Async.UpdateMissDir.NoDuplicate",
+	"SpatialAudioRay.Async.UpdateMissDir.NoDuplicate",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -249,7 +249,7 @@ bool FUpdateMissDir_NoDuplicate::RunTest(const FString& Parameters) {
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMakeBiasStream_SameInputsSameSequence,
-	"SpatialAudio.Async.MakeBiasStream.SameInputsSameSequence",
+	"SpatialAudioRay.Async.MakeBiasStream.SameInputsSameSequence",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -274,7 +274,7 @@ bool FMakeBiasStream_SameInputsSameSequence::RunTest(const FString& Parameters) 
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMakeBiasStream_DifferentRayIndexDiffers,
-	"SpatialAudio.Async.MakeBiasStream.DifferentRayIndexDiffers",
+	"SpatialAudioRay.Async.MakeBiasStream.DifferentRayIndexDiffers",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -292,7 +292,7 @@ bool FMakeBiasStream_DifferentRayIndexDiffers::RunTest(const FString& Parameters
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMakeBiasStream_DifferentPositionDiffers,
-	"SpatialAudio.Async.MakeBiasStream.DifferentPositionDiffers",
+	"SpatialAudioRay.Async.MakeBiasStream.DifferentPositionDiffers",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -311,7 +311,7 @@ bool FMakeBiasStream_DifferentPositionDiffers::RunTest(const FString& Parameters
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMidAirTurn_ZeroRoughnessZeroBias_TurnsPerpendicular,
-	"SpatialAudio.Async.MidAirTurn.ZeroRoughnessZeroBias.TurnsPerpendicular",
+	"SpatialAudioRay.Async.MidAirTurn.ZeroRoughnessZeroBias.TurnsPerpendicular",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -328,7 +328,7 @@ bool FMidAirTurn_ZeroRoughnessZeroBias_TurnsPerpendicular::RunTest(const FString
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMidAirTurn_ZeroRoughnessZeroBias_IsDeterministic,
-	"SpatialAudio.Async.MidAirTurn.ZeroRoughnessZeroBias.IsDeterministic",
+	"SpatialAudioRay.Async.MidAirTurn.ZeroRoughnessZeroBias.IsDeterministic",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -354,7 +354,7 @@ bool FMidAirTurn_ZeroRoughnessZeroBias_IsDeterministic::RunTest(const FString& P
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMidAirTurn_FullListenerBias_PointsAtListener,
-	"SpatialAudio.Async.MidAirTurn.FullListenerBias.PointsAtListener",
+	"SpatialAudioRay.Async.MidAirTurn.FullListenerBias.PointsAtListener",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -372,7 +372,7 @@ bool FMidAirTurn_FullListenerBias_PointsAtListener::RunTest(const FString& Param
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMidAirTurn_ResultIsNormalized,
-	"SpatialAudio.Async.MidAirTurn.ResultIsNormalized",
+	"SpatialAudioRay.Async.MidAirTurn.ResultIsNormalized",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 

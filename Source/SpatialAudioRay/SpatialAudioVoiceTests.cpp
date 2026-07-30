@@ -60,7 +60,7 @@ namespace {
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FVoiceMapToBucket_DistanceBands,
-	"SpatialAudio.Voice.MapToBucket.DistanceBands",
+	"SpatialAudioRay.Voice.MapToBucket.DistanceBands",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -85,7 +85,7 @@ bool FVoiceMapToBucket_DistanceBands::RunTest(const FString& Parameters) {
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FVoiceHysteresis_FirstSampleCommitsInstantly,
-	"SpatialAudio.Voice.Hysteresis.FirstSampleCommitsInstantly",
+	"SpatialAudioRay.Voice.Hysteresis.FirstSampleCommitsInstantly",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -104,7 +104,7 @@ bool FVoiceHysteresis_FirstSampleCommitsInstantly::RunTest(const FString& Parame
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FVoiceHysteresis_CommitsOnlyAfterDwell,
-	"SpatialAudio.Voice.Hysteresis.CommitsOnlyAfterDwell",
+	"SpatialAudioRay.Voice.Hysteresis.CommitsOnlyAfterDwell",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -128,7 +128,7 @@ bool FVoiceHysteresis_CommitsOnlyAfterDwell::RunTest(const FString& Parameters) 
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FVoiceHysteresis_FlipBackCancelsCommit,
-	"SpatialAudio.Voice.Hysteresis.FlipBackCancelsCommit",
+	"SpatialAudioRay.Voice.Hysteresis.FlipBackCancelsCommit",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -149,7 +149,7 @@ bool FVoiceHysteresis_FlipBackCancelsCommit::RunTest(const FString& Parameters) 
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FVoiceSight_ReportsCrossingsOnly,
-	"SpatialAudio.Voice.Sight.ReportsCrossingsOnly",
+	"SpatialAudioRay.Voice.Sight.ReportsCrossingsOnly",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -180,7 +180,7 @@ bool FVoiceSight_ReportsCrossingsOnly::RunTest(const FString& Parameters) {
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FVoiceSight_WindowGatesReactionContentOnBothSides,
-	"SpatialAudio.Voice.Sight.WindowGatesReactionContentOnBothSides",
+	"SpatialAudioRay.Voice.Sight.WindowGatesReactionContentOnBothSides",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -214,7 +214,7 @@ bool FVoiceSight_WindowGatesReactionContentOnBothSides::RunTest(const FString& P
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FVoiceSight_ReactionIsSpokenOncePerCrossing,
-	"SpatialAudio.Voice.Sight.ReactionIsSpokenOncePerCrossing",
+	"SpatialAudioRay.Voice.Sight.ReactionIsSpokenOncePerCrossing",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -264,7 +264,7 @@ bool FVoiceSight_ReactionIsSpokenOncePerCrossing::RunTest(const FString& Paramet
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FVoiceCooldown_BlocksAndExpires,
-	"SpatialAudio.Voice.Cooldown.BlocksAndExpires",
+	"SpatialAudioRay.Voice.Cooldown.BlocksAndExpires",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -290,7 +290,7 @@ bool FVoiceCooldown_BlocksAndExpires::RunTest(const FString& Parameters) {
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FVoiceSelectLine_BucketAndCategory,
-	"SpatialAudio.Voice.SelectLine.BucketAndCategory",
+	"SpatialAudioRay.Voice.SelectLine.BucketAndCategory",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -320,7 +320,7 @@ bool FVoiceSelectLine_BucketAndCategory::RunTest(const FString& Parameters) {
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FVoiceSelectLine_SoftConstraintsRelax,
-	"SpatialAudio.Voice.SelectLine.SoftConstraintsRelax",
+	"SpatialAudioRay.Voice.SelectLine.SoftConstraintsRelax",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -356,7 +356,7 @@ bool FVoiceSelectLine_SoftConstraintsRelax::RunTest(const FString& Parameters) {
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FVoiceSelectLine_CooldownIsHard,
-	"SpatialAudio.Voice.SelectLine.CooldownIsHard",
+	"SpatialAudioRay.Voice.SelectLine.CooldownIsHard",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -385,7 +385,7 @@ bool FVoiceSelectLine_CooldownIsHard::RunTest(const FString& Parameters) {
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FVoiceFindTransitionLine_DirectionAndBucket,
-	"SpatialAudio.Voice.FindTransitionLine.DirectionAndBucket",
+	"SpatialAudioRay.Voice.FindTransitionLine.DirectionAndBucket",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -413,7 +413,7 @@ bool FVoiceFindTransitionLine_DirectionAndBucket::RunTest(const FString& Paramet
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FVoiceFindTransitionLine_CooldownAndEmpty,
-	"SpatialAudio.Voice.FindTransitionLine.CooldownAndEmpty",
+	"SpatialAudioRay.Voice.FindTransitionLine.CooldownAndEmpty",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -441,7 +441,7 @@ bool FVoiceFindTransitionLine_CooldownAndEmpty::RunTest(const FString& Parameter
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FVoiceBargeInAvailability_ResolvesPerCategory,
-	"SpatialAudio.Voice.BargeInAvailability.ResolvesPerCategory",
+	"SpatialAudioRay.Voice.BargeInAvailability.ResolvesPerCategory",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -473,7 +473,7 @@ bool FVoiceBargeInAvailability_ResolvesPerCategory::RunTest(const FString& Param
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FVoiceBargeIn_UnserviceableReasonYieldsToOneWithContent,
-	"SpatialAudio.Voice.BargeIn.UnserviceableReasonYieldsToOneWithContent",
+	"SpatialAudioRay.Voice.BargeIn.UnserviceableReasonYieldsToOneWithContent",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -513,7 +513,7 @@ bool FVoiceBargeIn_UnserviceableReasonYieldsToOneWithContent::RunTest(const FStr
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FVoiceBargeIn_FiresOnDriftWithDirection,
-	"SpatialAudio.Voice.BargeIn.FiresOnDriftWithDirection",
+	"SpatialAudioRay.Voice.BargeIn.FiresOnDriftWithDirection",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -543,7 +543,7 @@ bool FVoiceBargeIn_FiresOnDriftWithDirection::RunTest(const FString& Parameters)
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FVoiceBargeIn_Gates,
-	"SpatialAudio.Voice.BargeIn.Gates",
+	"SpatialAudioRay.Voice.BargeIn.Gates",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -602,7 +602,7 @@ bool FVoiceBargeIn_Gates::RunTest(const FString& Parameters) {
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FVoicePlayback_BeginAndEndLine,
-	"SpatialAudio.Voice.Playback.BeginAndEndLine",
+	"SpatialAudioRay.Voice.Playback.BeginAndEndLine",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -634,7 +634,7 @@ bool FVoicePlayback_BeginAndEndLine::RunTest(const FString& Parameters) {
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FVoicePlayback_TransitionIsFollowedQuickly,
-	"SpatialAudio.Voice.Playback.TransitionIsFollowedQuickly",
+	"SpatialAudioRay.Voice.Playback.TransitionIsFollowedQuickly",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -659,7 +659,7 @@ bool FVoicePlayback_TransitionIsFollowedQuickly::RunTest(const FString& Paramete
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FVoicePlayback_BargeInQueuesPastTheFade,
-	"SpatialAudio.Voice.Playback.BargeInQueuesPastTheFade",
+	"SpatialAudioRay.Voice.Playback.BargeInQueuesPastTheFade",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -682,7 +682,7 @@ bool FVoicePlayback_BargeInQueuesPastTheFade::RunTest(const FString& Parameters)
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FVoicePlayback_IdleReactionBeatsTheReactionWindow,
-	"SpatialAudio.Voice.Playback.IdleReactionBeatsTheReactionWindow",
+	"SpatialAudioRay.Voice.Playback.IdleReactionBeatsTheReactionWindow",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -711,7 +711,7 @@ bool FVoicePlayback_IdleReactionBeatsTheReactionWindow::RunTest(const FString& P
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FVoiceReach_DerivesFromBands,
-	"SpatialAudio.Voice.Reach.DerivesFromBands",
+	"SpatialAudioRay.Voice.Reach.DerivesFromBands",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -735,7 +735,7 @@ bool FVoiceReach_DerivesFromBands::RunTest(const FString& Parameters) {
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FVoiceReach_HeadroomOneDiesAtTheBandEdge,
-	"SpatialAudio.Voice.Reach.HeadroomOneDiesAtTheBandEdge",
+	"SpatialAudioRay.Voice.Reach.HeadroomOneDiesAtTheBandEdge",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -761,7 +761,7 @@ bool FVoiceReach_HeadroomOneDiesAtTheBandEdge::RunTest(const FString& Parameters
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FVoiceGain_RisesWithEffortAndAnchorsAtShout,
-	"SpatialAudio.Voice.Gain.RisesWithEffortAndAnchorsAtShout",
+	"SpatialAudioRay.Voice.Gain.RisesWithEffortAndAnchorsAtShout",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -793,7 +793,7 @@ bool FVoiceGain_RisesWithEffortAndAnchorsAtShout::RunTest(const FString& Paramet
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FVoiceSelectLine_OccludedContentNeverLeaksIntoClearLoS,
-	"SpatialAudio.Voice.SelectLine.OccludedContentNeverLeaksIntoClearLoS",
+	"SpatialAudioRay.Voice.SelectLine.OccludedContentNeverLeaksIntoClearLoS",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -835,7 +835,7 @@ bool FVoiceSelectLine_OccludedContentNeverLeaksIntoClearLoS::RunTest(const FStri
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FVoiceContext_PicksTheAcousticSituation,
-	"SpatialAudio.Voice.Context.PicksTheAcousticSituation",
+	"SpatialAudioRay.Voice.Context.PicksTheAcousticSituation",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -874,7 +874,7 @@ bool FVoiceContext_PicksTheAcousticSituation::RunTest(const FString& Parameters)
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FVoiceContext_VisibleHalfSplitsOnObstruction,
-	"SpatialAudio.Voice.Context.VisibleHalfSplitsOnObstruction",
+	"SpatialAudioRay.Voice.Context.VisibleHalfSplitsOnObstruction",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -919,7 +919,7 @@ bool FVoiceContext_VisibleHalfSplitsOnObstruction::RunTest(const FString& Parame
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FVoiceContext_NeverCrossesTheVisibilitySplit,
-	"SpatialAudio.Voice.Context.NeverCrossesTheVisibilitySplit",
+	"SpatialAudioRay.Voice.Context.NeverCrossesTheVisibilitySplit",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -957,7 +957,7 @@ bool FVoiceContext_NeverCrossesTheVisibilitySplit::RunTest(const FString& Parame
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FVoiceBargeIn_VisibilityOutranksEffortDrift,
-	"SpatialAudio.Voice.BargeIn.VisibilityOutranksEffortDrift",
+	"SpatialAudioRay.Voice.BargeIn.VisibilityOutranksEffortDrift",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -991,7 +991,7 @@ bool FVoiceBargeIn_VisibilityOutranksEffortDrift::RunTest(const FString& Paramet
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FVoiceBargeIn_SightTriggersShareTheCommonGates,
-	"SpatialAudio.Voice.BargeIn.SightTriggersShareTheCommonGates",
+	"SpatialAudioRay.Voice.BargeIn.SightTriggersShareTheCommonGates",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
@@ -1028,7 +1028,7 @@ bool FVoiceBargeIn_SightTriggersShareTheCommonGates::RunTest(const FString& Para
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FVoiceBargeIn_ReasonPicksItsCategory,
-	"SpatialAudio.Voice.BargeIn.ReasonPicksItsCategory",
+	"SpatialAudioRay.Voice.BargeIn.ReasonPicksItsCategory",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
