@@ -60,23 +60,13 @@ Tools/VoiceGen/  offline voice bank generation
 | `SpatialAudioRay.Voice.*` | 31 | effort buckets, hysteresis, barge-in, content selection |
 | `SpatialAudioRay.Async.*` | 16 | sweep accumulation and miss-direction state |
 
-## Using it
+## Trying it
 
-Built against Unreal Engine 5.7. Copy the plugin into a project's `Plugins/` folder and rebuild.
+**[Download the demo build](https://drive.google.com/file/d/1ELhPIuckoraKKf0xNHkx_-oMoyQMAEec/view?usp=sharing)** (Windows, 1 GB). Walk around, listen to a source through walls and around corners, and move between rooms while the NPC talks to hear its effort and its lines follow where you are.
 
-Add a `USpatialAudioComponent` to an actor and tag the audio components you want it to drive with `AudioComponentSource`. One component serves every co-located sound on its actor, so they share a ray budget and an edge cache rather than each running their own.
+The number keys turn on the debug views in the build: bounce rays, crawl steps, edge points, string-pulled paths, virtual emitters, and per-source and global stats. Rays and paths together, while walking behind a wall, show most of the system at once. Controls are listed in the readme next to the executable.
 
-Every tunable lives in a single `USpatialAudioSettings` data asset, so a whole project is tuned from one place rather than per source. Tuning is specific to a project's scale and geometry, so none is shipped here. Create your own and assign it to each component. Until you do, the class defaults in `SpatialAudioSettings.h` apply, and those are starting points rather than the tuning used in the videos above.
-
-Set `bDrawDebugRays` for the debug views. Number keys toggle sub-modes at runtime: bounce rays, crawl steps, edge points, string-pulled paths, virtual emitters, and per-source and global stats. Turning on rays and paths and then walking behind a wall shows most of the system at once.
-
-## The voice bank
-
-The rendered voice lines are not committed, because they are build output. What produces them is here: the four reference recordings in `Tools/VoiceGen/refs/`, one per effort level, the line list in `lines_showcase.csv`, and `generate_bank.py`, which clones the voice from those references using Chatterbox. There are no text tags telling it to whisper or shout. The performance comes entirely from which reference clip it is conditioned on, which is why the four recordings are tracked and the renders are not.
-
-`export_to_unreal.py` then writes the wavs and a CSV of DataTable rows. Import the wavs to `/SpatialAudioRay/Voice/NPC01/` and the CSV as a DataTable using the `FNPCVoiceLineRow` struct, and the bank is rebuilt.
-
-Everything else under `Content/` is committed, since none of it can be regenerated.
+That is the intended way to hear it. The plugin is built against Unreal Engine 5.7 and the source here is meant for reading rather than for dropping into a project, since a working setup also needs a tuned settings asset and the generated voice bank, neither of which is committed.
 
 ## Author
 
