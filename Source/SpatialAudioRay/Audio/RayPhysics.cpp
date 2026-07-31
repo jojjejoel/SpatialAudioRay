@@ -81,7 +81,7 @@ void USpatialAudioComponent::ProcessRayHit(
 	float& InOutCumDist, int32& InOutBounce, bool& InOutNextHitCrawls,
 	bool bLoSAlreadyFound, bool bBias,
 	const FVector& ListenerPos,
-	const USpatialAudioSettings& Settings, UWorld* World,
+	const USpatialAudioSettings& Settings, const UWorld* World,
 	FRayHitOutput& Out) const {
 	Out = FRayHitOutput{};
 
@@ -140,7 +140,7 @@ bool USpatialAudioComponent::CrawlSurfaceToEdge(
 	const FVector& IncomingDir,
 	const FVector& SurfaceNormal,
 	const FVector& ListenerPos,
-	UWorld* World,
+	const UWorld* World,
 	FVector& OutEdgePoint,
 	FVector& OutCrawlDir,
 	float& OutCrawlDist,
@@ -234,7 +234,7 @@ bool USpatialAudioComponent::CrawlSurfaceToEdge(
 	return false;
 }
 
-void USpatialAudioComponent::ComputeCrawlStepBudget(const FVector& NudgedStart, const FVector& CrawlDir, UWorld* World,
+void USpatialAudioComponent::ComputeCrawlStepBudget(const FVector& NudgedStart, const FVector& CrawlDir, const UWorld* World,
                                                      const USpatialAudioSettings& S, const int32 CrawlStepCap,
                                                      int32& OutEffMaxSteps, float& OutMaxCrawlRange) const {
 	OutEffMaxSteps = CrawlStepCap;
@@ -249,7 +249,7 @@ void USpatialAudioComponent::ComputeCrawlStepBudget(const FVector& NudgedStart, 
 
 bool USpatialAudioComponent::TryFindLoSBeyondCrawlSteps(const FVector& NudgedStart, const FVector& CrawlDir,
                                                          const FVector& SurfaceNormal, const FVector& ListenerPos,
-                                                         UWorld* World, const USpatialAudioSettings& S,
+                                                         const UWorld* World, const USpatialAudioSettings& S,
                                                          const int32 FromStep, const float MaxCrawlRange,
                                                          const float InCumDist, FCrawlOutput& Out) const {
 	for (int32 Step = FromStep; Step <= S.MaxCrawlSteps; ++Step) {

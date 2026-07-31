@@ -91,7 +91,7 @@ public:
 private:
 	// ── ReadbackFinalizeBatch phases ─────────────────────────────────────────
 	static bool TryDiscardStaleSweep(USpatialAudioComponent& Component, UWorld* World, const USpatialAudioSettings& Settings);
-	static void AccumulateRefineProbesIntoCycle(USpatialAudioComponent& Component, UWorld* World, const USpatialAudioSettings& Settings);
+	static void AccumulateRefineProbesIntoCycle(USpatialAudioComponent& Component, const UWorld* World, const USpatialAudioSettings& Settings);
 	static void MergeStoredPathsIntoCache(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings);
 	static void AdvanceSweepCycleAndIdleState(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings);
 
@@ -146,7 +146,7 @@ private:
 
 	// A crawl's incoming and outgoing legs are flight, so the crawl view needs them too.
 	static bool ShouldDrawFlightPaths(const USpatialAudioComponent& Component);
-	static void DrawFlightSegment(const USpatialAudioComponent& Component, UWorld* World, const FVector& From,
+	static void DrawFlightSegment(const USpatialAudioComponent& Component, const UWorld* World, const FVector& From,
 	                              const FVector& To, const USpatialAudioSettings& Settings);
 
 	// False when the budget gate rejected it. Since that sum only grows along a ray, it also tells

@@ -71,15 +71,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Parameters")
 	FName AudioBusParameterName = TEXT("AudioBus");
 
-	/** Plays a runtime one-shot through this source's spatial pipeline: the component is
-	 *  attached to the owner, writes into the shared diffraction bus, and receives the live
-	 *  Occlusion parameter every frame until it finishes (auto-destroys). The sound's MetaSound
-	 *  must expose the same AudioBus and Occlusion inputs as the persistent source graph.
-	 *  Attenuation range overrides are applied to it; it does NOT widen the ray range — the
-	 *  persistent tagged sources define AttenuationInnerRadius/MaxRayDistance. */
-	UFUNCTION(BlueprintCallable, Category = "Spatial Audio")
-	UAudioComponent* PlaySoundThroughSpatialBus(USoundBase* Sound);
-
 	/** Distance (cm) the sound effectively travels to reach ListenerPos: the straight line
 	 *  while clear, the shortest cached diffraction route (min over cached edges of the
 	 *  string-pulled source→edge path + edge→ListenerPos) while occluded, blended by
@@ -375,7 +366,7 @@ private:
 	                   float& InOutCumDist, int32& InOutBounce, bool& InOutNextHitCrawls,
 	                   bool bLoSAlreadyFound, bool bBias,
 	                   const FVector& ListenerPos,
-	                   const USpatialAudioSettings& Settings, UWorld* World,
+	                   const USpatialAudioSettings& Settings, const UWorld* World,
 	                   FRayHitOutput& Out) const;
 
 	/**
@@ -397,7 +388,7 @@ private:
 
 	bool CrawlSurfaceToEdge(const FVector& HitPoint, const FVector& IncomingDir,
 	                        const FVector& SurfaceNormal, const FVector& ListenerPos,
-	                        UWorld* World,
+	                        const UWorld* World,
 	                        FVector& OutEdgePoint, FVector& OutCrawlDir, float& OutCrawlDist,
 	                        const USpatialAudioSettings& S,
 	                        float InCumDist = 0.f,
@@ -406,14 +397,14 @@ private:
 	// ── CrawlSurfaceToEdge phases ────────────────────────────────────────────
 	/** Forward-probes from NudgedStart along CrawlDir to see whether the wall ends before the
 	 *  full step cap; shrinks OutEffMaxSteps/OutMaxCrawlRange to the hit distance if so. */
-	void ComputeCrawlStepBudget(const FVector& NudgedStart, const FVector& CrawlDir, UWorld* World,
+	void ComputeCrawlStepBudget(const FVector& NudgedStart, const FVector& CrawlDir, const UWorld* World,
 	                            const USpatialAudioSettings& S, int32 CrawlStepCap,
 	                            int32& OutEffMaxSteps, float& OutMaxCrawlRange) const;
 	/** Continues the LoS-only search past the stepped range (debug-only, Out required) up to
 	 *  MaxCrawlRange; the main loop already tried perp-wall/back-probe edges within EffMaxSteps. */
 	bool TryFindLoSBeyondCrawlSteps(const FVector& NudgedStart, const FVector& CrawlDir,
 	                                const FVector& SurfaceNormal, const FVector& ListenerPos,
-	                                UWorld* World, const USpatialAudioSettings& S,
+	                                const UWorld* World, const USpatialAudioSettings& S,
 	                                int32 FromStep, float MaxCrawlRange, float InCumDist,
 	                                FCrawlOutput& Out) const;
 
@@ -427,13 +418,13 @@ private:
 	void DrawDebugVisualization(const USpatialAudioSettings& Settings);
 
 	// ── DrawDebugVisualization phases ────────────────────────────────────────
-	void DrawSteeringPredictionDebug(const USpatialAudioSettings& Settings);
+	void DrawSteeringPredictionDebug(const USpatialAudioSettings& Settings) const;
 	void DrawVirtualSourceDebug();
 	void DrawEdgePointsDebug();
 	void DrawShortestPathsDebug();
 	void DrawDiffractionPathsDebug();
-	void DrawDebugTextHUD(const USpatialAudioSettings& Settings);
-	void DrawDebugLegends();
+	void DrawDebugTextHUD(const USpatialAudioSettings& Settings) const;
+	void DrawDebugLegends() const;
 
 	// ── DrawDebugTextHUD slots ───────────────────────────────────────────────
 	void DrawSourceAudioDebugText(uint64 Base) const;
@@ -460,7 +451,7 @@ private:
 	void CacheAudioComponents();
 	void ApplyAttenuationOverrides();
 	void ApplyAttenuationOverridesTo(UAudioComponent* AC) const;
-	void ApplyFalloffScaleTo(UAudioComponent* AC, float Ratio) const;
+	static void ApplyFalloffScaleTo(UAudioComponent* AC, float Ratio);
 
 	/** Currently applied falloff scale — new scales are applied as a ratio against this, so
 	 *  every cached component must always sit at exactly this scale (one-shots get it applied

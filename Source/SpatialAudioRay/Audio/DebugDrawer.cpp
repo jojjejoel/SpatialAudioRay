@@ -1,7 +1,6 @@
 ﻿// Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "Audio/SpatialAudioComponent.h"
-#include "Audio/AsyncCastManager.h"
 #include "Audio/Math.h"
 #include "DrawDebugHelpers.h"
 #include "Engine/Engine.h"
@@ -78,7 +77,7 @@ namespace {
 
 } // namespace
 
-void USpatialAudioComponent::DrawSteeringPredictionDebug(const USpatialAudioSettings& Settings) {
+void USpatialAudioComponent::DrawSteeringPredictionDebug(const USpatialAudioSettings& Settings) const {
 	if (!bShowSteeringPrediction || Settings.SteeringPredictionLeadTime <= 0.f) {
 		return;
 	}
@@ -372,7 +371,7 @@ void USpatialAudioComponent::DrawEdgeTimerDebugText(const uint64 Base, const USp
 		                                 Phase0Timer, Ph0Interval, *Ph0Activity));
 }
 
-void USpatialAudioComponent::DrawDebugTextHUD(const USpatialAudioSettings& Settings) {
+void USpatialAudioComponent::DrawDebugTextHUD(const USpatialAudioSettings& Settings) const {
 	if (!bShowDebugText || !GEngine) {
 		return;
 	}
@@ -391,7 +390,7 @@ void USpatialAudioComponent::DrawDebugTextHUD(const USpatialAudioSettings& Setti
 	DrawEdgeTimerDebugText(Base, Settings);
 }
 
-void USpatialAudioComponent::DrawDebugLegends() {
+void USpatialAudioComponent::DrawDebugLegends() const {
 	if (bDrawDebugRays && bShowSurfaceCrawl && GEngine) {
 		const uint64 LegBase = static_cast<uint64>(GetUniqueID()) * 10;
 		GEngine->AddOnScreenDebugMessage(LegBase + 50, 0.f, FColor(220, 220, 220), TEXT("  [7] Surface Crawl Legend ─────────────────────────────────────"));

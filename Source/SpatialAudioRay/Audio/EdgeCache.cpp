@@ -240,7 +240,7 @@ bool FEdgeCache::TryRefineAlongFinalSegment(const USpatialAudioComponent& Compon
 
 // Candidates must go through ResolveOffsetPoint: a point embedded in a wall traces outward with a
 // silent false-clear.
-void FEdgeCache::SubmitPhase0OffsetFan(USpatialAudioComponent& Component, FCachedEdgePoint& Edge, UWorld* World,
+void FEdgeCache::SubmitPhase0OffsetFan(const USpatialAudioComponent& Component, FCachedEdgePoint& Edge, UWorld* World,
                                        const FVector& ListenerPos, float OffsetRadius) {
 	if (Edge.bPhase0OffsetPending) {
 		return;
@@ -392,8 +392,7 @@ void FEdgeCache::TickRelayMaintenance(USpatialAudioComponent& Component, FCached
 		return;
 	}
 
-	const bool bDirectLoSReturned = IsEdgeTraceClear(Data[0]) && IsEdgeTraceClear(Data[1]);
-	if (bDirectLoSReturned) {
+	if (IsEdgeTraceClear(Data[0]) && IsEdgeTraceClear(Data[1])) {
 		Edge.ClearRelay();
 		Edge.LastLoSListenerPos = ListenerPos;
 		Edge.bHasLastLoSListenerPos = true;
@@ -403,8 +402,7 @@ void FEdgeCache::TickRelayMaintenance(USpatialAudioComponent& Component, FCached
 
 	// Relay dropped before evicting, or Phase 0's clear-restore would keep resurrecting a path
 	// that is already broken upstream.
-	const bool bRelayLegSevered = !IsEdgeTraceClear(Data[2]) || !IsEdgeTraceClear(Data[3]);
-	if (bRelayLegSevered) {
+	if (!IsEdgeTraceClear(Data[2]) || !IsEdgeTraceClear(Data[3])) {
 		Edge.ClearRelay();
 		StartEviction(Component, Edge, SourcePos);
 		return;

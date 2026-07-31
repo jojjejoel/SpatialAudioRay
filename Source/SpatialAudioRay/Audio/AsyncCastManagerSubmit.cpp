@@ -63,7 +63,7 @@ bool FAsyncCastManager::ShouldDrawFlightPaths(const USpatialAudioComponent& Comp
 	return Component.bDrawDebugRays && (Component.bShowBounceRays || Component.bShowSurfaceCrawl);
 }
 
-void FAsyncCastManager::DrawFlightSegment(const USpatialAudioComponent& Component, UWorld* World,
+void FAsyncCastManager::DrawFlightSegment(const USpatialAudioComponent& Component, const UWorld* World,
                                           const FVector& From, const FVector& To,
                                           const USpatialAudioSettings& Settings) {
 	if (!ShouldDrawFlightPaths(Component)) {

@@ -183,7 +183,7 @@ void USpatialAudioComponent::ApplyAttenuationOverridesTo(UAudioComponent* AC) co
 	AC->bOverrideAttenuation = true;
 }
 
-void USpatialAudioComponent::ApplyFalloffScaleTo(UAudioComponent* AC, float Ratio) const {
+void USpatialAudioComponent::ApplyFalloffScaleTo(UAudioComponent* AC, float Ratio) {
 	if (!AC || FMath::IsNearlyEqual(Ratio, 1.f)) {
 		return;
 	}
@@ -229,36 +229,6 @@ void USpatialAudioComponent::ApplyAttenuationOverrides() {
 		ApplyAttenuationOverridesTo(Src.Get());
 	}
 	ApplyAttenuationOverridesTo(CachedAudioComponentVirtual.Get());
-}
-
-UAudioComponent* USpatialAudioComponent::PlaySoundThroughSpatialBus(USoundBase* Sound) {
-	AActor* Owner = GetOwner();
-	if (!Sound || !Owner || !DiffractionBus) {
-		return nullptr;
-	}
-
-	UAudioComponent* Comp = NewObject<UAudioComponent>(Owner);
-	Comp->bAutoActivate = false;
-	// One-shots free themselves on finish; the stale weak entry is pruned by the per-frame
-	// occlusion write in UpdateDualModeAudio.
-	Comp->bAutoDestroy = true;
-	Comp->SetSound(Sound);
-	Comp->RegisterComponent();
-	if (USceneComponent* Root = Owner->GetRootComponent()) {
-		Comp->AttachToComponent(Root, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
-	}
-	ApplyAttenuationOverridesTo(Comp);
-	// Bring the one-shot to the currently applied falloff scale — every cached component
-	// must sit at exactly AttenuationFalloffScale for the ratio-based rescale to stay exact.
-	ApplyFalloffScaleTo(Comp, AttenuationFalloffScale);
-	// Both parameters must land before Play so MetaSound initialization picks them up; the
-	// occlusion value refreshes every frame afterwards via the cached-sources loop.
-	Comp->SetObjectParameter(AudioBusParameterName, DiffractionBus);
-	Comp->SetFloatParameter(GetSettings().OcclusionParamName, AudioDiag.CurvedOcclusion);
-	Comp->Play();
-
-	CachedAudioComponentSources.Add(Comp);
-	return Comp;
 }
 
 void USpatialAudioComponent::ReadAttenuationSettings() {

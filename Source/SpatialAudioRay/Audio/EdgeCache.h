@@ -40,7 +40,7 @@ private:
 	static void TickPhase0Readback(USpatialAudioComponent& Component, FCachedEdgePoint& Edge, UWorld* World,
 	                               const FVector& SourcePos, const FVector& ListenerPos,
 	                               const USpatialAudioSettings& Settings);
-	static void SubmitPhase0OffsetFan(USpatialAudioComponent& Component, FCachedEdgePoint& Edge, UWorld* World,
+	static void SubmitPhase0OffsetFan(const USpatialAudioComponent& Component, FCachedEdgePoint& Edge, UWorld* World,
 	                                  const FVector& ListenerPos, float OffsetRadius);
 	static void TickPhase0OffsetReadback(USpatialAudioComponent& Component, FCachedEdgePoint& Edge, UWorld* World,
 	                                     const FVector& SourcePos, const FVector& ListenerPos);

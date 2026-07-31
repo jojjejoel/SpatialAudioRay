@@ -50,7 +50,7 @@ bool FAsyncCastManager::TryDiscardStaleSweep(USpatialAudioComponent& Component, 
 	return true;
 }
 
-void FAsyncCastManager::AccumulateRefineProbesIntoCycle(USpatialAudioComponent& Component, UWorld* World, const USpatialAudioSettings& Settings) {
+void FAsyncCastManager::AccumulateRefineProbesIntoCycle(USpatialAudioComponent& Component, const UWorld* World, const USpatialAudioSettings& Settings) {
 	int32 RaysReached = Component.Finalize.RaysReached;
 	int32 TotalLoSBounces = Component.Finalize.TotalLoSBounces;
 	float MinLoSDist = Component.Finalize.MinLoSDist;
