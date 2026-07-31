@@ -1,7 +1,9 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
+#include "Audio/AsyncCastManager.h"
 
+class UAudioComponent;
 class USpatialAudioComponent;
 class USpatialAudioSettings;
 class UWorld;
@@ -11,34 +13,39 @@ struct FVirtualSlot;
 
 class FUpdater {
 public:
-	/** Offset-LoS sampling, fraction smoothing and the occlusion target derived from it.
-	 *  Called every frame — including while a full cast is in flight, where the update cast
-	 *  doesn't run — so occlusion keeps draining instead of stalling for the sweep duration. */
+	/** Runs every frame, including while a full cast is in flight and the update cast does not,
+	 *  so occlusion keeps draining instead of stalling for the sweep duration. */
 	static void TickDirectLoSSampling(USpatialAudioComponent& Component, float DeltaTime, const USpatialAudioSettings& Settings);
 	static void PerformUpdateRayCast(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings);
 	static void UpdateAudioParameters(USpatialAudioComponent& Component, float DeltaTime, const USpatialAudioSettings& Settings);
 	static void PerformLoSBreakSweep(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings);
 
-	// If the listener->candidate trace is blocked, clamps the offset point to the hit location
-	// (nudged back toward the listener so the next trace doesn't start inside geometry) instead
-	// of discarding it.
-	static FVector ResolveOffsetPoint(USpatialAudioComponent& Component, UWorld* World,
+	// A blocked candidate is clamped to the hit location, nudged back toward the listener so the
+	// next trace does not start inside geometry, rather than discarded.
+	static FVector ResolveOffsetPoint(const USpatialAudioComponent& Component, const UWorld* World,
 	                                  const FVector& ListenerPos, const FVector& CandidatePoint);
 
-	/** Synchronous source-visibility fraction (0, 0.2 … 1) over 5 samples: listener center plus a
-	 *  4-point ring of radius OffsetR around it, each paired with a same-world-direction point at
-	 *  lateral radius SourceRingR around the source, lifted toward the listener onto the SourceR
-	 *  sphere (source extent — seeing any surface of the full-volume sphere counts as seeing the
-	 *  source; samples inside it are clear without tracing). Head-on the source targets read as a
-	 *  disc of radius SourceR; from the side, its listener-facing cap. Rotates RingStepRad per
-	 *  call (pattern repeats every 90°/RingStepRad calls). Both ring radii <= 0 runs the center
-	 *  trace only (fraction 0 or 1); SourceR 0 = point source (traces reach the exact center). */
+	/** Source-visibility fraction (0, 0.2 ... 1) over 5 samples: the listener centre plus a 4-point
+	 *  ring of radius OffsetR, each paired with a point at lateral radius SourceRingR around the
+	 *  source, lifted onto the SourceR sphere. Both ring radii <= 0 runs the centre trace only;
+	 *  SourceR 0 makes it a point source. */
 	static float SyncOffsetLoSFraction(USpatialAudioComponent& Component, UWorld* World,
 	                                   const FVector& SourcePos, const FVector& ListenerPos,
 	                                   float OffsetR, float SourceR, float SourceRingR,
 	                                   float RingStepRad);
 
 private:
+	// Source and listener positions plus the world, resolved once per cast entry point.
+	struct FCastContext {
+		UWorld* World = nullptr;
+		FVector SourcePos = FVector::ZeroVector;
+		FVector ListenerPos = FVector::ZeroVector;
+	};
+	static bool TryResolveCastContext(const USpatialAudioComponent& Component, FCastContext& OutContext);
+	static bool IsOutOfRange(const FCastContext& Context, float MaxRayDistance) {
+		return FVector::DistSquared(Context.SourcePos, Context.ListenerPos) > FMath::Square(MaxRayDistance);
+	}
+
 	static void UpdateDualModeAudio(USpatialAudioComponent& Component, float DeltaTime, const USpatialAudioSettings& Settings,
 	                                float CurvedOcclusion);
 
@@ -53,11 +60,22 @@ private:
 		float PrimaryPathBend = 0.f;
 		FVector PrimaryOffset = FVector::ZeroVector;
 	};
+	struct FVoiceBlendRates {
+		float FadeStep = 1.f;
+		float ParamBlendSpeed = 1000.f;
+		float MoveSpeed = 1000.f;
+	};
+	static FVoiceBlendRates ComputeVoiceBlendRates(const USpatialAudioSettings& Settings, float DeltaTime);
+	static void TickFadingOutSlot(const USpatialAudioComponent& Component, FVirtualSlot& Slot, UAudioComponent* VC,
+	                              float FadeStep, float VirtualCrossfade, FVirtualVoiceUpdateResult& OutResult);
+	static void MoveSlotToVoice(FVirtualSlot& Slot, UAudioComponent* VC, const FVirtualVoice& Voice,
+	                            const FVector& ActorPos, float DeltaTime, float MoveSpeed);
+	static void ApplyVoiceAudioParams(const USpatialAudioComponent& Component, const USpatialAudioSettings& Settings,
+	                                  FVirtualSlot& Slot, FVirtualVoice& Voice, UAudioComponent* VC,
+	                                  const FVector& ActorPos, float DeltaTime, float ParamBlendSpeed,
+	                                  float VirtualCrossfade, FVirtualVoiceUpdateResult& OutResult);
 	static FVirtualVoiceUpdateResult UpdateVirtualVoiceSlots(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings,
 	                                                         float DeltaTime, float VirtualCrossfade, const FVector& ActorPos);
-	static void UpdateAudioSpikeDiagnostics(USpatialAudioComponent& Component, float DeltaTime,
-	                                        float PrevSrcCrossfade, float PrevCurvedOcc, float PrevVrtGain,
-	                                        float CurvedOcclusion, float TotalVirtualGain);
 
 	// ── TickDirectLoSSampling phases ─────────────────────────────────────────
 	static void TrySampleOffsetLoS(USpatialAudioComponent& Component, UWorld* World, const USpatialAudioSettings& Settings,
@@ -74,12 +92,17 @@ private:
 		float SrcWeightTotal = 0.f;
 		float WeightedDistSum = 0.f;
 	};
-	static FEdgeWeightAccum AccumulateCachedEdgeWeights(USpatialAudioComponent& Component, UWorld* World,
+	static FEdgeWeightAccum AccumulateCachedEdgeWeights(USpatialAudioComponent& Component, const UWorld* World,
 	                                                    const USpatialAudioSettings& Settings, const FVector& ListenerPos);
+	static void ClearCacheOnConfirmedDirectLoS(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings);
+	static void UpdateVirtualSourceTarget(USpatialAudioComponent& Component, const FEdgeWeightAccum& Accum,
+	                                      const FVector& SourcePos);
+	static void UpdatePathAttenuationTarget(USpatialAudioComponent& Component, const FEdgeWeightAccum& Accum,
+	                                        const USpatialAudioSettings& Settings, const FVector& SourcePos,
+	                                        bool bVirtualPathActive);
 
-	/** Matches the desired voice set (edge clusters, or one aggregate voice when none exist)
-	 *  to the active voices: within-glide-range matches keep their slot and glide; everything
-	 *  else fades out in place while a replacement fades in on a fresh slot. */
+	/** Within-glide-range matches keep their slot and glide. Everything else fades out in place
+	 *  while a replacement fades in on a fresh slot. */
 	static void SyncVirtualVoicesToClusters(USpatialAudioComponent& Component,
 	                                        const TArray<FEdgeCluster>& Clusters,
 	                                        const USpatialAudioSettings& Settings);
@@ -92,7 +115,7 @@ private:
 		float WeightShare;
 		int32 MatchedVoice = INDEX_NONE;
 	};
-	static TArray<FDesired> BuildDesiredVoices(USpatialAudioComponent& Component, const TArray<FEdgeCluster>& Clusters,
+	static TArray<FDesired> BuildDesiredVoices(const USpatialAudioComponent& Component, const TArray<FEdgeCluster>& Clusters,
 	                                           const USpatialAudioSettings& Settings);
 	static void MatchVoicesToDesired(const TArray<FVirtualVoice>& Voices, TArray<FDesired>& Desired,
 	                                 const USpatialAudioSettings& Settings, TArray<bool>& OutVoiceClaimed);
@@ -107,7 +130,29 @@ private:
 		FVector Point = FVector::ZeroVector;
 		float CumDist = 0.f;
 	};
-	static FLoSBreakRayResult TraceSingleLoSBreakRay(USpatialAudioComponent& Component, UWorld* World,
+	// Per-sweep constants every ray of one LoS-break sweep shares.
+	struct FSweepRayParams {
+		FVector ToListenerDir = FVector::ForwardVector;
+		float SteerDist = 0.f;
+		float MaxPathDist = 0.f;
+		int32 EffMaxBounces = 0;
+		bool bBias = false;
+	};
+	static FAsyncCastManager::FRayAccumulatorInput AccumulateLoSBreakHits(
+		const USpatialAudioComponent& Component, UWorld* World, const USpatialAudioSettings& Settings,
+		const FVector& SourcePos, const FVector& ListenerPos, const FSweepRayParams& RayParams);
+	static FVector PickBiasedLaunchDirection(const USpatialAudioComponent& Component,
+	                                         const USpatialAudioSettings& Settings,
+	                                         const FVector& ToListenerDir, float SteerDist, bool bBias);
+	static bool TryConfirmLoSAtPoint(const USpatialAudioComponent& Component, const UWorld* World, const FVector& Point,
+	                                 const FVector& ListenerPos, float CumDist, float MaxPathDist,
+	                                 FLoSBreakRayResult& OutResult);
+	static bool TrySampleSegmentForLoS(const USpatialAudioComponent& Component, const UWorld* World,
+	                                   const USpatialAudioSettings& Settings, const FVector& SegOrigin,
+	                                   const FVector& SegDir, float SegLen, float SegStartCumDist,
+	                                   const FVector& ListenerPos, float MaxPathDist,
+	                                   FLoSBreakRayResult& OutResult);
+	static FLoSBreakRayResult TraceSingleLoSBreakRay(const USpatialAudioComponent& Component, UWorld* World,
 	                                                 const USpatialAudioSettings& Settings, const FVector& SourcePos,
 	                                                 const FVector& ListenerPos, const FVector& ToListenerDir, bool bBias,
 	                                                 int32 EffMaxBounces, float MaxPathDist, float SteerDist, int32 RayIndex);

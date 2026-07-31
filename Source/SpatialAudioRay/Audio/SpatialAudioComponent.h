@@ -1,4 +1,4 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+﻿// Copyright Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -441,7 +441,6 @@ private:
 	void DrawOcclusionDebugText(uint64 Base) const;
 	void DrawEdgeCacheDebugText(uint64 Base, const USpatialAudioSettings& Settings) const;
 	void DrawSweepPacingDebugText(uint64 Base, const USpatialAudioSettings& Settings, int32 ScaledRayCount) const;
-	void DrawAudioSpikeDebugText(uint64 Base) const;
 	void DrawTraceStatsDebugText(uint64 Base) const;
 	void DrawEdgeTimerDebugText(uint64 Base, const USpatialAudioSettings& Settings) const;
 
@@ -589,16 +588,6 @@ private:
 		int32 UpdateCachedEdges = 0;
 		float UpdateDirectDist = 0.f;
 		float FullExcessRatio = 0.f;
-
-		float DeltaSrcVol = 0.f;
-		float DeltaOcc = 0.f;
-		float DeltaVrtGain = 0.f;
-
-		float SpikeTimer = 0.f;
-		float SpikeSrcDelta = 0.f;
-		float SpikeVrtGainDelta = 0.f;
-		float SpikeOccDelta = 0.f;
-		bool bSpikeLoSBreak = false;
 	} AudioDiag;
 
 	struct FTraceDiagnostics {

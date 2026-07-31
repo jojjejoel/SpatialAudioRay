@@ -1,4 +1,4 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+﻿// Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "Audio/SpatialAudioComponent.h"
 #include "Audio/AsyncCastManager.h"
@@ -206,11 +206,9 @@ void USpatialAudioComponent::DrawSourceAudioDebugText(const uint64 Base) const {
 	// occ  = CurvedOcclusion  (0–1 sent to MetaSound as OcclusionParam, drives LPF internally)
 	const FColor SrcColor = SelectThresholdColor(AudioDiag.SourceCrossfade, 0.7f, 0.3f);
 	GEngine->AddOnScreenDebugMessage(Base + 1, 0.f, SrcColor,
-	                                 FString::Printf(TEXT("  SRC  vol=%3.0f%%  occ_param=%3.0f%%  │  Δvol=%+.2f%%  Δocc=%+.2f%%"),
+	                                 FString::Printf(TEXT("  SRC  vol=%3.0f%%  occ_param=%3.0f%%"),
 	                                                 AudioDiag.SourceCrossfade * 100.f,
-	                                                 AudioDiag.CurvedOcclusion * 100.f,
-	                                                 AudioDiag.DeltaSrcVol * 100.f,
-	                                                 AudioDiag.DeltaOcc * 100.f));
+	                                                 AudioDiag.CurvedOcclusion * 100.f));
 }
 
 void USpatialAudioComponent::DrawVirtualAudioDebugText(const uint64 Base) const {
@@ -251,9 +249,9 @@ void USpatialAudioComponent::DrawVirtualAudioDebugText(const uint64 Base) const 
 	const FColor VrtColor = SelectThresholdColor(AudioDiag.VirtualGain, 0.4f, 0.15f);
 	GEngine->AddOnScreenDebugMessage(Base + 2, 0.f, VrtColor,
 	                                 FString::Printf(
-		                                 TEXT("  VRT  gain=%3.0f%%  xfade=%3.0f%%  bend=%3.0f%%  Δgain=%+.2f%%  │  voices=%s%s"),
+		                                 TEXT("  VRT  gain=%3.0f%%  xfade=%3.0f%%  bend=%3.0f%%  │  voices=%s%s"),
 		                                 AudioDiag.VirtualGain * 100.f, CurrentVirtualCrossfade * 100.f,
-		                                 AudioDiag.VirtualPathBend * 100.f, AudioDiag.DeltaVrtGain * 100.f,
+		                                 AudioDiag.VirtualPathBend * 100.f,
 		                                 *VoiceCount, *VoiceStr));
 }
 
@@ -340,25 +338,6 @@ void USpatialAudioComponent::DrawSweepPacingDebugText(const uint64 Base, const U
 	GEngine->AddOnScreenDebugMessage(Base + 6, 0.f, bSweepSuspended ? FColor::Green : PacingColor, SweepLine);
 }
 
-void USpatialAudioComponent::DrawAudioSpikeDebugText(const uint64 Base) const {
-	// ── Slot 9: Audio spike detector ─────────────────────────────────────
-	if (AudioDiag.SpikeTimer > 0.f) {
-		const float SecsAgo = 3.f - AudioDiag.SpikeTimer;
-		GEngine->AddOnScreenDebugMessage(Base + 9, 0.f, FColor::Red,
-		                                 FString::Printf(
-			                                 TEXT(
-				                                 "  *** SPIKE %.1fs ago  SRC vol Δ%+.0f%%  VRT gain Δ%+.0f%%  occ Δ%+.0f%%  ***"),
-			                                 SecsAgo,
-			                                 AudioDiag.SpikeSrcDelta * 100.f,
-			                                 AudioDiag.SpikeVrtGainDelta * 100.f,
-			                                 AudioDiag.SpikeOccDelta * 100.f));
-	}
-	else {
-		GEngine->AddOnScreenDebugMessage(Base + 9, 0.f, FColor(70, 70, 70),
-		                                 TEXT("  audio stable  (no spike >2% vol/occ in one frame)"));
-	}
-}
-
 void USpatialAudioComponent::DrawTraceStatsDebugText(const uint64 Base) const {
 	// ── Slot 7: Traces + last sweep ───────────────────────────────────────
 	GEngine->AddOnScreenDebugMessage(Base + 7, 0.f, FColor::Cyan,
@@ -408,7 +387,6 @@ void USpatialAudioComponent::DrawDebugTextHUD(const USpatialAudioSettings& Setti
 	DrawOcclusionDebugText(Base);
 	DrawEdgeCacheDebugText(Base, Settings);
 	DrawSweepPacingDebugText(Base, Settings, ScaledRayCount);
-	DrawAudioSpikeDebugText(Base);
 	DrawTraceStatsDebugText(Base);
 	DrawEdgeTimerDebugText(Base, Settings);
 }
