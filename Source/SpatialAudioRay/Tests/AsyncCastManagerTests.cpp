@@ -1,4 +1,4 @@
-#include "CoreMinimal.h"
+﻿#include "CoreMinimal.h"
 #include "SpatialAudioTypes.h"
 #include "Misc/AutomationTest.h"
 #include "Audio/AsyncCastManager.h"

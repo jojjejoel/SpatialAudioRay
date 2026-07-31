@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "Math/RandomStream.h"
@@ -46,7 +46,7 @@ public:
 		float MaxRayDistance = 0.f;
 		bool bDirectLoSFound = false;
 		/** Needed to derive the straight-line source→virtual distance (Leg1Geom) for
-		 *  PathAttenuationGeomBlend — unused otherwise. */
+		 *  PathAttenuationGeomBlend, unused otherwise. */
 		FVector SourcePos = FVector::ZeroVector;
 	};
 
@@ -66,25 +66,24 @@ public:
 	// StartAsyncFullCast is reproducible while the player and source are stationary.
 	static FRandomStream MakeBiasStream(const FVector& SourcePos, const FVector& ListenerPos, int32 RayIndex);
 
-	// One sub-cycle's share of a sweep: every CycleCount-th direction starting at StartIndex, so
-	// the cycles of a full sweep sequence partition the sphere with no direction cast twice.
-	// OutIndices carries each direction's index in the whole set — MakeBiasStream seeds off it,
-	// so it must stay the full-set index, not the position within the slice.
+	// Entries that stand in for a ray this sweep. A relay is an audible stopgap rather than a found
+	// path and an evicting entry is on its way out, so neither counts and the sweep keeps searching
+	// at full budget until a real path displaces them.
+	static int32 CountFullStrengthEdges(const TArray<FCachedEdgePoint>& Points);
+
+	// The cycles of a full sweep sequence partition the sphere with no direction cast twice.
+	// OutIndices must stay the whole-set index, since MakeBiasStream seeds off it.
 	static void SelectCycleDirections(const TArray<FVector>& AllDirections, int32 StartIndex, int32 CycleCount,
 	                                  TArray<FVector>& OutDirections, TArray<int32>& OutIndices);
 
-	// How many leading waypoints string pulling may use as anchors. Anything at or past the LoS
-	// origin's travelled distance lies beyond the edge point the pull starts from, so it cannot
-	// be on the source side of the path being shortened.
+	// Anything at or past the LoS origin's travelled distance lies beyond the edge point the pull
+	// starts from, so it cannot be an anchor.
 	static int32 CountPrefixAnchorWaypoints(const TArray<FSpatialRayState::FBounceWaypoint>& Waypoints,
 	                                        float LoSCumulativeDistance);
 
-	// Mid-air counterpart of ComputeBouncedDirection for MaxStraightFlightDistance turns:
-	// no surface normal exists, so the current direction takes the reflected direction's role
-	// and scatter uses the full sphere. At zero roughness AND zero listener bias the scatter
-	// formula would return InDir unchanged (a wasted straight "turn"), so it instead turns 90°
-	// at an angle deterministically seeded from the turn point — stationary scenes replay the
-	// same direction every sweep. Shared by the async pipeline and the sync sweeps.
+	// Mid-air counterpart of ComputeBouncedDirection. No surface normal exists, so the current
+	// direction takes the reflected direction's role and scatter uses the full sphere. At zero
+	// roughness and zero bias it turns 90 degrees instead of returning InDir unchanged.
 	static FVector ComputeMidAirTurnDirection(const FVector& InDir, const FVector& TurnPoint,
 	                                          const FVector& ListenerPos, bool bApplyBias,
 	                                          float SurfaceRoughness, float BounceListenerBias);
@@ -96,15 +95,15 @@ private:
 	static void MergeStoredPathsIntoCache(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings);
 	static void AdvanceSweepCycleAndIdleState(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings);
 
-	// A ray with no more pending async LoS probes is complete; one with probes still in flight
-	// must wait one more tick (bTerminalLoSPending picks it up on the early-out path next tick).
-	// The same shape recurs at every ray-lifecycle exit point in this file.
+	// A ray with probes still in flight waits one more tick, picked up via bTerminalLoSPending.
 	static void FinishOrDefer(FSpatialRayState& Ray, bool& bAllDone);
 
 	// ── StartAsyncFullCast phases ────────────────────────────────────────────
 	static void CaptureSweepPositions(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings,
 	                                  const AActor& Owner, const APawn& Pawn);
 	static void ResolveSweepRayBudget(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings);
+	static bool HasEitherEndMoved(const USpatialAudioComponent& Component, const FCachedEdgePoint& Edge,
+	                              float MoveThresholdSq);
 	static void BuildCachedEdgeExclusionDirs(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings);
 	static void UpdateActiveMissDirs(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings);
 	static void ResetCycleAccumulator(USpatialAudioComponent& Component);
@@ -145,16 +144,13 @@ private:
 
 	static void DrainPendingLoSProbes(const USpatialAudioComponent& Component, FSpatialRayState& Ray, UWorld* World, const FVector& ListenerPos);
 
-	// Flight paths belong to both the bounce-ray and surface-crawl views: a crawl's incoming and
-	// outgoing legs are flight, so hiding them whenever bounce rays are off would leave the crawl
-	// picture with no way in or out.
+	// A crawl's incoming and outgoing legs are flight, so the crawl view needs them too.
 	static bool ShouldDrawFlightPaths(const USpatialAudioComponent& Component);
 	static void DrawFlightSegment(const USpatialAudioComponent& Component, UWorld* World, const FVector& From,
 	                              const FVector& To, const USpatialAudioSettings& Settings);
 
-	// Submits one point→listener LoS probe, gated on Math::IsWithinPathBudget. Returns false when
-	// the gate rejected it — which, since that sum only grows along a ray, also tells a caller
-	// walking outward that every later point on the same segment is out of budget too.
+	// False when the budget gate rejected it. Since that sum only grows along a ray, it also tells
+	// a caller walking outward that every later point is out of budget too.
 	static bool TryAddListenerLoSProbe(const USpatialAudioComponent& Component, FSpatialRayState& Ray,
 	                                   UWorld* World, const FVector& SamplePos, float CumDist, float Budget,
 	                                   const USpatialAudioSettings& Settings);
@@ -174,6 +170,19 @@ private:
 	};
 
 	static bool AreCrawlTracesReady(UWorld* World, FSpatialRayState& Ray, FTraceDatum& OutRangeData);
+	// The three questions each crawl step asks: has the listener come into view, has a wall closed
+	// off the crawl, and has the surface fallen away behind us (the diffraction edge being hunted).
+	static void TryConfirmLoSAtCrawlStep(const USpatialAudioComponent& Component, FSpatialRayState& Ray,
+	                                     UWorld* World,
+	                                     const FSpatialRayState::FAsyncCrawlStepProbe& StepProbe,
+	                                     const USpatialAudioSettings& Settings);
+	static bool TryTakePerpWallExit(const FSpatialRayState& Ray, UWorld* World,
+	                                const FSpatialRayState::FAsyncCrawlStepProbe& StepProbe,
+	                                int32 StepIdx, FCrawlStepResult& OutResult);
+	static bool TryTakeFreeEdgeExit(const USpatialAudioComponent& Component, const FSpatialRayState& Ray,
+	                                UWorld* World,
+	                                const FSpatialRayState::FAsyncCrawlStepProbe& StepProbe,
+	                                int32 StepIdx, FCrawlStepResult& OutResult);
 	static FCrawlStepResult EvaluateCrawlSteps(const USpatialAudioComponent& Component, FSpatialRayState& Ray, UWorld* World,
 	                                           int32 Limit, const USpatialAudioSettings& Settings);
 	static void DrawCrawlDebugVisualization(const FSpatialRayState& Ray, const UWorld* World,

@@ -1,4 +1,4 @@
-#include "Audio/AsyncCastManager.h"
+﻿#include "Audio/AsyncCastManager.h"
 #include "Audio/SpatialAudioComponent.h"
 #include "Audio/Math.h"
 
@@ -82,13 +82,22 @@ void FAsyncCastManager::CaptureSweepPositions(USpatialAudioComponent& Component,
 	Component.bPreSweepCast = Component.IsPreSweepActive();
 	Component.AsyncSourcePos = Owner.GetActorLocation();
 	Component.AsyncListenerPos = Pawn.GetActorLocation();
-	// Velocity-led STEERING positions: aim rays where source/listener are heading — or, within
-	// the lead time of losing LoS, where they came from (see ComputeSteeringLead). Probes/gates
-	// keep verifying against the actual positions.
+	// Steering aims rays where the source and listener are heading, or where they came from just
+	// after losing LoS. Probes and gates keep verifying against the actual positions.
 	Component.AsyncSteeringSourcePos = Component.AsyncSourcePos
 		+ Component.ComputeSteeringLead(Component.VelocityScaling.SmoothedSourceVelocity, Settings);
 	Component.AsyncSteeringListenerPos = Component.AsyncListenerPos
 		+ Component.ComputeSteeringLead(Component.VelocityScaling.SmoothedListenerVelocity, Settings);
+}
+
+int32 FAsyncCastManager::CountFullStrengthEdges(const TArray<FCachedEdgePoint>& Points) {
+	int32 Count = 0;
+	for (const FCachedEdgePoint& Edge : Points) {
+		if (!Edge.bRelayed && !Edge.bEvicting) {
+			++Count;
+		}
+	}
+	return Count;
 }
 
 void FAsyncCastManager::ResolveSweepRayBudget(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings) {
@@ -103,21 +112,17 @@ void FAsyncCastManager::ResolveSweepRayBudget(USpatialAudioComponent& Component,
 		Component.PendingValidCachedPoints.Append(Component.CachedEdgePoints);
 	}
 
-	// Only direct, full-strength entries substitute for rays. A relayed edge means the real
-	// listener leg is gone — the relay is an audible stopgap, not a found path — and an
-	// evicting entry is on its way out; both keep presenting through the snapshot, but the
-	// sweep must keep searching at full budget while they're what's playing, so a genuine
-	// replacement path can be found and displace them.
-	int32 SubstituteCount = 0;
-	for (const FCachedEdgePoint& Edge : Component.PendingValidCachedPoints) {
-		if (!Edge.bRelayed && !Edge.bEvicting) {
-			++SubstituteCount;
-		}
-	}
+	const int32 SubstituteCount = CountFullStrengthEdges(Component.PendingValidCachedPoints);
 
 	Component.AsyncActualRays = FMath::Max(0, ScaledRayCount - SubstituteCount);
 	Component.TraceDiag.SweepAsyncRayAccum = 0;
 	Component.TraceDiag.LastSweepCachedReplaced = SubstituteCount;
+}
+
+bool FAsyncCastManager::HasEitherEndMoved(const USpatialAudioComponent& Component, const FCachedEdgePoint& Edge,
+                                          const float MoveThresholdSq) {
+	return FVector::DistSquared(Component.AsyncSourcePos, Edge.CapturedSourcePos) > MoveThresholdSq
+		|| FVector::DistSquared(Component.AsyncListenerPos, Edge.CapturedListenerPos) > MoveThresholdSq;
 }
 
 void FAsyncCastManager::BuildCachedEdgeExclusionDirs(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings) {
@@ -128,19 +133,11 @@ void FAsyncCastManager::BuildCachedEdgeExclusionDirs(USpatialAudioComponent& Com
 
 	const float MoveThresholdSq = FMath::Square(Settings.CachedEdgeUpdateMoveThreshold);
 	for (const FCachedEdgePoint& Edge : Component.PendingValidCachedPoints) {
-		// A relayed edge must not exclude its direction either: the region around it is exactly
-		// where a real replacement path most likely exists, and finding one is what lets the
-		// relay yield.
+		// A relay must not exclude its direction: that region is where a replacement most likely is.
 		if (Edge.bEvicting || Edge.bRelayed) {
 			continue;
 		}
-		// The edge was confirmed from where the source and listener stood at the time. Once
-		// either has moved, it no longer stands in for a ray this sweep would have cast.
-		const bool bSourceMoved =
-			FVector::DistSquared(Component.AsyncSourcePos, Edge.CapturedSourcePos) > MoveThresholdSq;
-		const bool bListenerMoved =
-			FVector::DistSquared(Component.AsyncListenerPos, Edge.CapturedListenerPos) > MoveThresholdSq;
-		if (bSourceMoved || bListenerMoved) {
+		if (HasEitherEndMoved(Component, Edge, MoveThresholdSq)) {
 			continue;
 		}
 		const FVector ToEdge = Edge.EdgePoint - Component.AsyncSourcePos;
@@ -157,9 +154,8 @@ void FAsyncCastManager::UpdateActiveMissDirs(USpatialAudioComponent& Component, 
 		return;
 	}
 
-	// Backwards so an entry can be dropped mid-loop. A moved SOURCE retires the record outright —
-	// the geometry it learned about no longer applies — whereas a moved listener only benches it
-	// for this sweep, since the same direction may still miss from where the source still stands.
+	// Backwards so an entry can be dropped mid-loop. A moved source retires the record outright,
+	// while a moved listener only benches it for this sweep.
 	const float MoveThresholdSq = FMath::Square(Settings.CachedEdgeUpdateMoveThreshold);
 	for (int32 i = Component.CachedMissDirs.Num() - 1; i >= 0; --i) {
 		const FCachedMissDir& MissDir = Component.CachedMissDirs[i];
@@ -215,15 +211,14 @@ FAsyncCastManager::FMissDirResolution FAsyncCastManager::ResolveMissDirection(
 	Out.bIsMissDir = true;
 
 	if (FMath::FRand() <= Settings.MissDirectionCastProbability) {
-		// Re-probing the miss: cast the recorded direction itself rather than the neighbour that
-		// merely fell inside its cone, so the retry actually retests what failed.
+		// Cast the recorded direction itself, not the neighbour that fell inside its cone.
 		Out.Dir = Component.ActiveMissDirs[MatchedIdx];
 		Out.bDirFixed = true;
 		return Out;
 	}
 
-	// Not re-probing. Rather than waste the ray, aim it where an edge was found before — but
-	// only sometimes, or every skipped miss would pile onto the same few known-good directions.
+	// Aim the spared ray where an edge was found before, but only sometimes, or every skipped miss
+	// piles onto the same few directions.
 	if (Component.SuccessfulEdgeDirHints.Num() > 0 && Settings.MissRedirectConeAngleDeg > 0.f
 		&& FMath::FRand() < Settings.MissRedirectProbability) {
 		const FVector& Hint = Component.SuccessfulEdgeDirHints[
@@ -244,9 +239,8 @@ FRandomStream FAsyncCastManager::MakeBiasStream(const FVector& SourcePos, const 
 	return FRandomStream(static_cast<int32>(Seed));
 }
 
-// Rejection sampling against ComputeRayDirectionWeight: a direction the weight disfavours is
-// redrawn from the seeded stream until one the weight accepts turns up, which concentrates the
-// sweep in the lateral band around the listener without ever hard-excluding a direction.
+// Concentrates the sweep in the lateral band around the listener without hard-excluding any
+// direction.
 FVector FAsyncCastManager::ApplyLateralBandBias(const USpatialAudioComponent& Component, const FVector& Dir,
                                                 const FVector& ToListenerDir, float FullCastDistance,
                                                 int32 DirectionIndex, const USpatialAudioSettings& Settings) {
@@ -295,8 +289,7 @@ void FAsyncCastManager::SubmitSweepRays(USpatialAudioComponent& Component, const
 			Dir = ApplyLateralBandBias(Component, Dir, ToListenerDir, FullCastDistance, DirectionIndices[i], Settings);
 		}
 
-		// A direction a valid cached edge already covers is spent budget — that edge is injected
-		// as a confirmed result this sweep and its ray was subtracted from the count.
+		// Already covered by a cached edge, whose ray was subtracted from the count.
 		if (Math::FindDirectionWithinCone(Dir, Component.CachedEdgeDirs, ExclusionMinDot) != INDEX_NONE) {
 			continue;
 		}
@@ -308,8 +301,7 @@ void FAsyncCastManager::SubmitSweepRays(USpatialAudioComponent& Component, const
 		Ray.bNextHitCrawls = Miss.bIsMissDir ? false : (i % 2 == 0);
 		Ray.bWasMissDir = Miss.bIsMissDir;
 
-		// Nothing has been travelled yet, so the launch segment answers only to the ray's own
-		// reach and the straight-flight cap — the path budget starts being spent from here.
+		// Nothing travelled yet, so the launch segment answers only to reach and the flight cap.
 		const float SegLen = Math::ComputeNextSegmentLength(
 			Component.MaxRayDistance * Settings.RayLengthMultiplier,
 			TNumericLimits<float>::Max(), Settings.MaxStraightFlightDistance);
@@ -366,8 +358,8 @@ bool FAsyncCastManager::TryProcessMidAirTurn(const USpatialAudioComponent& Compo
                                              const USpatialAudioSettings& Settings) {
 	const FVector TurnPoint = Ray.Origin + Ray.Dir * Ray.SegSubmitLen;
 
-	// The last guard prunes a miss that can no longer reach the listener within budget: it takes
-	// the terminal branch below instead of spending a bounce on a turn that can never pay off.
+	// The last guard sends a miss that can no longer reach the listener to the terminal branch
+	// rather than spending a bounce on a turn that cannot pay off.
 	if (!bSegMissed || Settings.MaxStraightFlightDistance <= 0.f
 		|| Ray.Bounce >= Component.AsyncMaxBounces
 		|| Budget - (Ray.CumulativeDistance + Ray.SegSubmitLen) < 1.f
@@ -406,9 +398,8 @@ void FAsyncCastManager::ProcessRayTermination(const USpatialAudioComponent& Comp
                                               const FTraceDatum& SegData, bool bSegMissed, float Budget,
                                               bool& bAllDone, const USpatialAudioSettings& Settings) {
 	if (bSegMissed) {
-		// SegSubmitLen caps the terminal point to the distance actually traced — the budget
-		// recompute alone would overshoot when MaxStraightFlightDistance clamped the segment,
-		// putting the terminal point (and its LoS probes) in space the trace never verified.
+		// Capped to the distance actually traced. A budget recompute alone would overshoot when
+		// MaxStraightFlightDistance clamped the segment, putting probes in unverified space.
 		const float RemainingBudget = FMath::Max(0.f, FMath::Min(
 			FMath::Min(Component.MaxRayDistance * Settings.RayLengthMultiplier, Ray.SegSubmitLen),
 			Budget - Ray.CumulativeDistance));
@@ -484,9 +475,7 @@ bool FAsyncCastManager::TrySetupSurfaceCrawl(USpatialAudioComponent& Component, 
 
 	Ray.CrawlStepProbes.Reset();
 	Ray.CrawlStepProbes.Reserve(CrawlStepCap);
-	// Every step's three questions are submitted up front, in one batch, so the whole crawl costs
-	// one frame of latency instead of one per step (EvaluateCrawlSteps reads them back in order
-	// and stops at the first step that answers).
+	// One batch up front, so the whole crawl costs one frame of latency instead of one per step.
 	for (int32 Step = 1; Step <= CrawlStepCap; ++Step) {
 		const FVector StepPos = NudgedStart + Step * Settings.CrawlStepSize * CrawlDir;
 		const FVector BackEnd = StepPos + BackDir * BackProbeLen;
@@ -660,8 +649,8 @@ void FAsyncCastManager::DrainPendingLoSProbes(const USpatialAudioComponent& Comp
 		}
 
 		if (!Ray.bLoSFound && IsTraceClear(LoSData) && Probe.CumDist < BestCumDist) {
-			// Reverse sanity trace: a probe origin inside geometry exits silently on the forward
-			// trace, but the listener->origin trace hits the geometry's outer face and rejects it.
+			// A probe origin inside geometry exits silently forward, but the reverse trace hits the
+			// outer face and rejects it.
 			FHitResult SanityHit;
 			if (!Component.TraceLine(World, SanityHit, ListenerPos, Probe.SamplePos)) {
 				BestCumDist = Probe.CumDist;
@@ -677,9 +666,8 @@ void FAsyncCastManager::DrainPendingLoSProbes(const USpatialAudioComponent& Comp
 		Ray.bLoSFound = true;
 		Ray.LoSBounces = FMath::Max(1, BestBounce);
 		Ray.LoSOrigin = BestLoSPos;
-		// Cumulative distance stops at the edge point (BestCumDist) — does not include the final
-		// LoS-confirmation leg from the edge to the listener. That leg is Leg2, not part of the
-		// traveled source->edge path this value is meant to represent.
+		// Stops at the edge point. The edge to listener leg is Leg2, not part of the travelled
+		// source to edge path this value represents.
 		Ray.LoSCumulativeDistance = BestCumDist;
 	}
 }
@@ -691,7 +679,6 @@ bool FAsyncCastManager::AreCrawlTracesReady(UWorld* World, FSpatialRayState& Ray
 		return false;
 	}
 	for (FSpatialRayState::FAsyncCrawlStepProbe& StepProbe : Ray.CrawlStepProbes) {
-		// The datum is discarded — this only asks whether all three traces have landed yet.
 		FTraceDatum Ready;
 		if (!World->QueryTraceData(StepProbe.BackHandle, Ready) ||
 			!World->QueryTraceData(StepProbe.LoSHandle, Ready) ||
@@ -702,70 +689,93 @@ bool FAsyncCastManager::AreCrawlTracesReady(UWorld* World, FSpatialRayState& Ray
 	return true;
 }
 
+void FAsyncCastManager::TryConfirmLoSAtCrawlStep(const USpatialAudioComponent& Component, FSpatialRayState& Ray,
+                                                UWorld* World,
+                                                const FSpatialRayState::FAsyncCrawlStepProbe& StepProbe,
+                                                const USpatialAudioSettings& Settings) {
+	if (Ray.bLoSFound
+		|| FVector::DotProduct(Component.AsyncListenerPos - StepProbe.StepPos, Ray.CrawlHitNormal) <= 0.f) {
+		return;
+	}
+
+	if (Component.bDrawDebugRays && Component.bShowLoSChecks) {
+		DrawDebugLine(World, StepProbe.StepPos, Component.AsyncListenerPos, FColor(160, 0, 255),
+		              false, Settings.DebugLineDuration, 0, 0.5f);
+	}
+
+	FTraceDatum LoSData;
+	World->QueryTraceData(StepProbe.LoSHandle, LoSData);
+	if (!IsTraceClear(LoSData)) {
+		return;
+	}
+	// Reverse sanity trace, same reasoning as DrainPendingLoSProbes.
+	if (FHitResult SanityHit; Component.TraceLine(World, SanityHit, Component.AsyncListenerPos, StepProbe.StepPos)) {
+		return;
+	}
+
+	Ray.bLoSFound = true;
+	Ray.LoSBounces = FMath::Max(1, Ray.Bounce);
+	Ray.LoSOrigin = StepProbe.StepPos;
+	Ray.LoSCumulativeDistance = StepProbe.StepCumDist;
+
+	if (Component.bDrawDebugRays && Component.bShowSurfaceCrawl) {
+		DrawDebugSphere(World, StepProbe.StepPos, 10.f, 8, FColor::Green,
+		                false, Settings.DebugLineDuration, SDPG_Foreground, 2.f);
+	}
+}
+
+bool FAsyncCastManager::TryTakePerpWallExit(const FSpatialRayState& Ray, UWorld* World,
+                                            const FSpatialRayState::FAsyncCrawlStepProbe& StepProbe,
+                                            const int32 StepIdx, FCrawlStepResult& OutResult) {
+	FTraceDatum PerpData;
+	World->QueryTraceData(StepProbe.PerpHandle, PerpData);
+	if (IsTraceClear(PerpData)) {
+		return false;
+	}
+
+	const FHitResult& PerpHit = PerpData.OutHits[0];
+	OutResult.EdgePoint = PerpHit.Location + PerpHit.Normal * Ray.CrawlNudgeDist;
+	OutResult.EdgeDir = Math::ReflectDirection(Ray.CrawlDir, PerpHit.Normal);
+	OutResult.CrawlDist = static_cast<float>(StepIdx) * Ray.CrawlStepSz
+		+ FVector::Dist(StepProbe.StepPos, PerpHit.Location);
+	OutResult.PerpNormal = PerpHit.Normal;
+	OutResult.bPerpWallHit = true;
+	OutResult.bSucceeded = true;
+	OutResult.FoundAtStep = StepIdx;
+	return true;
+}
+
+bool FAsyncCastManager::TryTakeFreeEdgeExit(const USpatialAudioComponent& Component, const FSpatialRayState& Ray,
+                                            UWorld* World,
+                                            const FSpatialRayState::FAsyncCrawlStepProbe& StepProbe,
+                                            const int32 StepIdx, FCrawlStepResult& OutResult) {
+	FTraceDatum BackData;
+	World->QueryTraceData(StepProbe.BackHandle, BackData);
+	// Clear means nothing is behind this step any more, so the crawl has walked off the edge.
+	if (!IsTraceClear(BackData)) {
+		return false;
+	}
+
+	const FVector ToListener = (Component.AsyncSteeringListenerPos - StepProbe.StepPos).GetSafeNormal();
+	OutResult.EdgePoint = StepProbe.StepPos;
+	OutResult.EdgeDir = SelectEdgeDirection(Ray.CrawlHitNormal, ToListener);
+	OutResult.CrawlDist = static_cast<float>(StepIdx + 1) * Ray.CrawlStepSz;
+	OutResult.bSucceeded = true;
+	OutResult.FoundAtStep = StepIdx;
+	return true;
+}
+
 FAsyncCastManager::FCrawlStepResult FAsyncCastManager::EvaluateCrawlSteps(
 	const USpatialAudioComponent& Component, FSpatialRayState& Ray, UWorld* World, int32 Limit,
 	const USpatialAudioSettings& Settings) {
 	FCrawlStepResult Result;
 
-	// Each step along the surface asks three questions in order: has the listener come into view,
-	// has a wall closed off the crawl (an inside corner), and has the surface fallen away behind
-	// us (an outside corner — the diffraction edge the crawl is hunting for).
 	for (int32 StepIdx = 0; StepIdx < Limit; ++StepIdx) {
-		FSpatialRayState::FAsyncCrawlStepProbe& StepProbe = Ray.CrawlStepProbes[StepIdx];
+		const FSpatialRayState::FAsyncCrawlStepProbe& StepProbe = Ray.CrawlStepProbes[StepIdx];
 
-		if (!Ray.bLoSFound
-			&& FVector::DotProduct(Component.AsyncListenerPos - StepProbe.StepPos, Ray.CrawlHitNormal) > 0.f) {
-			if (Component.bDrawDebugRays && Component.bShowLoSChecks) {
-				DrawDebugLine(World, StepProbe.StepPos, Component.AsyncListenerPos, FColor(160, 0, 255),
-				              false, Settings.DebugLineDuration, 0, 0.5f);
-			}
-			FTraceDatum LoSData;
-			World->QueryTraceData(StepProbe.LoSHandle, LoSData);
-			if (IsTraceClear(LoSData)) {
-				if (FHitResult SanityHit; !Component.TraceLine(World, SanityHit, Component.AsyncListenerPos, StepProbe.StepPos)) {
-					Ray.bLoSFound = true;
-					Ray.LoSBounces = FMath::Max(1, Ray.Bounce);
-					Ray.LoSOrigin = StepProbe.StepPos;
-					// Stops at the edge point (StepCumDist) — excludes the edge->listener
-					// confirmation leg, same reasoning as DrainPendingLoSProbes above.
-					Ray.LoSCumulativeDistance = StepProbe.StepCumDist;
-					if (Component.bDrawDebugRays && Component.bShowSurfaceCrawl) {
-						DrawDebugSphere(World, StepProbe.StepPos, 10.f, 8, FColor::Green,
-						                false, Settings.DebugLineDuration, SDPG_Foreground, 2.f);
-					}
-				}
-			}
-		}
-
-		// Forward one step along the surface: a hit is a wall across the crawl's path, so the
-		// crawl ends there and the ray reflects off it instead of rounding anything.
-		FTraceDatum PerpData;
-		World->QueryTraceData(StepProbe.PerpHandle, PerpData);
-		if (!IsTraceClear(PerpData)) {
-			const FHitResult& PerpHit = PerpData.OutHits[0];
-			Result.EdgePoint = PerpHit.Location + PerpHit.Normal * Ray.CrawlNudgeDist;
-			Result.EdgeDir = Math::ReflectDirection(Ray.CrawlDir, PerpHit.Normal);
-			Result.CrawlDist = static_cast<float>(StepIdx) * Ray.CrawlStepSz
-				+ FVector::Dist(StepProbe.StepPos, PerpHit.Location);
-			Result.PerpNormal = PerpHit.Normal;
-			Result.bPerpWallHit = true;
-			Result.bSucceeded = true;
-			Result.FoundAtStep = StepIdx;
-			break;
-		}
-
-		// Back into the surface being crawled: a CLEAR trace means there is no longer anything
-		// behind this step, so the crawl has just walked off the edge. That step point is the
-		// diffraction corner, and the ray leaves it aimed around the obstruction.
-		FTraceDatum BackData;
-		World->QueryTraceData(StepProbe.BackHandle, BackData);
-		if (IsTraceClear(BackData)) {
-			const FVector ToListener = (Component.AsyncSteeringListenerPos - StepProbe.StepPos).GetSafeNormal();
-			Result.EdgePoint = StepProbe.StepPos;
-			Result.EdgeDir = SelectEdgeDirection(Ray.CrawlHitNormal, ToListener);
-			Result.CrawlDist = static_cast<float>(StepIdx + 1) * Ray.CrawlStepSz;
-			Result.bSucceeded = true;
-			Result.FoundAtStep = StepIdx;
+		TryConfirmLoSAtCrawlStep(Component, Ray, World, StepProbe, Settings);
+		if (TryTakePerpWallExit(Ray, World, StepProbe, StepIdx, Result)
+			|| TryTakeFreeEdgeExit(Component, Ray, World, StepProbe, StepIdx, Result)) {
 			break;
 		}
 	}
@@ -792,7 +802,7 @@ void FAsyncCastManager::DrawCrawlDebugVisualization(const FSpatialRayState& Ray,
 
 		DrawDebugSphere(World, StepProbe.StepPos, Radius, 6, StepColor,
 		                false, Settings.DebugLineDuration, SDPG_Foreground, 1.f);
-		// Cyan marks crawl movement; flight segments stay white.
+		// Cyan marks crawl movement, flight segments stay white.
 		DrawDebugLine(World, PrevStepPos, StepProbe.StepPos, FColor(0, 220, 255),
 		              false, Settings.DebugLineDuration, 0, 1.5f);
 		PrevStepPos = StepProbe.StepPos;
@@ -818,9 +828,8 @@ void FAsyncCastManager::ApplyCrawlResult(const USpatialAudioComponent& Component
 	if (Result.bSucceeded) {
 		Ray.CumulativeDistance += Result.CrawlDist;
 		Ray.Dir = Result.EdgeDir;
-		// A perp-wall exit reflects off a wall the crawl ran into, so it takes the surface bias
-		// off that wall; a free-edge exit just carries on from the step point, which the crawl
-		// already held clear of the surface it was following.
+		// A perp-wall exit reflects off the wall it ran into, so it needs bias off that wall. A
+		// free-edge exit carries on from a step point already held clear.
 		Ray.Origin = Result.bPerpWallHit
 			             ? Result.EdgePoint + Result.PerpNormal * Settings.RaySurfaceBias
 			             : Result.EdgePoint;
@@ -845,8 +854,7 @@ void FAsyncCastManager::ProcessCrawlBatch(const USpatialAudioComponent& Componen
 		return;
 	}
 
-	// One trace down the whole crawl path bounds it up front: anything past where that trace hit
-	// is inside geometry, so those steps' probes are read back but never evaluated.
+	// Anything past where the range trace hit is inside geometry, so those probes go unevaluated.
 	const int32 NumSteps = Ray.CrawlStepProbes.Num();
 	int32 EffMaxSteps = Ray.CrawlMaxSteps;
 	if (!IsTraceClear(RangeData)) {
@@ -903,9 +911,8 @@ FVector FAsyncCastManager::ComputeMidAirTurnDirection(const FVector& InDir, cons
                                                       const FVector& ListenerPos, bool bApplyBias,
                                                       float SurfaceRoughness, float BounceListenerBias) {
 	if (SurfaceRoughness <= 0.f && BounceListenerBias <= 0.f) {
-		// With no scatter and no bias the lerp below returns InDir unchanged — the ray would burn a
-		// bounce flying straight. Turn 90° instead, at an angle seeded from the turn point so a
-		// stationary scene replays the identical direction every sweep (MakeBiasStream pattern).
+		// With no scatter and no bias the lerp below returns InDir unchanged and the ray would burn
+		// a bounce flying straight. Seeded from the turn point so a stationary scene replays it.
 		const uint32 Seed = HashCombine(GetTypeHash(TurnPoint), GetTypeHash(ListenerPos));
 		const FRandomStream Stream(static_cast<int32>(Seed));
 		FVector AxisU, AxisV;
@@ -991,8 +998,7 @@ int32 FAsyncCastManager::FindFirstVisibleAnchor(const USpatialAudioComponent& Co
                                                 const FVector& FromPoint,
                                                 const TArray<FSpatialRayState::FBounceWaypoint>& Waypoints,
                                                 int32 SearchLimit) {
-	// Earliest waypoint first: the further back down the path a shortcut reaches, the more of the
-	// traveled detour it replaces.
+	// Earliest first: the further back a shortcut reaches, the more detour it replaces.
 	for (int32 AnchorIdx = 0; AnchorIdx < SearchLimit; ++AnchorIdx) {
 		if (HasClearShortcut(Component, World, FromPoint, Waypoints[AnchorIdx].Pos)) {
 			return AnchorIdx;
@@ -1001,23 +1007,11 @@ int32 FAsyncCastManager::FindFirstVisibleAnchor(const USpatialAudioComponent& Co
 	return INDEX_NONE;
 }
 
-// Leg1 is the source->edge leg of a diffraction path; Leg2 (edge->listener) is the engine
-// attenuation's job. The route a ray actually flew overstates Leg1 — crawl steps hug walls and
-// bounces detour — whereas sound shortcuts straight between any two points that can see each
-// other. So the traveled route is pulled taut before its length is used.
-//
-// Starting at the edge point, find the earliest anchor — the source, else a bounce waypoint —
-// with a clear straight segment back to the current point, hop there, and repeat until the
-// source is reached. Every link in that chain is a verified straight line. When nothing is
-// visible, exactly ONE raw traveled hop is consumed (that link stays unverified: it is the real
-// crawl or bounce leg, not a straight line) and pulling continues from there — so a single
-// blocked corner cannot also swallow a shortcut genuinely available beyond it, such as a second
-// opening past a second corner.
-//
-// OutPath is the polyline the returned distance was measured along, source first.
-// OutSegmentVerified marks, per segment, whether it is one of those verified straight lines.
-// False means the straight shortcut was traced and came back blocked — which is often blocked
-// by design rather than by a geometry change, so callers must not read it as a fault.
+// Leg1 is the source to edge leg. The route a ray actually flew overstates it, since crawl steps
+// hug walls and bounces detour, so the travelled route is pulled taut first.
+// When nothing is visible, exactly one raw hop is consumed rather than the whole remaining prefix,
+// so one blocked corner cannot also swallow a shortcut available beyond it. A false in
+// OutSegmentVerified is often blocked by design rather than by a geometry change.
 float FAsyncCastManager::ComputeStringPulledLeg1(const USpatialAudioComponent& Component, const UWorld* World,
                                                  const FSpatialRayState& Ray, const FVector& SourcePos,
                                                  TArray<FVector>& OutPath, TArray<bool>& OutSegmentVerified) {
@@ -1025,8 +1019,7 @@ float FAsyncCastManager::ComputeStringPulledLeg1(const USpatialAudioComponent& C
 	TArray<bool> ReverseSegmentVerified;
 	ReversePath.Add(Ray.LoSOrigin);
 
-	// The pull walks source-ward from the edge point. RemainingAnchors bounds the waypoints still
-	// on the source side of PullPoint — the only ones a shortcut may legally reach back to.
+	// RemainingAnchors bounds the waypoints still on the source side of PullPoint.
 	FVector PullPoint = Ray.LoSOrigin;
 	float PullPointCumDist = Ray.LoSCumulativeDistance;
 	int32 RemainingAnchors = CountPrefixAnchorWaypoints(Ray.BounceWaypoints, Ray.LoSCumulativeDistance);
@@ -1054,16 +1047,14 @@ float FAsyncCastManager::ComputeStringPulledLeg1(const USpatialAudioComponent& C
 		}
 
 		if (RemainingAnchors == 0) {
-			// No waypoints left to try and the source still isn't visible: close the final gap
-			// with the traveled distance, same fallback a total failure always used.
+			// Nothing left to try, so close the final gap with the travelled distance.
 			PulledDist += PullPointCumDist;
 			ReverseSegmentVerified.Add(false);
 			ReversePath.Add(SourcePos);
 			break;
 		}
 
-		// Nothing visible from PullPoint — not even the immediately preceding traveled waypoint.
-		// Consume that one raw hop as an unverified link and keep pulling from there.
+		// Not even the preceding waypoint is visible, so consume that hop unverified and continue.
 		const FSpatialRayState::FBounceWaypoint& Preceding = Ray.BounceWaypoints[RemainingAnchors - 1];
 		PulledDist += PullPointCumDist - Preceding.CumDist;
 		ReverseSegmentVerified.Add(false);
@@ -1086,16 +1077,14 @@ float FAsyncCastManager::ComputeStringPulledLeg1(const USpatialAudioComponent& C
 void FAsyncCastManager::SubmitFinalizeBatch(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings) {
 	const UWorld* World = Component.GetWorld();
 
-	// Pre-warm casts fire while the source is still partially visible, so rays reaching the
-	// listener directly are expected — masking the flag keeps the refine probes (the whole
-	// point of the pre-sweep) and stops readback from wiping the freshly warmed cache.
+	// Pre-warm casts fire while the source is still partly visible, so direct hits are expected.
+	// Masking keeps the refine probes and stops readback wiping the freshly warmed cache.
 	const bool bDirectLoSFound = !Component.bPreSweepCast && Math::HasAnyDirectLoS(Component.AsyncRays);
 
 	const FCachedPointAccum Accum = AccumulateCachedPoints(
 		Component.PendingValidCachedPoints, Settings);
 
-	// Only these three take a further contribution from the rays below; the rest of the cached
-	// -point accumulation passes straight through to the batch.
+	// Only these three take a further contribution from the rays below.
 	int32 RaysReached = Accum.RaysReached;
 	int32 TotalLoSBounces = 0;
 	float MinLoSDist = Accum.MinLoSDist;
