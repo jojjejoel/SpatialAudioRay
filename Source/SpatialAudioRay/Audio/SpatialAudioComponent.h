@@ -567,6 +567,22 @@ private:
 		int32 AccumBucket = 0;
 		float SnapshotFrameTraces = 0.f;
 		float SnapshotTracesPerSec = 0.f;
+		/** Highest one-second figure this source has reached. Never sum these across sources for
+		 *  a global peak; the subsystem peaks the summed figure instead. */
+		float PeakTracesPerSec = 0.f;
+
+		/** Traces and seconds banked separately for moving and stationary play, split on the same
+		 *  IsStationary() the sweep pacing itself uses, so the pair measures what velocity scaling
+		 *  and stationary idle actually buy. Cumulative rather than windowed: the level-load sweep
+		 *  lands in the rest bucket and washes out as play continues. Time out of range counts as
+		 *  elapsed with no traces, so read these from a controlled run. */
+		int32 MovingTraceAccum = 0;
+		float MovingSeconds = 0.f;
+		int32 RestTraceAccum = 0;
+		float RestSeconds = 0.f;
+
+		float MovingTracesPerSec() const { return MovingSeconds > 0.f ? MovingTraceAccum / MovingSeconds : 0.f; }
+		float RestTracesPerSec() const { return RestSeconds > 0.f ? RestTraceAccum / RestSeconds : 0.f; }
 
 		static constexpr int32 HistoryLen = 60;
 		static constexpr int32 Avg10Len = 10;

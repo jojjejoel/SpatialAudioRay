@@ -488,6 +488,15 @@ void USpatialAudioComponent::UpdateTraceDiagnostics(const float DeltaTime) {
 	TraceDiag.SmoothedFrameTraces = FMath::FInterpTo(TraceDiag.SmoothedFrameTraces, static_cast<float>(TraceDiag.FrameCount),
 	                                                 DeltaTime, 4.f);
 
+	if (VelocityScaling.IsStationary()) {
+		TraceDiag.RestTraceAccum += TraceDiag.FrameCount;
+		TraceDiag.RestSeconds += DeltaTime;
+	}
+	else {
+		TraceDiag.MovingTraceAccum += TraceDiag.FrameCount;
+		TraceDiag.MovingSeconds += DeltaTime;
+	}
+
 	TraceDiag.AccumBucket += TraceDiag.FrameCount;
 	TraceDiag.SnapshotTimer += DeltaTime;
 	if (TraceDiag.SnapshotTimer < 1.f) {
@@ -495,6 +504,7 @@ void USpatialAudioComponent::UpdateTraceDiagnostics(const float DeltaTime) {
 	}
 
 	TraceDiag.SnapshotTracesPerSec = TraceDiag.AccumBucket / TraceDiag.SnapshotTimer;
+	TraceDiag.PeakTracesPerSec = FMath::Max(TraceDiag.PeakTracesPerSec, TraceDiag.SnapshotTracesPerSec);
 	TraceDiag.SnapshotTimer = 0.f;
 	TraceDiag.AccumBucket = 0;
 	TraceDiag.SnapshotFrameTraces = TraceDiag.SmoothedFrameTraces;

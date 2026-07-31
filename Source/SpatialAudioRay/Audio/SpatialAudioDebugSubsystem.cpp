@@ -51,6 +51,8 @@ USpatialAudioDebugSubsystem::FAggregateTraceStats USpatialAudioDebugSubsystem::A
 		Stats.Avg10Sec += C->TraceDiag.Avg10Sec;
 		Stats.Avg60Sec += C->TraceDiag.Avg60Sec;
 	}
+	PeakTracesPerSec = FMath::Max(PeakTracesPerSec, Stats.TracesPerSec);
+	Stats.PeakTracesPerSec = PeakTracesPerSec;
 	return Stats;
 }
 
@@ -151,9 +153,10 @@ void USpatialAudioDebugSubsystem::DrawGlobalDebugHUD(const FAggregateTraceStats&
 	// lands this low.
 	GEngine->AddOnScreenDebugMessage(1, 0.f, FColor::Yellow,
 	                                 FString::Printf(
-		                                 TEXT("GLOBAL  %d source%s  │  traces 1s=%.0f/s  10s=%.0f/s  60s=%.0f/s"),
+		                                 TEXT("GLOBAL  %d source%s  │  traces 1s=%.0f/s  10s=%.0f/s  60s=%.0f/s  peak=%.0f/s"),
 		                                 Stats.NumSources, Stats.NumSources == 1 ? TEXT("") : TEXT("s"),
-		                                 Stats.TracesPerSec, Stats.Avg10Sec, Stats.Avg60Sec));
+		                                 Stats.TracesPerSec, Stats.Avg10Sec, Stats.Avg60Sec,
+		                                 Stats.PeakTracesPerSec));
 
 	int32 LineKey = 2;
 	for (const TWeakObjectPtr<USpatialAudioComponent>& Src : Sources) {
@@ -161,11 +164,14 @@ void USpatialAudioDebugSubsystem::DrawGlobalDebugHUD(const FAggregateTraceStats&
 			const AActor* Owner = C->GetOwner();
 			GEngine->AddOnScreenDebugMessage(LineKey++, 0.f, FColor(255, 255, 160),
 			                                 FString::Printf(
-				                                 TEXT("  %s  │  traces 1s=%.0f/s  10s=%.0f/s  60s=%.0f/s"),
+				                                 TEXT("  %s  │  traces 1s=%.0f/s  10s=%.0f/s  60s=%.0f/s  peak=%.0f/s  │  moving=%.0f/s  rest=%.0f/s"),
 				                                 Owner ? *Owner->GetActorNameOrLabel() : TEXT("None"),
 				                                 C->TraceDiag.SnapshotTracesPerSec,
 				                                 C->TraceDiag.Avg10Sec,
-				                                 C->TraceDiag.Avg60Sec));
+				                                 C->TraceDiag.Avg60Sec,
+				                                 C->TraceDiag.PeakTracesPerSec,
+				                                 C->TraceDiag.MovingTracesPerSec(),
+				                                 C->TraceDiag.RestTracesPerSec()));
 		}
 	}
 }

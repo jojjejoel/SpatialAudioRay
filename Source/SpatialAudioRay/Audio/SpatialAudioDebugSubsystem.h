@@ -37,6 +37,7 @@ private:
 		float TracesPerSec = 0.f;
 		float Avg10Sec = 0.f;
 		float Avg60Sec = 0.f;
+		float PeakTracesPerSec = 0.f;
 	};
 	/** Sums trace diagnostics over all sources, pruning any whose weak pointer has gone stale. */
 	FAggregateTraceStats AggregateSourceTraceStats();
@@ -75,4 +76,11 @@ private:
 	 *  debug-enabled first, it stays invisible until you have already opted in. */
 	bool bShowActorLabels = true;
 	bool bPrevActorLabelsKeyDown = false;
+
+	/** Highest all-source traces/second seen this session. Peaked on the summed figure rather
+	 *  than by summing per-source peaks, which would report a total that never occurred since
+	 *  sources peak at different moments. The subsystem is per-world, so this resets itself on
+	 *  every play session. It deliberately includes the level-load second, where every source
+	 *  fires its first sweep from BeginPlay: that spike is a real cost. */
+	float PeakTracesPerSec = 0.f;
 };
