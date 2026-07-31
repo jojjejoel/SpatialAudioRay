@@ -464,11 +464,6 @@ void FEdgeCache::StartEviction(USpatialAudioComponent& Component, FCachedEdgePoi
 	}
 	Edge.bEvicting = true;
 	Edge.bSourceSideEviction = bSourceSide;
-	const FVector ToEdge = Edge.EdgePoint - SourcePos;
-	const float Len = ToEdge.Size();
-	if (Len > 1.f) {
-		Component.SuccessfulEdgeDirHints.Add(ToEdge / Len);
-	}
 	Component.SweepScheduling.bMovementRequested = true;
 }
 
@@ -615,6 +610,7 @@ void FEdgeCache::MergeCoincidentEdges(USpatialAudioComponent& Component,
 
 			if (TravelledFurther(Earlier, Later)) {
 				Later.bNewSinceFillArm = bEitherIsNew;
+				InheritDiscoveryIndex(Later, Earlier);
 				Component.CachedEdgePoints.RemoveAt(j);
 				// i slid down with the removal; keep scanning the remaining lower entries so a
 				// three-way pile collapses in one pass rather than one merge per tick.
@@ -622,9 +618,19 @@ void FEdgeCache::MergeCoincidentEdges(USpatialAudioComponent& Component,
 				continue;
 			}
 			Earlier.bNewSinceFillArm = bEitherIsNew;
+			InheritDiscoveryIndex(Earlier, Later);
 			Component.CachedEdgePoints.RemoveAt(i);
 			break;
 		}
+	}
+}
+
+// The survivor keeps its own index when it has one, so one corner still costs one skipped ray
+// after a merge instead of waiting for the next sweep to rediscover it.
+void FEdgeCache::InheritDiscoveryIndex(FCachedEdgePoint& Survivor, const FCachedEdgePoint& Absorbed) {
+	if (Survivor.DiscoveryDirIndex == INDEX_NONE && Absorbed.DiscoveryDirIndex != INDEX_NONE) {
+		Survivor.DiscoveryDirIndex = Absorbed.DiscoveryDirIndex;
+		Survivor.DiscoveryRayCount = Absorbed.DiscoveryRayCount;
 	}
 }
 

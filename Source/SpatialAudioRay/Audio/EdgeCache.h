@@ -110,6 +110,7 @@ private:
 
 public:
 	// A relay is a stopgap and an evicting entry is already leaving, so neither may be merged into.
+	static void InheritDiscoveryIndex(FCachedEdgePoint& Survivor, const FCachedEdgePoint& Absorbed);
 	static bool IsMergeCandidate(const FCachedEdgePoint& Edge);
 	// Bounce count deliberately stays out of it, unlike the sweep's admission test: a 3-bounce 8m
 	// route beats a 1-bounce 40m one to the same corner. Ties keep the incumbent.

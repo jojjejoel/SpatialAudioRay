@@ -28,15 +28,6 @@ public:
 		const TArray<FCachedEdgePoint>& Points,
 		const USpatialAudioSettings& Settings);
 
-	static void UpdateMissDirState(
-		const FSpatialRayState& Ray,
-		const FVector& SourcePos,
-		const FVector& ListenerPos,
-		const TArray<FVector>& CachedEdgeDirs,
-		TArray<FCachedMissDir>& InOutMissDirs,
-		bool& bGeometryChangeDetected,
-		const USpatialAudioSettings& Settings);
-
 	struct FRayAccumulatorInput {
 		int32 RaysReached = 0;
 		float MinLoSDist = TNumericLimits<float>::Max();
@@ -104,25 +95,11 @@ private:
 	static void ResolveSweepRayBudget(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings);
 	static bool HasEitherEndMoved(const USpatialAudioComponent& Component, const FCachedEdgePoint& Edge,
 	                              float MoveThresholdSq);
-	static void BuildCachedEdgeExclusionDirs(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings);
-	static void UpdateActiveMissDirs(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings);
+	static void BuildCachedEdgeSkipIndices(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings);
 	static void ResetCycleAccumulator(USpatialAudioComponent& Component);
 	static void SubmitSweepRays(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings, UWorld* World,
 	                            const FVector& ToListenerDir, float FullCastDistance, int32 CycleCount);
 
-	// What the known-miss filter decided about one candidate sweep direction.
-	struct FMissDirResolution {
-		FVector Dir = FVector::ZeroVector;
-		/** Direction is a re-probe of a recorded miss; the ray records that and skips crawling. */
-		bool bIsMissDir = false;
-		/** Dir was deliberately overridden, so the lateral-band bias must leave it alone. */
-		bool bDirFixed = false;
-		/** Direction dropped from this sweep entirely. */
-		bool bSkip = false;
-	};
-
-	static FMissDirResolution ResolveMissDirection(const USpatialAudioComponent& Component, const FVector& Dir,
-	                                              float MissMinDot, const USpatialAudioSettings& Settings);
 	static FVector ApplyLateralBandBias(const USpatialAudioComponent& Component, const FVector& Dir,
 	                                    const FVector& ToListenerDir, float FullCastDistance, int32 DirectionIndex,
 	                                    const USpatialAudioSettings& Settings);
@@ -193,7 +170,6 @@ private:
 	static void ProcessCrawlBatch(const USpatialAudioComponent& Component, FSpatialRayState& Ray, UWorld* World,
 	                              bool bBias, float Budget, bool& bAllDone,
 	                              const USpatialAudioSettings& Settings);
-	static TArray<FVector> BuildEdgeDirHints(const TArray<FStoredLoSPath>& StoredPaths, const FVector& SourcePos);
 	static void SubmitSegmentLoSProbes(const USpatialAudioComponent& Component, FSpatialRayState& Ray, UWorld* World,
 	                                   const FVector& SegOrigin, const FVector& SegDir,
 	                                   float SegLen, float Budget,

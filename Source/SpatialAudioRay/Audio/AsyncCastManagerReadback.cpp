@@ -1,4 +1,4 @@
-#include "Audio/AsyncCastManager.h"
+﻿#include "Audio/AsyncCastManager.h"
 #include "Audio/SpatialAudioComponent.h"
 #include "Audio/Math.h"
 #include "Audio/Updater.h"
@@ -77,6 +77,7 @@ void FAsyncCastManager::AccumulateRefineProbesIntoCycle(USpatialAudioComponent& 
 
 		FStoredLoSPath StoredPath;
 		StoredPath.LoSOrigin = TrueEdge;
+		StoredPath.DirIndex = RP.DirIndex;
 		StoredPath.LoSBounces = RP.LoSBounces;
 		StoredPath.LoSCumulativeDistance = GeomDist;
 		StoredPath.PathDist = PathDistToEdge;
@@ -140,6 +141,12 @@ void FAsyncCastManager::MergeStoredPathsIntoCache(USpatialAudioComponent& Compon
 		EP.ShortestPath = SP.ShortestPath;
 		EP.ShortestPathSegmentVerified = SP.ShortestPathSegmentVerified;
 		EP.LoSBounces = SP.LoSBounces;
+		// A fresh find brings its own index; keep the old one when it did not have one, so a
+		// promotion-moved entry does not lose its skip until the next sweep rediscovers it.
+		if (SP.DirIndex != INDEX_NONE) {
+			EP.DiscoveryDirIndex = SP.DirIndex;
+			EP.DiscoveryRayCount = Component.AsyncTotalRays;
+		}
 		EP.CapturedSourcePos = Component.AsyncSourcePos;
 		EP.CapturedListenerPos = Component.AsyncListenerPos;
 		EP.bPhase0Pending = false;
@@ -282,7 +289,6 @@ void FAsyncCastManager::ReadbackFinalizeBatch(USpatialAudioComponent& Component,
 
 	AccumulateRefineProbesIntoCycle(Component, World, Settings);
 
-	Component.SuccessfulEdgeDirHints = BuildEdgeDirHints(Component.StoredLoSPaths, Component.AsyncSourcePos);
 
 	if (Settings.bCacheEdgePoints && Component.StoredLoSPaths.Num() > 0) {
 		MergeStoredPathsIntoCache(Component, Settings);
@@ -356,7 +362,7 @@ void FAsyncCastManager::ReadbackFinalizeBatch(USpatialAudioComponent& Component,
 	if (bDirectLoSFound) {
 		Component.TargetOcclusion = 0.f;
 		Component.CachedEdgePoints.Empty();
-		Component.CachedEdgeDirs.Empty();
+		Component.CachedEdgeDirIndices.Empty();
 	}
 }
 
@@ -401,63 +407,3 @@ FAsyncCastManager::FCachedPointAccum FAsyncCastManager::AccumulateCachedPoints(
 	}
 	return Out;
 }
-
-
-void FAsyncCastManager::UpdateMissDirState(
-	const FSpatialRayState& Ray,
-	const FVector& SourcePos,
-	const FVector& ListenerPos,
-	const TArray<FVector>& CachedEdgeDirs,
-	TArray<FCachedMissDir>& InOutMissDirs,
-	bool& bGeometryChangeDetected,
-	const USpatialAudioSettings& Settings) {
-	if (Ray.bWasMissDir && Ray.bLoSFound) {
-		bGeometryChangeDetected = true;
-		if (Settings.CachedMissExclusionAngleDeg > 0.f) {
-			const float MissMinDot = FMath::Cos(
-				FMath::DegreesToRadians(Settings.CachedMissExclusionAngleDeg));
-			for (int32 k = InOutMissDirs.Num() - 1; k >= 0; --k) {
-				if (FVector::DotProduct(Ray.Dir, InOutMissDirs[k].Dir) >= MissMinDot) {
-					InOutMissDirs.RemoveAt(k);
-					break;
-				}
-			}
-		}
-	}
-
-	if (!Ray.bLoSFound && !Ray.bWasMissDir
-		&& Settings.bCacheEdgePoints
-		&& Settings.CachedMissExclusionAngleDeg > 0.f
-		&& !Settings.IsDirectionSkippingDisabled()
-		&& InOutMissDirs.Num() < Settings.CachedMissDirMaxCount) {
-		const float EdgeMinDot = Settings.CachedEdgeExclusionAngleDeg > 0.f
-			                         ? FMath::Cos(FMath::DegreesToRadians(Settings.CachedEdgeExclusionAngleDeg))
-			                         : 2.f;
-		bool bEdgeCovered = false;
-		for (const FVector& EDir : CachedEdgeDirs) {
-			if (FVector::DotProduct(Ray.Dir, EDir) >= EdgeMinDot) {
-				bEdgeCovered = true;
-				break;
-			}
-		}
-		if (!bEdgeCovered) {
-			const float MissMinDot = FMath::Cos(
-				FMath::DegreesToRadians(Settings.CachedMissExclusionAngleDeg));
-			bool bDuplicate = false;
-			for (const FCachedMissDir& MD : InOutMissDirs) {
-				if (FVector::DotProduct(Ray.Dir, MD.Dir) >= MissMinDot) {
-					bDuplicate = true;
-					break;
-				}
-			}
-			if (!bDuplicate) {
-				FCachedMissDir NewMD;
-				NewMD.Dir = Ray.Dir;
-				NewMD.CapturedSourcePos = SourcePos;
-				NewMD.CapturedListenerPos = ListenerPos;
-				InOutMissDirs.Add(MoveTemp(NewMD));
-			}
-		}
-	}
-}
-

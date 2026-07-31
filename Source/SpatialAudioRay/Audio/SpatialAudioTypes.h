@@ -1,10 +1,12 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "WorldCollision.h"
 
 struct FStoredLoSPath {
 	FVector LoSOrigin;
+	/** Fibonacci index of the ray that found this, so the next sweep can skip re-casting it. */
+	int32 DirIndex = INDEX_NONE;
 	int32 LoSBounces = 0;
 	float LoSCumulativeDistance = 0.f;
 	float PathDist = 0.f;
@@ -30,6 +32,12 @@ struct FCachedEdgePoint {
 	 *  each contributing one unverified hop, with a verified stretch on either side). */
 	TArray<bool> ShortestPathSegmentVerified;
 	int32 LoSBounces = 0;
+	/** Fibonacci index of the ray that found this edge, and the sweep ray count that index was
+	 *  generated against. The direction set is rebuilt per sweep from a listener-facing pole, so
+	 *  an index only names the same direction while the count matches and neither end has moved.
+	 *  INDEX_NONE means no ray discovered it (a relay conversion or an inner-anchor promotion). */
+	int32 DiscoveryDirIndex = INDEX_NONE;
+	int32 DiscoveryRayCount = 0;
 	FVector CapturedSourcePos = FVector::ZeroVector;
 	FVector CapturedListenerPos = FVector::ZeroVector;
 
@@ -176,6 +184,8 @@ struct FVirtualSlot {
 struct FSpatialRayState {
 	FVector Origin;
 	FVector Dir;
+	/** Index of this ray's direction in the whole Fibonacci set, not in its cycle's slice. */
+	int32 DirIndex = INDEX_NONE;
 	int32 Bounce = 0;
 	bool bLoSFound = false;
 	int32 LoSBounces = 0;
@@ -190,8 +200,6 @@ struct FSpatialRayState {
 	 *  actually flown — the terminal point / mid-air turn point must not be recomputed from
 	 *  budget formulas, which don't know about the MaxStraightFlightDistance clamp. */
 	float SegSubmitLen = 0.f;
-
-	bool bWasMissDir = false;
 
 	float CumulativeDistance = 0.f;
 
@@ -256,14 +264,9 @@ struct FRayHitOutput {
 	FVector PerpWallEdgePoint = FVector::ZeroVector;
 };
 
-struct FCachedMissDir {
-	FVector Dir;
-	FVector CapturedSourcePos;
-	FVector CapturedListenerPos;
-};
-
 struct FFinalizeRefineProbe {
 	FVector LoSOrigin = FVector::ZeroVector;
+	int32 DirIndex = INDEX_NONE;
 	float BasePathDist = 0.f;
 	int32 LoSBounces = 0;
 	float BounceWeightFactor = 1.f;

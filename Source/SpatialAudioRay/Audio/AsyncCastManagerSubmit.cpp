@@ -114,7 +114,6 @@ void FAsyncCastManager::ResolveSweepRayBudget(USpatialAudioComponent& Component,
 
 	const int32 SubstituteCount = CountFullStrengthEdges(Component.PendingValidCachedPoints);
 
-	Component.AsyncActualRays = FMath::Max(0, ScaledRayCount - SubstituteCount);
 	Component.TraceDiag.SweepAsyncRayAccum = 0;
 	Component.TraceDiag.LastSweepCachedReplaced = SubstituteCount;
 }
@@ -125,49 +124,25 @@ bool FAsyncCastManager::HasEitherEndMoved(const USpatialAudioComponent& Componen
 		|| FVector::DistSquared(Component.AsyncListenerPos, Edge.CapturedListenerPos) > MoveThresholdSq;
 }
 
-void FAsyncCastManager::BuildCachedEdgeExclusionDirs(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings) {
-	Component.CachedEdgeDirs.Reset();
-	if (!Settings.bCacheEdgePoints || Settings.CachedEdgeExclusionAngleDeg <= 0.f || Settings.IsDirectionSkippingDisabled()) {
+void FAsyncCastManager::BuildCachedEdgeSkipIndices(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings) {
+	Component.CachedEdgeDirIndices.Reset();
+	if (!Settings.bCacheEdgePoints) {
 		return;
 	}
 
 	const float MoveThresholdSq = FMath::Square(Settings.CachedEdgeUpdateMoveThreshold);
 	for (const FCachedEdgePoint& Edge : Component.PendingValidCachedPoints) {
-		// A relay must not exclude its direction: that region is where a replacement most likely is.
-		if (Edge.bEvicting || Edge.bRelayed) {
+		// A relay must not skip its direction: that region is where a replacement most likely is.
+		if (Edge.bEvicting || Edge.bRelayed || Edge.DiscoveryDirIndex == INDEX_NONE) {
 			continue;
 		}
-		if (HasEitherEndMoved(Component, Edge, MoveThresholdSq)) {
+		// A different ray count rebuilds the whole direction set, and either end moving rotates
+		// its pole. Either way the stored index no longer names the direction that found the edge.
+		if (Edge.DiscoveryRayCount != Component.AsyncTotalRays
+			|| HasEitherEndMoved(Component, Edge, MoveThresholdSq)) {
 			continue;
 		}
-		const FVector ToEdge = Edge.EdgePoint - Component.AsyncSourcePos;
-		const float DistToEdge = ToEdge.Size();
-		if (DistToEdge > 1.f) {
-			Component.CachedEdgeDirs.Add(ToEdge / DistToEdge);
-		}
-	}
-}
-
-void FAsyncCastManager::UpdateActiveMissDirs(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings) {
-	Component.ActiveMissDirs.Reset();
-	if (!Settings.bCacheEdgePoints || Settings.CachedMissExclusionAngleDeg <= 0.f || Settings.IsDirectionSkippingDisabled()) {
-		return;
-	}
-
-	// Backwards so an entry can be dropped mid-loop. A moved source retires the record outright,
-	// while a moved listener only benches it for this sweep.
-	const float MoveThresholdSq = FMath::Square(Settings.CachedEdgeUpdateMoveThreshold);
-	for (int32 i = Component.CachedMissDirs.Num() - 1; i >= 0; --i) {
-		const FCachedMissDir& MissDir = Component.CachedMissDirs[i];
-		if (FVector::DistSquared(Component.AsyncSourcePos, MissDir.CapturedSourcePos) > MoveThresholdSq) {
-			Component.CachedMissDirs.RemoveAt(i);
-			continue;
-		}
-		const bool bListenerMoved =
-			FVector::DistSquared(Component.AsyncListenerPos, MissDir.CapturedListenerPos) > MoveThresholdSq;
-		if (!bListenerMoved) {
-			Component.ActiveMissDirs.Add(MissDir.Dir);
-		}
+		Component.CachedEdgeDirIndices.Add(Edge.DiscoveryDirIndex);
 	}
 }
 
@@ -192,45 +167,6 @@ void FAsyncCastManager::SelectCycleDirections(const TArray<FVector>& AllDirectio
 		OutDirections.Add(AllDirections[i]);
 		OutIndices.Add(i);
 	}
-}
-
-FAsyncCastManager::FMissDirResolution FAsyncCastManager::ResolveMissDirection(
-	const USpatialAudioComponent& Component, const FVector& Dir, float MissMinDot,
-	const USpatialAudioSettings& Settings) {
-	FMissDirResolution Out;
-	Out.Dir = Dir;
-
-	if (Component.ActiveMissDirs.IsEmpty() || Settings.CachedMissExclusionAngleDeg <= 0.f) {
-		return Out;
-	}
-
-	const int32 MatchedIdx = Math::FindDirectionWithinCone(Dir, Component.ActiveMissDirs, MissMinDot);
-	if (MatchedIdx == INDEX_NONE) {
-		return Out;
-	}
-	Out.bIsMissDir = true;
-
-	if (FMath::FRand() <= Settings.MissDirectionCastProbability) {
-		// Cast the recorded direction itself, not the neighbour that fell inside its cone.
-		Out.Dir = Component.ActiveMissDirs[MatchedIdx];
-		Out.bDirFixed = true;
-		return Out;
-	}
-
-	// Aim the spared ray where an edge was found before, but only sometimes, or every skipped miss
-	// piles onto the same few directions.
-	if (Component.SuccessfulEdgeDirHints.Num() > 0 && Settings.MissRedirectConeAngleDeg > 0.f
-		&& FMath::FRand() < Settings.MissRedirectProbability) {
-		const FVector& Hint = Component.SuccessfulEdgeDirHints[
-			FMath::RandHelper(Component.SuccessfulEdgeDirHints.Num())];
-		Out.Dir = FMath::VRandCone(Hint, FMath::DegreesToRadians(Settings.MissRedirectConeAngleDeg));
-		Out.bDirFixed = true;
-		Out.bIsMissDir = false;
-		return Out;
-	}
-
-	Out.bSkip = true;
-	return Out;
 }
 
 FRandomStream FAsyncCastManager::MakeBiasStream(const FVector& SourcePos, const FVector& ListenerPos, int32 RayIndex) {
@@ -273,33 +209,27 @@ void FAsyncCastManager::SubmitSweepRays(USpatialAudioComponent& Component, const
 	SelectCycleDirections(AllDirections, Component.CycleAccum.Index, CycleCount, Directions, DirectionIndices);
 
 	const bool bBias = Settings.bBiasRayDirections && FullCastDistance > 0.f;
-	const float MissMinDot = FMath::Cos(FMath::DegreesToRadians(Settings.CachedMissExclusionAngleDeg));
-	const float ExclusionMinDot = FMath::Cos(FMath::DegreesToRadians(Settings.CachedEdgeExclusionAngleDeg));
 
 	Component.AsyncRays.Reset(Directions.Num());
 
 	for (int32 i = 0; i < Directions.Num(); ++i) {
-		const FMissDirResolution Miss = ResolveMissDirection(Component, Directions[i], MissMinDot, Settings);
-		if (Miss.bSkip) {
+		// This exact index already found an edge that is still valid, and MakeBiasStream is seeded
+		// from it, so re-casting it would fly the identical direction to the identical corner.
+		if (Component.CachedEdgeDirIndices.Contains(DirectionIndices[i])) {
 			continue;
 		}
 
-		FVector Dir = Miss.Dir;
-		if (!Miss.bDirFixed && bBias) {
+		FVector Dir = Directions[i];
+		if (bBias) {
 			Dir = ApplyLateralBandBias(Component, Dir, ToListenerDir, FullCastDistance, DirectionIndices[i], Settings);
-		}
-
-		// Already covered by a cached edge, whose ray was subtracted from the count.
-		if (Math::FindDirectionWithinCone(Dir, Component.CachedEdgeDirs, ExclusionMinDot) != INDEX_NONE) {
-			continue;
 		}
 
 		FSpatialRayState& Ray = Component.AsyncRays.AddDefaulted_GetRef();
 		Ray.Origin = Component.AsyncSourcePos;
 		Ray.Dir = Dir;
+		Ray.DirIndex = DirectionIndices[i];
 		Ray.LoSOrigin = Component.AsyncSourcePos;
-		Ray.bNextHitCrawls = Miss.bIsMissDir ? false : (i % 2 == 0);
-		Ray.bWasMissDir = Miss.bIsMissDir;
+		Ray.bNextHitCrawls = i % 2 == 0;
 
 		// Nothing travelled yet, so the launch segment answers only to reach and the flight cap.
 		const float SegLen = Math::ComputeNextSegmentLength(
@@ -333,8 +263,7 @@ void FAsyncCastManager::StartAsyncFullCast(USpatialAudioComponent& Component, co
 	}
 
 	ResolveSweepRayBudget(Component, Settings);
-	BuildCachedEdgeExclusionDirs(Component, Settings);
-	UpdateActiveMissDirs(Component, Settings);
+	BuildCachedEdgeSkipIndices(Component, Settings);
 	ResetCycleAccumulator(Component);
 
 	Component.LoSDiffractionPaths.Reset();
@@ -894,19 +823,6 @@ void FAsyncCastManager::ProcessCrawlBatch(const USpatialAudioComponent& Componen
 	bAllDone = false;
 }
 
-TArray<FVector> FAsyncCastManager::BuildEdgeDirHints(const TArray<FStoredLoSPath>& StoredPaths, const FVector& SourcePos) {
-	TArray<FVector> Hints;
-	Hints.Reserve(StoredPaths.Num());
-	for (const FStoredLoSPath& StoredPath : StoredPaths) {
-		const FVector ToEdge = StoredPath.LoSOrigin - SourcePos;
-		const float DistToEdge = ToEdge.Size();
-		if (DistToEdge > 1.f) {
-			Hints.Add(ToEdge / DistToEdge);
-		}
-	}
-	return Hints;
-}
-
 FVector FAsyncCastManager::ComputeMidAirTurnDirection(const FVector& InDir, const FVector& TurnPoint,
                                                       const FVector& ListenerPos, bool bApplyBias,
                                                       float SurfaceRoughness, float BounceListenerBias) {
@@ -1100,18 +1016,10 @@ void FAsyncCastManager::SubmitFinalizeBatch(USpatialAudioComponent& Component, c
 			MinLoSDist = FMath::Min(MinLoSDist, Ray.LoSCumulativeDistance);
 		}
 
-		UpdateMissDirState(
-			Ray,
-			Component.AsyncSourcePos,
-			Component.AsyncListenerPos,
-			Component.CachedEdgeDirs,
-			Component.CachedMissDirs,
-			Component.SweepScheduling.bGeometryChangeDetected,
-			Settings);
-
 		if (Ray.bLoSFound && Ray.LoSBounces > 0 && !bDirectLoSFound) {
 			FFinalizeRefineProbe Probe;
 			Probe.LoSOrigin = Ray.LoSOrigin;
+			Probe.DirIndex = Ray.DirIndex;
 			Probe.BasePathDist = ComputeStringPulledLeg1(Component, World, Ray, Component.AsyncSourcePos,
 			                                             Probe.ShortestPath, Probe.ShortestPathSegmentVerified);
 			Probe.LoSBounces = Ray.LoSBounces;

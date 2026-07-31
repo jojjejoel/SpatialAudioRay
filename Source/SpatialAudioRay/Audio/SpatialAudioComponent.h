@@ -500,8 +500,7 @@ private:
 	 *  or when stationary. */
 	FVector AsyncSteeringSourcePos = FVector::ZeroVector;
 	FVector AsyncSteeringListenerPos = FVector::ZeroVector;
-	int32 AsyncTotalRays = 0; 
-	int32 AsyncActualRays = 0; 
+	int32 AsyncTotalRays = 0;
 
 	struct FCycleAccumulator {
 		int32 Index = 0;
@@ -630,23 +629,9 @@ private:
 	 *  Injected as confirmed results in FinalizeAsyncCast after the async rays complete. */
 	TArray<FCachedEdgePoint> PendingValidCachedPoints;
 
-	/** Normalised source→edge directions for cached edges that haven't moved beyond the
-	 *  update threshold. Built once at cycle 0; used each cycle to exclude ray directions
-	 *  already covered by a stationary cached edge. */
-	TArray<FVector> CachedEdgeDirs;
-
-	/** Persistent confirmed-miss directions. Evicted when source moves significantly.
-	 *  Future rays in these directions are cast only with MissDirectionCastProbability. */
-	TArray<FCachedMissDir> CachedMissDirs;
-
-	/** Stationary-only subset of CachedMissDirs, built at cycle 0 of each sweep.
-	 *  Only directions where source and listener haven't moved are included. */
-	TArray<FVector> ActiveMissDirs;
-
-	/** Normalised source→edge directions for every LoS path found in the last completed sweep.
-	 *  Populated at the end of ReadbackFinalizeBatch; consumed in StartAsyncFullCast to redirect
-	 *  skipped miss-direction rays toward areas that previously found a valid edge. */
-	TArray<FVector> SuccessfulEdgeDirHints;
+	/** Fibonacci indices already covered by a stationary cached edge. Built once per sweep and
+	 *  read by every cycle, so a cache of N edges costs N fewer rays per sweep sequence. */
+	TSet<int32> CachedEdgeDirIndices;
 
 	/** Last diffraction edge position computed while indirect LoS was active. Used as the
 	 *  virtual position target when the edge cache is momentarily empty, so the AudioComponent

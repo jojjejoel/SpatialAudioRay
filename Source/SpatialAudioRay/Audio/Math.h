@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "Audio/SpatialAudioSettings.h"
@@ -62,18 +62,6 @@ namespace Math {
 
 	inline float ComputeConeCosine(float Distance, float Radius) {
 		return Distance / FMath::Sqrt(Distance * Distance + Radius * Radius);
-	}
-
-	// First candidate lying within MinDot of Dir (a cosine, so a larger value is a narrower
-	// cone), or INDEX_NONE. Backs both direction-skipping filters a sweep applies: the
-	// cached-edge exclusion and the known-miss match.
-	inline int32 FindDirectionWithinCone(const FVector& Dir, const TArray<FVector>& Candidates, float MinDot) {
-		for (int32 i = 0; i < Candidates.Num(); ++i) {
-			if (FVector::DotProduct(Dir, Candidates[i]) >= MinDot) {
-				return i;
-			}
-		}
-		return INDEX_NONE;
 	}
 
 	// Every LoS probe is gated on this same sum, and it only grows as a ray travels further:

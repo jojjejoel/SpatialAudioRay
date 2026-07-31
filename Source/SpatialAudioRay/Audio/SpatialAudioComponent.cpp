@@ -1,4 +1,4 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+﻿// Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "Audio/SpatialAudioComponent.h"
 #include "Audio/Math.h"
@@ -451,7 +451,7 @@ float USpatialAudioComponent::UpdateDirectLoSConfirmationAndBlendSpeed(const flo
 		// threshold (source comfortably visible again).
 		if (bConfirmedDirectLoS && !IsPreSweepActive()) {
 			CachedEdgePoints.Empty();
-			CachedEdgeDirs.Empty();
+			CachedEdgeDirIndices.Empty();
 			// The occlusion episode is over; the next one re-arms via its own movement trigger
 			// (LoS break sets bMovementRequested), so don't let a half-spent budget leak into it.
 			SweepScheduling.CacheFillSweepsRemaining = 0;

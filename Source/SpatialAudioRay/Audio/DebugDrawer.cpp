@@ -293,7 +293,7 @@ void USpatialAudioComponent::DrawSweepPacingDebugText(const uint64 Base, const U
 	const bool bBothStationary = VelocityScaling.SweepMultiplier > 0.95f && VelocityScaling.EdgeMultiplier > 0.95f;
 	const float CoverageFraction = (ScaledRayCount > 0)
 		                      ? FMath::Clamp(
-			                      static_cast<float>(CachedEdgePoints.Num() + CachedMissDirs.Num()) /
+			                      static_cast<float>(CachedEdgePoints.Num()) /
 			                      static_cast<float>(ScaledRayCount), 0.f, 1.f)
 		                      : 0.f;
 

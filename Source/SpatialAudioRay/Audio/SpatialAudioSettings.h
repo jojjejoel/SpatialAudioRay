@@ -1,4 +1,4 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+﻿// Copyright Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -333,70 +333,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Performance",
 		meta = (EditCondition = "!bDisableAllOptimizations && !bDisableRayBudgetScaling", ClampMin = "0", ClampMax = "16"))
 	int32 MinMaxBounces = 1;
-
-
-	// ─ Direction skipping ─────────────────────────────────────────────────────
-	// Skips rays in directions already covered by a cached edge or a confirmed-miss
-	// record. Reduces the effective ray count when the scene is static. When disabled,
-	// all Fibonacci sphere directions are always cast regardless of prior knowledge.
-
-	/** Disable direction exclusion. Every ray is cast every sweep — no rays are
-	 *  skipped due to cached edges or confirmed-miss directions. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Performance",
-		meta = (EditCondition = "!bDisableAllOptimizations"))
-	bool bDisableDirectionSkipping = false;
-
-	/** Half-angle (degrees) of the exclusion cone around each cached edge direction.
-	 *  During a sweep, any ray whose initial direction falls within this cone of a cached
-	 *  edge direction is skipped — the cached result already covers that direction.
-	 *  Only applied for edges where neither the source nor the listener has moved beyond
-	 *  CachedEdgeUpdateMoveThreshold since the edge was captured (i.e. stationary edges).
-	 *  Set to 0 to disable. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Performance",
-		meta = (ClampMin = "0.0", ClampMax = "90.0",
-			EditCondition = "!bDisableAllOptimizations && !bDisableDirectionSkipping && bCacheEdgePoints"))
-	float CachedEdgeExclusionAngleDeg = 15.f;
-
-	/** Half-angle (degrees) of the exclusion cone for confirmed-miss directions.
-	 *  Rays that terminated without finding LoS are recorded and future rays in the same
-	 *  cone are skipped — geometry along that path rarely changes spontaneously.
-	 *  Only applied when source and listener are stationary. Set to 0 to disable. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Performance", meta = (ClampMin = "0.0", ClampMax = "90.0", EditCondition = "!bDisableAllOptimizations && !bDisableDirectionSkipping && bCacheEdgePoints"))
-	float CachedMissExclusionAngleDeg = 10.f;
-
-	/** Probability [0–1] of still casting a ray in a confirmed-miss direction.
-	 *  Keeps a trickle of probes alive so that geometry changes (a wall opening, a door)
-	 *  are eventually detected. 0.05 = ~5% chance = roughly one probe per 20 sweeps
-	 *  per miss direction. Set to 1 to disable miss-direction exclusion entirely. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Performance",
-		meta = (ClampMin = "0.0", ClampMax = "1.0",
-			EditCondition = "!bDisableAllOptimizations && !bDisableDirectionSkipping && bCacheEdgePoints && CachedMissExclusionAngleDeg > 0"))
-	float MissDirectionCastProbability = 0.05f;
-
-	/** Probability [0–1] that a skipped miss-direction ray is redirected toward a known
-	 *  successful edge direction (with MissRedirectConeAngleDeg spread) instead of dropped.
-	 *  Keeps the same ray count while biasing exploration toward areas that previously
-	 *  found LoS — useful when geometry is static and most rays terminate without result.
-	 *  Only applies when SuccessfulEdgeDirHints are available from the previous sweep.
-	 *  0 = always drop skipped rays; 1 = always redirect. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Performance",
-		meta = (ClampMin = "0.0", ClampMax = "1.0",
-			EditCondition = "!bDisableAllOptimizations && !bDisableDirectionSkipping && bCacheEdgePoints && CachedMissExclusionAngleDeg > 0"))
-	float MissRedirectProbability = 0.5f;
-
-	/** Half-angle (degrees) of the random cone used when redirecting a skipped ray
-	 *  toward a successful edge direction. Larger values spread the redirect more broadly
-	 *  around the hint, increasing exploration at the cost of clustering. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Performance",
-		meta = (ClampMin = "1.0", ClampMax = "90.0",
-			EditCondition = "!bDisableAllOptimizations && !bDisableDirectionSkipping && bCacheEdgePoints && CachedMissExclusionAngleDeg > 0 && MissRedirectProbability > 0"))
-	float MissRedirectConeAngleDeg = 20.f;
-
-	/** Maximum number of confirmed-miss directions stored simultaneously. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Performance",
-		meta = (ClampMin = "0", ClampMax = "128",
-			EditCondition = "!bDisableAllOptimizations && !bDisableDirectionSkipping && bCacheEdgePoints && CachedMissExclusionAngleDeg > 0"))
-	int32 CachedMissDirMaxCount = 48;
 
 
 	// ── Surface Crawl ─────────────────────────────────────────────────────────
@@ -1009,5 +945,4 @@ public:
 
 	bool IsRateThrottlingDisabled()    const { return bDisableAllOptimizations || bDisableSweepRateThrottling; }
 	bool IsRayBudgetScalingDisabled()  const { return bDisableAllOptimizations || bDisableRayBudgetScaling; }
-	bool IsDirectionSkippingDisabled() const { return bDisableAllOptimizations || bDisableDirectionSkipping; }
 };
