@@ -54,11 +54,11 @@ private:
 	static float UpdateVirtualCrossfadeGate(USpatialAudioComponent& Component, float DeltaTime, const USpatialAudioSettings& Settings);
 	static void ApplySourceOcclusionParams(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings, float CurvedOcclusion);
 
+	// PrimaryGain only selects which slot's bend the HUD shows; the audible gain is the sum.
 	struct FVirtualVoiceUpdateResult {
 		float TotalVirtualGain = 0.f;
 		float PrimaryGain = -1.f;
 		float PrimaryPathBend = 0.f;
-		FVector PrimaryOffset = FVector::ZeroVector;
 	};
 	struct FVoiceBlendRates {
 		float FadeStep = 1.f;

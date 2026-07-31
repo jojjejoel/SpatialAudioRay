@@ -149,12 +149,8 @@ void FUpdater::TrySampleOffsetLoS(USpatialAudioComponent& Component, UWorld* Wor
 	// inward so the centre view weighs more. The sphere radius itself never ladders.
 	const float RadiusScale = FMath::Pow((Component.LoSSlotIndex + 1.f) / RotationSteps,
 	                                     FMath::Max(Settings.OffsetRingRadiusExponent, 0.f));
-	const float OffsetR = Settings.bEnableOffsetLoSChecks
-		                      ? Settings.DirectLoSSampleRadius * RadiusScale
-		                      : 0.f;
-	const float SourceR = Settings.bEnableOffsetLoSChecks
-		                      ? Component.AttenuationInnerRadius * Settings.SourceLoSSampleRadiusScale
-		                      : 0.f;
+	const float OffsetR = Settings.DirectLoSSampleRadius * RadiusScale;
+	const float SourceR = Component.AttenuationInnerRadius * Settings.SourceLoSSampleRadiusScale;
 	Component.LastOffsetLoSFraction = SyncOffsetLoSFraction(
 		Component, World, SourcePos, ListenerPos, OffsetR, SourceR, SourceR * RadiusScale,
 		UE_HALF_PI / RotationSteps);
@@ -274,9 +270,6 @@ void FUpdater::ClearCacheOnConfirmedDirectLoS(USpatialAudioComponent& Component,
 			Component.CachedEdgeDirIndices.Reset();
 		}
 	}
-	if (!Settings.bCacheEdgePoints) {
-		Component.CachedEdgePoints.Reset();
-	}
 }
 
 void FUpdater::UpdateVirtualSourceTarget(USpatialAudioComponent& Component, const FEdgeWeightAccum& Accum,
@@ -327,18 +320,15 @@ void FUpdater::PerformUpdateRayCast(USpatialAudioComponent& Component, const USp
 	const bool bVirtualPathActive = !Component.bHasDirectLoS || Component.IsPreSweepActive();
 
 	FEdgeWeightAccum Accum;
-	if (Settings.bCacheEdgePoints && bVirtualPathActive) {
+	if (bVirtualPathActive) {
 		Accum = AccumulateCachedEdgeWeights(Component, World, Settings, ListenerPos);
 	}
-
-	Component.AudioDiag.UpdateCachedEdges = Accum.RaysReached;
-	Component.AudioDiag.UpdateDirectDist = FVector::Dist(SourcePos, ListenerPos);
 
 	UpdateVirtualSourceTarget(Component, Accum, SourcePos);
 	UpdatePathAttenuationTarget(Component, Accum, Settings, SourcePos, bVirtualPathActive);
 
 	TArray<FEdgeCluster> VoiceClusters;
-	if (Settings.bCacheEdgePoints && bVirtualPathActive) {
+	if (bVirtualPathActive) {
 		Math::ClusterEdgePoints(Component.CachedEdgePoints, Settings.VirtualVoiceClusterRadius,
 		                        Settings.CandidateDistanceFalloff, ListenerPos,
 		                        Settings.ListenerDistanceFalloff, Component.MaxRayDistance,
@@ -353,25 +343,18 @@ TArray<FUpdater::FDesired> FUpdater::BuildDesiredVoices(const USpatialAudioCompo
                                                          const USpatialAudioSettings& Settings) {
 	TArray<FDesired> Desired;
 
-	if (!Clusters.IsEmpty()) {
-		const FVector ActorPos = Component.GetOwner()->GetActorLocation();
-		float TotalWeight = 0.f;
-		for (const FEdgeCluster& Cluster : Clusters) {
-			TotalWeight += Cluster.TotalWeight;
-		}
-		for (const FEdgeCluster& Cluster : Clusters) {
-			const float Leg1Geom = FVector::Dist(ActorPos, Cluster.Centroid);
-			Desired.Add({Cluster.Centroid, Cluster.PathDist,
-			             Component.ComputePathAttenuationCurved(Cluster.PathDist, Leg1Geom, Settings),
-			             Cluster.TotalWeight / FMath::Max(TotalWeight, KINDA_SMALL_NUMBER)});
-		}
+	// No fallback voice when the cluster list is empty: every audible virtual path must be
+	// backed by a verified edge, so an empty cache means silence rather than a guessed position.
+	const FVector ActorPos = Component.GetOwner()->GetActorLocation();
+	float TotalWeight = 0.f;
+	for (const FEdgeCluster& Cluster : Clusters) {
+		TotalWeight += Cluster.TotalWeight;
 	}
-	else if (!Settings.bCacheEdgePoints) {
-		// Only for the cache-off configuration, where clusters can never form. With caching on, an
-		// empty cache means no voice: every audible virtual path must be backed by a verified edge.
-		Desired.Add({Component.TargetVirtualSourceLocation,
-		             Component.CurrentSourceToVirtualDistance,
-		             Component.TargetPathAttenuation, 1.f});
+	for (const FEdgeCluster& Cluster : Clusters) {
+		const float Leg1Geom = FVector::Dist(ActorPos, Cluster.Centroid);
+		Desired.Add({Cluster.Centroid, Cluster.PathDist,
+		             Component.ComputePathAttenuationCurved(Cluster.PathDist, Leg1Geom, Settings),
+		             Cluster.TotalWeight / FMath::Max(TotalWeight, KINDA_SMALL_NUMBER)});
 	}
 
 	return Desired;
@@ -627,10 +610,8 @@ FAsyncCastManager::FRayAccumulatorInput FUpdater::AccumulateLoSBreakHits(
 	const FVector& SourcePos, const FVector& ListenerPos, const FSweepRayParams& RayParams) {
 	FAsyncCastManager::FRayAccumulatorInput AccumIn;
 	AccumIn.MinLoSDist = TNumericLimits<float>::Max();
-	AccumIn.DirectDist = FVector::Dist(SourcePos, ListenerPos);
 	AccumIn.MaxRayDistance = Component.MaxRayDistance;
 	AccumIn.bDirectLoSFound = false;
-	AccumIn.SourcePos = SourcePos;
 
 	for (int32 i = 0; i < Settings.LoSBreakSweepRayCount; ++i) {
 		const FLoSBreakRayResult Result = TraceSingleLoSBreakRay(
@@ -659,7 +640,7 @@ void FUpdater::PerformLoSBreakSweep(USpatialAudioComponent& Component, const USp
 	}
 
 	FCastContext Context;
-	if (!TryResolveCastContext(Component, Context) || IsOutOfRange(Context, Settings.MaxRayDistance)) {
+	if (!TryResolveCastContext(Component, Context) || IsOutOfRange(Context, Component.MaxRayDistance)) {
 		return;
 	}
 	UWorld* World = Context.World;
@@ -682,19 +663,19 @@ void FUpdater::PerformLoSBreakSweep(USpatialAudioComponent& Component, const USp
 	FSweepRayParams RayParams;
 	RayParams.ToListenerDir = SteerDist > 0.f ? (SteerLis - SteerSrc) / SteerDist : FVector::ForwardVector;
 	RayParams.SteerDist = SteerDist;
-	RayParams.bBias = Settings.bBiasRayDirections && FVector::Dist(SourcePos, ListenerPos) > 0.f;
+	RayParams.bBias = FVector::Dist(SourcePos, ListenerPos) > 0.f;
 	RayParams.EffMaxBounces = FMath::Max(Settings.MinMaxBounces,
 	                                     FMath::RoundToInt(Settings.MaxBounces * Priority));
 	RayParams.MaxPathDist = Component.MaxRayDistance * Settings.TotalPathBudgetMultiplier;
 
 	const FAsyncCastManager::FRayAccumulatorInput AccumIn = AccumulateLoSBreakHits(
 		Component, World, Settings, SourcePos, ListenerPos, RayParams);
-	const FAsyncCastManager::FRayAccumulatorOutput AccumOut = FAsyncCastManager::ComputeAudioFromRayAccumulator(
-		AccumIn, Settings);
+	const FAsyncCastManager::FRayAccumulatorOutput AccumOut =
+		FAsyncCastManager::ComputeAudioFromRayAccumulator(AccumIn);
 
 	// Deliberately writes neither TargetOcclusion nor TargetPathAttenuation. TickDirectLoSSampling
-	// owns occlusion, and AccumOut.PathAttenuation comes from a distance that includes the edge to
-	// listener leg, which would put listener distance back into the audible path attenuation.
+	// owns occlusion, and this sweep's distances include the edge to listener leg, which would put
+	// listener distance back into the audible path attenuation.
 
 	if (AccumOut.bHasVirtualSource) {
 		Component.TargetVirtualSourceLocation = AccumOut.VirtualSourcePos;

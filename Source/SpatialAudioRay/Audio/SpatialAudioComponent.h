@@ -123,7 +123,7 @@ public:
 	/** Per-source override of the attenuation shape's inner radius (cm). 0 = keep the assigned
 	 *  attenuation's value. Applied at BeginPlay to the Source component AND the virtual voice
 	 *  template (so pooled voices inherit it); every other attenuation setting stays exactly as
-	 *  assigned. AttenuationInnerRadius and bAutoMaxDistance read the overridden result. */
+	 *  assigned. AttenuationInnerRadius and the derived ray range read the overridden result. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Parameters",
 		meta = (ClampMin = "0.0"))
 	float OverrideAttenuationInnerRadius = 0.f;
@@ -291,33 +291,14 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Spatial Audio|Debug")
 	float CurrentPriority = 1.f;
 
-	/** Smoothed combined speed (cm/s) of source and listener used for interval scaling. */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Spatial Audio|Debug")
-	float CurrentCombinedSpeed = 0.f;
-
 	/** Current interval multiplier from velocity scaling [VelocityIntervalScale, 1.0].
 	 *  1.0 = stationary (no scaling). Lower = moving fast (shorter intervals). */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Spatial Audio|Debug")
 	float CurrentVelocityIntervalMultiplier = 1.f;
 
-	/** True while both source and listener are still after completing a full sweep at their
-	 *  current positions. Sweep interval is multiplied by StationaryIdleMultiplier. */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Spatial Audio|Debug")
-	bool bIsStationaryIdle = false;
-
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Spatial Audio|Debug")
-	int32 LastRaysReached = 0;
-
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Spatial Audio|Debug")
-	float LastAvgLoSBounces = 0.f;
-
 	/** Current smoothed virtual source position in world space. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Spatial Audio|Virtual Source")
 	FVector CurrentVirtualSourceLocation = FVector::ZeroVector;
-
-	/** Smoothed offset from the actor position currently applied to the AudioComponent. */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Spatial Audio|Virtual Source")
-	FVector CurrentAudioComponentOffset = FVector::ZeroVector;
 
 	/** Slewed virtual crossfade gate [0-1] — chases ComputeVirtualCrossfadeTarget (1 on total
 	 *  LoS loss; with VirtualCrossfadeStartOcclusion < 1, also a partial occlusion-keyed ramp
@@ -442,10 +423,9 @@ private:
 	 *  curve, then to a linear ramp over MaxRayDistance. */
 	float EvaluateVirtualAttenuationVolumeAt(float Distance) const;
 	/** Curve-shaped path attenuation: 1 − curve volume at the GeomBlend-blended Leg1 distance,
-	 *  scaled by PathAttenuationStrength. Replaces the linear Math::ComputePathAttenuation on
-	 *  the audible paths — a long acoustic path behind an emitter now costs what the engine
-	 *  would charge for the same distance in front of it, instead of a much flatter linear
-	 *  ramp (which let a close emitter with a long path out-shout a far one with a short path). */
+	 *  scaled by PathAttenuationStrength. Charging Leg1 against the same curve the engine
+	 *  applies to Leg2 is what stops a close emitter with a long path out-shouting a far one
+	 *  with a short path, which a flat linear ramp over MaxRayDistance allowed. */
 	float ComputePathAttenuationCurved(float AvgPathDist, float Leg1Geom, const USpatialAudioSettings& S) const;
 
 	void CacheAudioComponents();
@@ -489,6 +469,7 @@ private:
 	FCollisionQueryParams TraceQueryParams;
 
 
+	/** Rays in flight during a sweep. Empty between sweeps. */
 	TArray<FSpatialRayState> AsyncRays;
 	bool bAsyncCastActive = false;
 	int32 AsyncMaxBounces = 4; 
@@ -505,7 +486,6 @@ private:
 	struct FCycleAccumulator {
 		int32 Index = 0;
 		int32 RaysReached = 0;
-		int32 LoSBounces = 0;
 		float MinLoSDist = TNumericLimits<float>::Max();
 		FVector WeightedPos = FVector::ZeroVector;
 		float TotalWeight = 0.f;
@@ -513,6 +493,7 @@ private:
 		bool bDirectLoSFound = false;
 	};
 
+	/** Accumulates across the sub-cycles of one sweep sequence. Only the last cycle publishes. */
 	FCycleAccumulator CycleAccum;
 	int32 StaggeredCycleIndex = 0;
 
@@ -543,8 +524,9 @@ private:
 	 *  read as "just lost it". */
 	float TimeSinceHadDirectLoS = 1e9f;
 
-	/** Runtime max distance in cm. Initialised from Settings->MaxRayDistance at BeginPlay;
-	 *  may be overwritten by bAutoMaxDistance logic reading from the attenuation asset. */
+	/** Ray range in cm, derived at BeginPlay from the widest source attenuation times
+	 *  MaxRayDistanceScale. The initialiser only survives when no attenuation is found.
+	 *  Every range check reads this, never the settings asset, which has no range of its own. */
 	float MaxRayDistance = 5000.f;
 
 
@@ -575,24 +557,15 @@ private:
 		float SourceCrossfade = 1.f;
 		float VirtualGain = 0.f;
 		float VirtualPathBend = 0.f;
-		int32 UpdateCachedEdges = 0;
-		float UpdateDirectDist = 0.f;
-		float FullExcessRatio = 0.f;
 	} AudioDiag;
 
 	struct FTraceDiagnostics {
 		mutable int32 FrameCount = 0;
-		int32 AsyncFrameTraces = 0;
-		int32 UpdateFrameTraces = 0;
 		float SmoothedFrameTraces = 0.f;
-		float SmoothedAsyncTraces = 0.f;
-		float SmoothedUpdateTraces = 0.f;
 
 		float SnapshotTimer = 0.f;
 		int32 AccumBucket = 0;
 		float SnapshotFrameTraces = 0.f;
-		float SnapshotAsyncTraces = 0.f;
-		float SnapshotUpdateTraces = 0.f;
 		float SnapshotTracesPerSec = 0.f;
 
 		static constexpr int32 HistoryLen = 60;
@@ -602,16 +575,12 @@ private:
 		int32 HistoryCount = 0;
 		float Avg10Sec = 0.f;
 		float Avg60Sec = 0.f;
-		int32 LastSweepTraces = 0;
 		int32 LastSweepFrames = 0;
 		int32 LastSweepAsyncRays = 0;
 		int32 LastSweepCachedReplaced = 0;
 		float LastSweepDuration = 0.f;
 		float LastSweepInterval = 0.f;
-		int32 FinalizeRetries = 0;
-		int32 LastFinalizeRetries = 0;
 		float SweepStartTime = 0.f;
-		int32 SweepTraceAccum = 0;
 		int32 SweepFrameAccum = 0;
 		int32 SweepAsyncRayAccum = 0;
 	} TraceDiag;
@@ -701,8 +670,11 @@ private:
 
 	struct FSweepSchedulingState {
 		float GeometryBurstTimer = 0.f;
+		/** Deliberately NOT set by edge-cache Phase 0. Edge points sit on geometry surfaces, so a
+		 *  listener-to-edge trace returns a blocking hit inconsistently even against static
+		 *  geometry, and bursting on that would re-sweep forever. */
 		bool bGeometryChangeDetected = false;
-		
+
 		bool bStationaryIdleMode = false;
 		FVector StationaryIdleSourcePos = FVector::ZeroVector;
 		FVector StationaryIdleListenerPos = FVector::ZeroVector;
@@ -751,7 +723,6 @@ private:
 		TArray<FFinalizeRefineProbe> RefineProbes;
 		
 		int32 RaysReached = 0;
-		int32 TotalLoSBounces = 0;
 		float MinLoSDist = TNumericLimits<float>::Max();
 		FVector WeightedPosSum = FVector::ZeroVector;
 		float TotalWeight = 0.f;
@@ -759,5 +730,7 @@ private:
 		bool bDirectLoSFound = false;
 	};
 
+	/** Trace-free results handed from SubmitFinalizeBatch to ReadbackFinalizeBatch. Pending for
+	 *  exactly one frame, the gap the refinement probes need to come back. */
 	FFinalizeBatch Finalize;
 };

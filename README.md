@@ -24,13 +24,19 @@ Three loops run at different rates:
 
 A sweep takes several frames, so by the time it lands its answer is slightly out of date. That is why occlusion is sampled separately every frame and never waits for a sweep, and why found edges are cached and kept alive independently instead of being re-derived each time.
 
-How much a sweep costs and how often it runs are both tunable and both adapt at runtime. The ray budget scales down with distance, shrinks further when cached edges already cover a direction, and can be split across several frames' worth of cycles. The interval stretches when nothing is moving and tightens when something is, so a stationary scene settles into cheap upkeep instead of re-surveying itself.
+How much a sweep costs and how often it runs both adapt at runtime. The ray budget scales down with distance and can be split across several frames' worth of cycles. A cached edge remembers the index of the ray that found it, so the next sweep skips that direction outright: four cached edges, four fewer rays. The interval stretches when nothing is moving and tightens when something is, so a stationary scene settles into cheap upkeep instead of re-surveying itself.
 
 ## Design notes
 
 The sweep advances one bounce level per frame. Every trace is submitted asynchronously and read back the frame after, so a sweep costs a small amount of work spread over many frames rather than a spike on one.
 
-Most of the complexity is in the edge cache, because the listener keeps moving between sweeps and a cached edge has to be checked continuously from the listener's side. A blocked check does not evict straight away. First it tries promoting the edge inward along its own path, in case a point closer to the source is now directly visible and the outer corner is obsolete. Then it fans out four offset points around the listener, since a single centre trace grazing a corner is not enough evidence. Then it tries routing the edge through the last listener position that could still see it, which buys time while you walk. Only after all of that does it start fading, and it fades rather than cutting, because a virtual emitter disappearing instantly is audible.
+Most of the complexity is in the edge cache, because the listener keeps moving between sweeps and a cached edge has to be checked continuously from the listener's side. A blocked check does not evict straight away. It escalates:
+
+1. Promote the edge inward along its own path, in case a point closer to the source is now directly visible and the outer corner is obsolete.
+2. Fan out four offset points around the listener, since a single centre trace grazing a corner is not enough evidence.
+3. Route the edge through the last listener position that could still see it, which buys time while you walk.
+
+Only after all of that does it start fading, and it fades rather than cutting, because a virtual emitter disappearing instantly is audible.
 
 The distance a ray physically travelled is longer than the acoustic path, since crawling along a wall and bouncing adds detours. Before that distance is used for anything audible it gets string-pulled: from the edge, hop back to the furthest recorded waypoint that is directly visible, repeat until reaching the source. Rays also die as soon as travelled distance plus straight-line distance to the listener exceeds the budget, which by the triangle inequality means they provably cannot reach it.
 
@@ -44,21 +50,22 @@ Start with [`Source/SpatialAudioRay/Audio/ReadingGuide.md`](Source/SpatialAudioR
 Source/SpatialAudioRay/
 ├── Audio/     diffraction and occlusion
 ├── Voice/     the NPC voice system built on it
-└── Tests/     101 automation tests
+└── Tests/     100 automation tests
 Tools/VoiceGen/  offline voice bank generation
 ```
 
-`Math.h` and `Voice/NPCVoiceLogic.h` hold the pure functions, with no engine or component state in either.
+`USpatialAudioComponent` owns all the state. `FAsyncCastManager`, `FUpdater` and `FEdgeCache` hold none of their own and are static functions over it, split by which of the three loops they belong to. `Math.h` and `Voice/NPCVoiceLogic.h` sit below both with the pure functions, no engine or component state in either, and 83 of the 100 tests are on those two files. Every tunable lives in one `UDataAsset` instead of as constants in the code.
 
 ## Tests
 
-101 tests, run from Session Frontend, Automation, filtering on `SpatialAudioRay`:
+100 tests, run from Session Frontend, Automation, filtering on `SpatialAudioRay`:
 
 | Suite | Tests | Covers |
 |---|---|---|
-| `SpatialAudioRay.Math.*` | 54 | reflection, attenuation, clustering, path shortening |
+| `SpatialAudioRay.Math.*` | 52 | reflection, attenuation, clustering, path shortening |
 | `SpatialAudioRay.Voice.*` | 31 | effort buckets, hysteresis, barge-in, content selection |
-| `SpatialAudioRay.Async.*` | 16 | sweep accumulation and miss-direction state |
+| `SpatialAudioRay.Async.*` | 15 | sweep accumulation, ray budget, turn determinism |
+| `SpatialAudioRay.EdgeCache.*` | 2 | cache merge candidacy |
 
 ## Trying it
 

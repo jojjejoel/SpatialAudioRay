@@ -54,7 +54,7 @@ Sweep state is `AsyncRays`, `bAsyncCastActive`, `Finalize`, `CycleAccum`, and `A
 
 The targets are `TargetOcclusion`, `TargetVirtualSourceLocation` and `TargetPathAttenuation`. Casts write targets and `TickComponent` smooths the `Current` values toward them. Nothing audible ever snaps.
 
-The cache is `CachedEdgePoints`, alongside `CachedMissDirs` for directions that found nothing, which get sampled less often next sweep, and `CachedEdgeDirs` for directions a cached edge already covers, which get skipped.
+The cache is `CachedEdgePoints`, alongside `CachedEdgeDirIndices`, the Fibonacci indices of rays that already found a still-valid edge. The next sweep skips those indices outright, which is the only way a warm cache saves trace budget.
 
 Line-of-sight sampling keeps three values: `LastOffsetLoSFraction` raw, `WindowedLoSFraction` averaged over the pattern, and `LastDirectLoSFraction` smoothed. The distinction between them matters at Stop 4.
 
@@ -91,7 +91,7 @@ The three values from Stop 2 have different consumers, and mixing them up causes
 
 `AsyncCastManagerSubmit.cpp` and `AsyncCastManagerReadback.cpp`. This is the core pipeline, four entry points called across consecutive frames.
 
-**`StartAsyncFullCast`** fires once per sweep or sub-cycle. Read its phase methods in call order. Positions are captured by `CaptureSweepPositions`, and note the separate steering positions there: they are velocity-led and used only for aiming, never for verifying a result. The ray budget is resolved next, with cached edges counting as free results that reduce it. Then `SubmitSweepRays` distributes directions over a Fibonacci sphere, filters them against miss directions and cached edges, and biases them toward the lateral band. That bias exists because straight at the listener hits the same wall and straight away never comes back, so diffraction edges are found to the sides.
+**`StartAsyncFullCast`** fires once per sweep or sub-cycle. Read its phase methods in call order. Positions are captured by `CaptureSweepPositions`, and note the separate steering positions there: they are velocity-led and used only for aiming, never for verifying a result. The ray budget is resolved next, with cached edges counting as free results that reduce it. Then `SubmitSweepRays` distributes directions over a Fibonacci sphere, skips the indices cached edges already cover, and biases the rest toward the lateral band. That bias exists because straight at the listener hits the same wall and straight away never comes back, so diffraction edges are found to the sides.
 
 **`TickAsyncCast`** runs every frame while a sweep is active and advances each ray one step through `TickSingleRay`. A ray's life goes: drain any finished line-of-sight probes, process a pending crawl batch if there is one, otherwise handle the segment trace that just finished. That trace either missed, in which case the ray terminates or turns mid-air if `MaxStraightFlightDistance` is enabled, or it hit a wall. A hit either starts a surface crawl, where `TrySetupSurfaceCrawl` submits the whole probe batch up front, or a bounce through `Math::ComputeBouncedDirection`, which blends mirror reflection with roughness scatter and a pull toward the listener. Crawls and bounces alternate per ray via `bNextHitCrawls`. Along every segment `SubmitSegmentLoSProbes` asks asynchronously whether that point can see the listener, and the first point that can becomes the ray's `LoSOrigin`, a diffraction edge candidate.
 

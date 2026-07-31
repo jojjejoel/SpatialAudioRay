@@ -125,7 +125,6 @@ void FUpdater::ApplyVoiceAudioParams(const USpatialAudioComponent& Component, co
 	if (Gain > OutResult.PrimaryGain) {
 		OutResult.PrimaryGain = Gain;
 		OutResult.PrimaryPathBend = VAP.VirtualPathBend;
-		OutResult.PrimaryOffset = Slot.WorldOffset;
 	}
 }
 
@@ -163,9 +162,7 @@ FUpdater::FVirtualVoiceUpdateResult FUpdater::UpdateVirtualVoiceSlots(USpatialAu
 		}
 
 		FVirtualVoice& Voice = Component.VirtualVoices[Slot.VoiceIndex];
-		if (Settings.bDriveSourcePosition) {
-			MoveSlotToVoice(Slot, VC, Voice, ActorPos, DeltaTime, Rates.MoveSpeed);
-		}
+		MoveSlotToVoice(Slot, VC, Voice, ActorPos, DeltaTime, Rates.MoveSpeed);
 		ApplyVoiceAudioParams(Component, Settings, Slot, Voice, VC, ActorPos, DeltaTime,
 		                      Rates.ParamBlendSpeed, VirtualCrossfade, Result);
 	}
@@ -188,9 +185,6 @@ void FUpdater::UpdateDualModeAudio(USpatialAudioComponent& Component, const floa
 
 	const FVirtualVoiceUpdateResult Result = UpdateVirtualVoiceSlots(
 		Component, Settings, DeltaTime, VirtualCrossfade, OwnerActor->GetActorLocation());
-
-	// The HUD mirrors the loudest slot, while the diagnostic gain is the summed level.
-	Component.CurrentAudioComponentOffset = Result.PrimaryGain >= 0.f ? Result.PrimaryOffset : FVector::ZeroVector;
 
 	Component.AudioDiag.VirtualGain = Result.TotalVirtualGain;
 	Component.AudioDiag.VirtualPathBend = Result.PrimaryPathBend;

@@ -6,10 +6,6 @@
 using namespace Math;
 
 namespace {
-	bool ShouldCrawlThisHit(const USpatialAudioSettings& S, bool bNextHitCrawls, int32 Bounce) {
-		return S.bEnableSurfaceCrawl && bNextHitCrawls && (!S.bCrawlOnFirstBounceOnly || Bounce == 0);
-	}
-
 	FVector ComputeCrawlDirection(const FVector& IncomingDir, const FVector& SurfaceNormal,
 	                              const FVector& HitPoint, const FVector& ListenerPos,
 	                              float ListenerBias) {
@@ -85,8 +81,7 @@ void USpatialAudioComponent::ProcessRayHit(
 	FRayHitOutput& Out) const {
 	Out = FRayHitOutput{};
 
-	if (ShouldCrawlThisHit(Settings, InOutNextHitCrawls, InOutBounce)
-		&& FVector::DotProduct(Hit.Normal, InOutDir) <= 0.f) {
+	if (InOutNextHitCrawls && FVector::DotProduct(Hit.Normal, InOutDir) <= 0.f) {
 		FVector EdgePoint, EdgeDir;
 		FCrawlOutput CrawlOut;
 
@@ -130,9 +125,7 @@ void USpatialAudioComponent::ProcessRayHit(
 		++InOutBounce;
 	}
 
-	if (Settings.bEnableSurfaceCrawl) {
-		InOutNextHitCrawls = !InOutNextHitCrawls;
-	}
+	InOutNextHitCrawls = !InOutNextHitCrawls;
 }
 
 bool USpatialAudioComponent::CrawlSurfaceToEdge(

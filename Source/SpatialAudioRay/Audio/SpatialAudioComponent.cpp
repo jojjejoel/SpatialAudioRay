@@ -64,7 +64,6 @@ void USpatialAudioComponent::BeginPlay() {
 	}
 	TraceQueryParams.bTraceComplex = false;
 
-	MaxRayDistance = GetSettings().MaxRayDistance;
 	ReadAttenuationSettings();
 	PerformStartupLoSCheck();
 
@@ -279,22 +278,19 @@ void USpatialAudioComponent::ReadAttenuationSettings() {
 		bHasVirtualAttenuationSettings = true;
 	}
 
-	if (Widest) {
-		AttenuationInnerRadius = Widest->AttenuationShapeExtents.X;
-		BaseAttenuationFalloffDistance = Widest->FalloffDistance;
-
-		if (GetSettings().bAutoMaxDistance) {
-			MaxRayDistance = WidestRange;
-			UE_LOG(LogSpatialAudio, Log,
-			       TEXT("SpatialAudioComponent: MaxRayDistance set to %.0f cm from attenuation asset."),
-			       MaxRayDistance);
-		}
-	}
-	else if (GetSettings().bAutoMaxDistance) {
+	if (!Widest) {
 		UE_LOG(LogSpatialAudio, Warning,
-		       TEXT("SpatialAudioComponent: bAutoMaxDistance is true but no attenuation found. Using %.0f cm."),
+		       TEXT("SpatialAudioComponent: no attenuation found on any tagged source. Ray range falls back to %.0f cm."),
 		       MaxRayDistance);
+		return;
 	}
+
+	AttenuationInnerRadius = Widest->AttenuationShapeExtents.X;
+	BaseAttenuationFalloffDistance = Widest->FalloffDistance;
+	MaxRayDistance = WidestRange * GetSettings().MaxRayDistanceScale;
+	UE_LOG(LogSpatialAudio, Log,
+	       TEXT("SpatialAudioComponent: ray range %.0f cm (attenuation %.0f cm x %.2f)."),
+	       MaxRayDistance, WidestRange, GetSettings().MaxRayDistanceScale);
 }
 
 float USpatialAudioComponent::EvaluateVirtualAttenuationVolumeAt(const float Distance) const {
@@ -382,13 +378,10 @@ void USpatialAudioComponent::TickAsyncPipeline(const USpatialAudioSettings& Sett
 	if (bAsyncCastActive) {
 		FAsyncCastManager::TickAsyncCast(*this, Settings);
 	}
-	TraceDiag.AsyncFrameTraces = TraceDiag.FrameCount;
 
 	if (bWasAsyncActive) {
-		TraceDiag.SweepTraceAccum += TraceDiag.AsyncFrameTraces;
 		++TraceDiag.SweepFrameAccum;
 		if (!bAsyncCastActive) {
-			TraceDiag.LastSweepTraces = TraceDiag.SweepTraceAccum;
 			TraceDiag.LastSweepFrames = TraceDiag.SweepFrameAccum;
 			TraceDiag.LastSweepAsyncRays = TraceDiag.SweepAsyncRayAccum;
 		}
@@ -494,10 +487,6 @@ void USpatialAudioComponent::UpdateTraceDiagnostics(const float DeltaTime) {
 
 	TraceDiag.SmoothedFrameTraces = FMath::FInterpTo(TraceDiag.SmoothedFrameTraces, static_cast<float>(TraceDiag.FrameCount),
 	                                                 DeltaTime, 4.f);
-	TraceDiag.SmoothedAsyncTraces = FMath::FInterpTo(TraceDiag.SmoothedAsyncTraces, static_cast<float>(TraceDiag.AsyncFrameTraces),
-	                                                 DeltaTime, 4.f);
-	TraceDiag.SmoothedUpdateTraces = FMath::FInterpTo(TraceDiag.SmoothedUpdateTraces, static_cast<float>(TraceDiag.UpdateFrameTraces),
-	                                                  DeltaTime, 4.f);
 
 	TraceDiag.AccumBucket += TraceDiag.FrameCount;
 	TraceDiag.SnapshotTimer += DeltaTime;
@@ -509,8 +498,6 @@ void USpatialAudioComponent::UpdateTraceDiagnostics(const float DeltaTime) {
 	TraceDiag.SnapshotTimer = 0.f;
 	TraceDiag.AccumBucket = 0;
 	TraceDiag.SnapshotFrameTraces = TraceDiag.SmoothedFrameTraces;
-	TraceDiag.SnapshotAsyncTraces = TraceDiag.SmoothedAsyncTraces;
-	TraceDiag.SnapshotUpdateTraces = TraceDiag.SmoothedUpdateTraces;
 
 	TraceDiag.History[TraceDiag.HistoryHead] = TraceDiag.SnapshotTracesPerSec;
 	TraceDiag.HistoryHead = (TraceDiag.HistoryHead + 1) % TraceDiag.HistoryLen;
@@ -567,11 +554,9 @@ void USpatialAudioComponent::TickComponent(const float DeltaTime, const ELevelTi
 	TickMovementSweepTrigger(DeltaTime, bInRange, TickPawn);
 
 	const bool bPrevHadDirectLoS = bHasDirectLoS;
-	const int32 PreUpdateCount = TraceDiag.FrameCount;
 	const int32 CycleCount = FMath::Max(1, GetSettings().FullSweepCycleCount);
 	const float SubInterval = EffFullSweepInterval / CycleCount;
 	TickNormalSweepDispatch(DeltaTime, bInRange, SubInterval);
-	TraceDiag.UpdateFrameTraces = TraceDiag.FrameCount - PreUpdateCount;
 
 	if (bPrevHadDirectLoS && !bHasDirectLoS && LoSBreakSweepCooldown <= 0.f) {
 		FUpdater::PerformLoSBreakSweep(*this, GetSettings());
@@ -595,32 +580,26 @@ void USpatialAudioComponent::TickComponent(const float DeltaTime, const ELevelTi
 
 
 float USpatialAudioComponent::ComputeEffectiveSweepInterval() const {
-	if (GetSettings().IsRateThrottlingDisabled()) {
-		return GetSettings().FullSweepInterval;
-	}
-
 	const bool bBothStationary = VelocityScaling.SweepMultiplier > 0.95f && VelocityScaling.EdgeMultiplier > 0.95f;
 
 	float Interval = FMath::Lerp(
 			GetSettings().MaxFullSweepInterval, GetSettings().FullSweepInterval, CurrentPriority)
 		* FMath::Min(VelocityScaling.SweepMultiplier, VelocityScaling.EdgeMultiplier);
 
-	if (GetSettings().bCacheEdgePoints) {
-		if (SweepScheduling.GeometryBurstTimer > 0.f && bBothStationary) {
-			Interval *= GetSettings().GeometryChangeBurstMultiplier;
-		}
-		// Post-movement cache fill: velocity scaling stops accelerating the moment movement
-		// stops, but the sweeps it triggered may not have found anything yet — keep burst pace
-		// until enough NEW edges (found since the trigger; carried-over entries don't satisfy
-		// the re-survey) exist or the sweep budget runs out. Sits above idle mode so an
-		// unfilled burst can never idle-crawl.
-		else if (bBothStationary && SweepScheduling.CacheFillSweepsRemaining > 0
-			&& CountCacheFillEdges() < GetSettings().MovementCacheFillRequiredEdges) {
-			Interval *= GetSettings().GeometryChangeBurstMultiplier;
-		}
-		else if (bBothStationary && SweepScheduling.bStationaryIdleMode) {
-			Interval *= GetSettings().StationaryIdleMultiplier;
-		}
+	if (SweepScheduling.GeometryBurstTimer > 0.f && bBothStationary) {
+		Interval *= GetSettings().GeometryChangeBurstMultiplier;
+	}
+	// Post-movement cache fill: velocity scaling stops accelerating the moment movement
+	// stops, but the sweeps it triggered may not have found anything yet — keep burst pace
+	// until enough NEW edges (found since the trigger; carried-over entries don't satisfy
+	// the re-survey) exist or the sweep budget runs out. Sits above idle mode so an
+	// unfilled burst can never idle-crawl.
+	else if (bBothStationary && SweepScheduling.CacheFillSweepsRemaining > 0
+		&& CountCacheFillEdges() < GetSettings().MovementCacheFillRequiredEdges) {
+		Interval *= GetSettings().GeometryChangeBurstMultiplier;
+	}
+	else if (bBothStationary && SweepScheduling.bStationaryIdleMode) {
+		Interval *= GetSettings().StationaryIdleMultiplier;
 	}
 	return Interval;
 }
@@ -648,7 +627,7 @@ int32 USpatialAudioComponent::CountCacheFillEdges() const {
 
 void USpatialAudioComponent::TickMovementSweepTrigger(const float DeltaTime, const bool bInRange, const APawn* Pawn) {
 	SweepScheduling.MovementCooldownTimer += DeltaTime;
-	if (!bInRange || bHasDirectLoS || !Pawn || !GetOwner() || GetSettings().IsRateThrottlingDisabled()) {
+	if (!bInRange || bHasDirectLoS || !Pawn || !GetOwner()) {
 		return;
 	}
 
@@ -674,26 +653,21 @@ void USpatialAudioComponent::TickMovementSweepTrigger(const float DeltaTime, con
 void USpatialAudioComponent::GetEffectiveRayCounts(int32& OutFull, float& OutPriority) const {
 	OutPriority = 1.f;
 
-	if (!GetSettings().IsRayBudgetScalingDisabled() && GetSettings().bScaleRaysByDistance) {
-		if (const APlayerController* PC = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr; PC && PC->
-			GetPawn() && GetOwner()) {
-			const float Dist = FVector::Dist(GetOwner()->GetActorLocation(), PC->GetPawn()->GetActorLocation());
-			const float FullPriorityDist = AttenuationInnerRadius * 2.f;
-			const float ScaleStart = FullPriorityDist;
-			const float ScaleRange = MaxRayDistance - ScaleStart;
-			const float TLinear = (ScaleRange > 0.f && Dist > ScaleStart)
-				                      ? FMath::Clamp((Dist - ScaleStart) / ScaleRange, 0.f, 1.f)
-				                      : 0.f;
-			const float t = FMath::Pow(TLinear, GetSettings().DistancePriorityExponent);
-			OutPriority = 1.f - t;
-		}
+	if (const APlayerController* PC = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr;
+		PC && PC->GetPawn() && GetOwner()) {
+		const float Dist = FVector::Dist(GetOwner()->GetActorLocation(), PC->GetPawn()->GetActorLocation());
+		// Full priority out to twice the inner radius, then falling off to zero at max range.
+		const float ScaleStart = AttenuationInnerRadius * 2.f;
+		const float ScaleRange = MaxRayDistance - ScaleStart;
+		const float TLinear = (ScaleRange > 0.f && Dist > ScaleStart)
+			                      ? FMath::Clamp((Dist - ScaleStart) / ScaleRange, 0.f, 1.f)
+			                      : 0.f;
+		OutPriority = 1.f - FMath::Pow(TLinear, GetSettings().DistancePriorityExponent);
 	}
 
 	const int32 Scaled = FMath::RoundToInt(GetSettings().FullSweepRayCount * OutPriority);
-	OutFull = GetSettings().IsRayBudgetScalingDisabled()
-		? GetSettings().FullSweepRayCount
-		: FMath::Clamp(FMath::Max(Scaled, GetSettings().MinFullSweepRayCount),
-		               0, GetSettings().FullSweepRayCount);
+	OutFull = FMath::Clamp(FMath::Max(Scaled, GetSettings().MinFullSweepRayCount),
+	                       0, GetSettings().FullSweepRayCount);
 }
 
 
@@ -731,7 +705,6 @@ void USpatialAudioComponent::UpdateVelocityScaling(const float DeltaTime, const 
 	VelocityScaling.EdgeMultiplier = FMath::Lerp(1.f, MinScale, ListenerVelocityFraction);
 	VelocityScaling.OffsetLoSMultiplier = FMath::Lerp(
 		1.f, FMath::Max(0.05f, GetSettings().OffsetLoSVelocityScale), VelocityFraction);
-	CurrentCombinedSpeed = VelocityScaling.SmoothedCombinedSpeed;
 }
 
 void USpatialAudioComponent::UpdateGeometryBurstAndIdleState(const float DeltaTime, const bool bInRange, const APawn* Pawn) {
@@ -743,16 +716,12 @@ void USpatialAudioComponent::UpdateGeometryBurstAndIdleState(const float DeltaTi
 	}
 	SweepScheduling.GeometryBurstTimer = FMath::Max(0.f, SweepScheduling.GeometryBurstTimer - DeltaTime);
 
-	if (GetSettings().IsRateThrottlingDisabled()) {
-		SweepScheduling.bStationaryIdleMode = false;
-	}
-	else if (SweepScheduling.bStationaryIdleMode && bInRange && Pawn && GetOwner()) {
+	if (SweepScheduling.bStationaryIdleMode && bInRange && Pawn && GetOwner()) {
 		const float BreakDistSq = FMath::Square(GetSettings().StationaryIdleBreakDist);
 		if (FVector::DistSquared(GetOwner()->GetActorLocation(), SweepScheduling.StationaryIdleSourcePos) > BreakDistSq ||
 			FVector::DistSquared(Pawn->GetActorLocation(), SweepScheduling.StationaryIdleListenerPos) > BreakDistSq) {
 			SweepScheduling.bStationaryIdleMode = false;
 		}
 	}
-	bIsStationaryIdle = SweepScheduling.bStationaryIdleMode;
 }
 

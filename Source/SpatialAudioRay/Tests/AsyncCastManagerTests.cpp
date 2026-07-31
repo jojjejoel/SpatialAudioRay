@@ -1,4 +1,4 @@
-﻿#include "CoreMinimal.h"
+#include "CoreMinimal.h"
 #include "SpatialAudioTypes.h"
 #include "Misc/AutomationTest.h"
 #include "Audio/AsyncCastManager.h"
@@ -14,6 +14,7 @@ bool Accumulate_EmptyArray::RunTest(const FString& Parameters) {
 
 	FAsyncCastManager::FCachedPointAccum Accum = FAsyncCastManager::AccumulateCachedPoints(
 		TArray<FCachedEdgePoint>(),
+		1000.f,
 		*Settings);
 
 	TestTrue(
@@ -45,10 +46,10 @@ bool Accumulate_SinglePoint_Alpha1::RunTest(const FString& Parameters) {
 
 	const auto Settings = NewObject<USpatialAudioSettings>();
 	Settings->CandidateDistanceFalloff = 0.5f;
-	Settings->MaxRayDistance = maxDist;
 
 	FAsyncCastManager::FCachedPointAccum Accum = FAsyncCastManager::AccumulateCachedPoints(
 		Array,
+		maxDist,
 		*Settings);
 
 	TestTrue(
@@ -76,10 +77,10 @@ bool Accumulate_SinglePoint_AlphaHalf::RunTest(const FString& Parameters) {
 
 	const auto Settings = NewObject<USpatialAudioSettings>();
 	Settings->CandidateDistanceFalloff = 0.5f;
-	Settings->MaxRayDistance = maxDist;
 
 	FAsyncCastManager::FCachedPointAccum Accum = FAsyncCastManager::AccumulateCachedPoints(
 		Array,
+		maxDist,
 		*Settings);
 
 	TestTrue(
@@ -99,14 +100,12 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 )
 
 bool FComputeAudio_VirtualSource_WeightedAverage::RunTest(const FString& Parameters) {
-	const auto Settings = NewObject<USpatialAudioSettings>();
-
 	FAsyncCastManager::FRayAccumulatorInput In;
 	In.bDirectLoSFound = false;
 	In.WeightedPos = FVector(200.f, 0.f, 0.f);
 	In.TotalWeight = 2.f;
 	In.MaxRayDistance = 1000.f;
-	const FAsyncCastManager::FRayAccumulatorOutput Out = FAsyncCastManager::ComputeAudioFromRayAccumulator(In, *Settings);
+	const FAsyncCastManager::FRayAccumulatorOutput Out = FAsyncCastManager::ComputeAudioFromRayAccumulator(In);
 
 	TestTrue(TEXT("Virtual source is set when weight > 0"), Out.bHasVirtualSource);
 	TestTrue(TEXT("Virtual source equals WeightedPos / TotalWeight"),
@@ -121,14 +120,12 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 )
 
 bool FComputeAudio_DirectLoS_NoVirtualSource::RunTest(const FString& Parameters) {
-	const auto Settings = NewObject<USpatialAudioSettings>();
-
 	FAsyncCastManager::FRayAccumulatorInput In;
 	In.bDirectLoSFound = true;
 	In.WeightedPos = FVector(200.f, 0.f, 0.f);
 	In.TotalWeight = 2.f;
 	In.MaxRayDistance = 1000.f;
-	const FAsyncCastManager::FRayAccumulatorOutput Out = FAsyncCastManager::ComputeAudioFromRayAccumulator(In, *Settings);
+	const FAsyncCastManager::FRayAccumulatorOutput Out = FAsyncCastManager::ComputeAudioFromRayAccumulator(In);
 
 	TestFalse(TEXT("Direct LoS suppresses virtual source"), Out.bHasVirtualSource);
 	return true;

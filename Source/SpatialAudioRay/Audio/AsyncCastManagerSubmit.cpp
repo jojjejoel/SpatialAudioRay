@@ -1,4 +1,4 @@
-﻿#include "Audio/AsyncCastManager.h"
+#include "Audio/AsyncCastManager.h"
 #include "Audio/SpatialAudioComponent.h"
 #include "Audio/Math.h"
 
@@ -77,7 +77,6 @@ void FAsyncCastManager::DrawFlightSegment(const USpatialAudioComponent& Componen
 
 void FAsyncCastManager::CaptureSweepPositions(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings,
                                               const AActor& Owner, const APawn& Pawn) {
-	Component.TraceDiag.SweepTraceAccum = 0;
 	Component.TraceDiag.SweepFrameAccum = 0;
 	Component.bPreSweepCast = Component.IsPreSweepActive();
 	Component.AsyncSourcePos = Owner.GetActorLocation();
@@ -108,9 +107,7 @@ void FAsyncCastManager::ResolveSweepRayBudget(USpatialAudioComponent& Component,
 	Component.AsyncTotalRays = ScaledRayCount;
 
 	Component.PendingValidCachedPoints.Reset();
-	if (Settings.bCacheEdgePoints) {
-		Component.PendingValidCachedPoints.Append(Component.CachedEdgePoints);
-	}
+	Component.PendingValidCachedPoints.Append(Component.CachedEdgePoints);
 
 	const int32 SubstituteCount = CountFullStrengthEdges(Component.PendingValidCachedPoints);
 
@@ -126,9 +123,6 @@ bool FAsyncCastManager::HasEitherEndMoved(const USpatialAudioComponent& Componen
 
 void FAsyncCastManager::BuildCachedEdgeSkipIndices(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings) {
 	Component.CachedEdgeDirIndices.Reset();
-	if (!Settings.bCacheEdgePoints) {
-		return;
-	}
 
 	const float MoveThresholdSq = FMath::Square(Settings.CachedEdgeUpdateMoveThreshold);
 	for (const FCachedEdgePoint& Edge : Component.PendingValidCachedPoints) {
@@ -148,7 +142,6 @@ void FAsyncCastManager::BuildCachedEdgeSkipIndices(USpatialAudioComponent& Compo
 
 void FAsyncCastManager::ResetCycleAccumulator(USpatialAudioComponent& Component) {
 	Component.CycleAccum.RaysReached = 0;
-	Component.CycleAccum.LoSBounces = 0;
 	Component.CycleAccum.MinLoSDist = TNumericLimits<float>::Max();
 	Component.CycleAccum.WeightedPos = FVector::ZeroVector;
 	Component.CycleAccum.TotalWeight = 0.f;
@@ -208,7 +201,7 @@ void FAsyncCastManager::SubmitSweepRays(USpatialAudioComponent& Component, const
 	TArray<int32> DirectionIndices;
 	SelectCycleDirections(AllDirections, Component.CycleAccum.Index, CycleCount, Directions, DirectionIndices);
 
-	const bool bBias = Settings.bBiasRayDirections && FullCastDistance > 0.f;
+	const bool bBias = FullCastDistance > 0.f;
 
 	Component.AsyncRays.Reset(Directions.Num());
 
@@ -256,7 +249,7 @@ void FAsyncCastManager::StartAsyncFullCast(USpatialAudioComponent& Component, co
 	CaptureSweepPositions(Component, Settings, *Owner, *PC->GetPawn());
 
 	if (FVector::DistSquared(Component.AsyncSourcePos, Component.AsyncListenerPos) > FMath::Square(
-		Settings.MaxRayDistance)) {
+		Component.MaxRayDistance)) {
 		Component.TargetOcclusion = 0.f;
 		Component.TargetVirtualSourceLocation = Component.AsyncSourcePos;
 		return;
@@ -283,7 +276,7 @@ void FAsyncCastManager::StartAsyncFullCast(USpatialAudioComponent& Component, co
 // ── TickAsyncCast per-ray phases ─────────────────────────────────────────────
 
 bool FAsyncCastManager::TryProcessMidAirTurn(const USpatialAudioComponent& Component, FSpatialRayState& Ray, UWorld* World,
-                                             bool bBias, float Budget, bool bSegMissed, bool& bAllDone,
+                                             float Budget, bool bSegMissed, bool& bAllDone,
                                              const USpatialAudioSettings& Settings) {
 	const FVector TurnPoint = Ray.Origin + Ray.Dir * Ray.SegSubmitLen;
 
@@ -305,7 +298,7 @@ bool FAsyncCastManager::TryProcessMidAirTurn(const USpatialAudioComponent& Compo
 
 	Ray.CumulativeDistance += Ray.SegSubmitLen;
 	Ray.Dir = ComputeMidAirTurnDirection(Ray.Dir, TurnPoint, Component.AsyncSteeringListenerPos,
-	                                     !Ray.bLoSFound && bBias, Settings.SurfaceRoughness,
+	                                     !Ray.bLoSFound, Settings.SurfaceRoughness,
 	                                     Settings.BounceListenerBias);
 	Ray.Origin = TurnPoint;
 	++Ray.Bounce;
@@ -333,7 +326,6 @@ void FAsyncCastManager::ProcessRayTermination(const USpatialAudioComponent& Comp
 			FMath::Min(Component.MaxRayDistance * Settings.RayLengthMultiplier, Ray.SegSubmitLen),
 			Budget - Ray.CumulativeDistance));
 		Ray.TerminalPoint = Ray.Origin + Ray.Dir * RemainingBudget;
-		Ray.bHasTerminalPoint = true;
 
 		if (ShouldDrawFlightPaths(Component)) {
 			DrawDebugLine(World, Ray.Origin, Ray.TerminalPoint,
@@ -424,7 +416,7 @@ bool FAsyncCastManager::TrySetupSurfaceCrawl(USpatialAudioComponent& Component, 
 }
 
 void FAsyncCastManager::ProcessRayBounceContinuation(USpatialAudioComponent& Component, FSpatialRayState& Ray,
-                                                      UWorld* World, const FHitResult& Hit, bool bBias, float Budget,
+                                                      UWorld* World, const FHitResult& Hit, float Budget,
                                                       bool& bAllDone, const USpatialAudioSettings& Settings) {
 	if (FVector::DotProduct(Hit.Normal, Ray.Dir) > 0.f) {
 		if (Component.bDrawDebugRays && Component.bShowSurfaceCrawl) {
@@ -449,24 +441,19 @@ void FAsyncCastManager::ProcessRayBounceContinuation(USpatialAudioComponent& Com
 
 	DrawFlightSegment(Component, World, Ray.Origin, Hit.Location, Settings);
 
-	const bool bDoCrawl = Settings.bEnableSurfaceCrawl && Ray.bNextHitCrawls
-		&& (!Settings.bCrawlOnFirstBounceOnly || Ray.Bounce == 0);
-
-	if (bDoCrawl && TrySetupSurfaceCrawl(Component, Ray, World, Hit, Settings)) {
+	if (Ray.bNextHitCrawls && TrySetupSurfaceCrawl(Component, Ray, World, Hit, Settings)) {
 		bAllDone = false;
 		return;
 	}
 
-	Ray.Dir = Math::ComputeBouncedDirection(Ray.Dir, Hit.Normal, !Ray.bLoSFound && bBias,
+	Ray.Dir = Math::ComputeBouncedDirection(Ray.Dir, Hit.Normal, !Ray.bLoSFound,
 	                                  Hit.Location, Component.AsyncSteeringListenerPos, Settings.SurfaceRoughness,
 	                                  Settings.BounceListenerBias);
 	Ray.Origin = Hit.Location + Hit.Normal * Settings.RaySurfaceBias;
 	++Ray.Bounce;
 	Ray.BounceWaypoints.Add({Ray.Origin, Ray.CumulativeDistance});
 
-	if (Settings.bEnableSurfaceCrawl) {
-		Ray.bNextHitCrawls = !Ray.bNextHitCrawls;
-	}
+	Ray.bNextHitCrawls = !Ray.bNextHitCrawls;
 
 	if (!Ray.bLoSFound) {
 		TryAddListenerLoSProbe(Component, Ray, World, Ray.Origin, Ray.CumulativeDistance, Budget, Settings);
@@ -486,7 +473,7 @@ void FAsyncCastManager::ProcessRayBounceContinuation(USpatialAudioComponent& Com
 }
 
 void FAsyncCastManager::TickSingleRay(USpatialAudioComponent& Component, FSpatialRayState& Ray, UWorld* World,
-                                      bool bBias, float Budget, bool& bAllDone,
+                                      float Budget, bool& bAllDone,
                                       const USpatialAudioSettings& Settings) {
 	const bool bLoSWasFound = Ray.bLoSFound;
 	DrainPendingLoSProbes(Component, Ray, World, Component.AsyncListenerPos);
@@ -511,7 +498,7 @@ void FAsyncCastManager::TickSingleRay(USpatialAudioComponent& Component, FSpatia
 	}
 
 	if (Ray.BatchPhase == FSpatialRayState::ERayBatchPhase::CrawlBatch) {
-		ProcessCrawlBatch(Component, Ray, World, bBias, Budget, bAllDone, Settings);
+		ProcessCrawlBatch(Component, Ray, World, Budget, bAllDone, Settings);
 		return;
 	}
 
@@ -523,7 +510,7 @@ void FAsyncCastManager::TickSingleRay(USpatialAudioComponent& Component, FSpatia
 
 	const bool bSegMissed = SegData.OutHits.IsEmpty();
 
-	if (TryProcessMidAirTurn(Component, Ray, World, bBias, Budget, bSegMissed, bAllDone, Settings)) {
+	if (TryProcessMidAirTurn(Component, Ray, World, Budget, bSegMissed, bAllDone, Settings)) {
 		return;
 	}
 
@@ -531,7 +518,7 @@ void FAsyncCastManager::TickSingleRay(USpatialAudioComponent& Component, FSpatia
 		ProcessRayTermination(Component, Ray, World, SegData, bSegMissed, Budget, bAllDone, Settings);
 	}
 	else {
-		ProcessRayBounceContinuation(Component, Ray, World, SegData.OutHits[0], bBias, Budget, bAllDone, Settings);
+		ProcessRayBounceContinuation(Component, Ray, World, SegData.OutHits[0], Budget, bAllDone, Settings);
 	}
 }
 
@@ -543,7 +530,6 @@ void FAsyncCastManager::TickAsyncCast(USpatialAudioComponent& Component, const U
 		return;
 	}
 
-	const bool bBias = Settings.bBiasRayDirections;
 	const float Budget = Component.MaxRayDistance * Settings.TotalPathBudgetMultiplier;
 
 	bool bAllDone = true;
@@ -552,7 +538,7 @@ void FAsyncCastManager::TickAsyncCast(USpatialAudioComponent& Component, const U
 		if (Ray.bDone) {
 			continue;
 		}
-		TickSingleRay(Component, Ray, World, bBias, Budget, bAllDone, Settings);
+		TickSingleRay(Component, Ray, World, Budget, bAllDone, Settings);
 	}
 
 	if (bAllDone) {
@@ -749,7 +735,7 @@ void FAsyncCastManager::DrawCrawlDebugVisualization(const FSpatialRayState& Ray,
 }
 
 void FAsyncCastManager::ApplyCrawlResult(const USpatialAudioComponent& Component, FSpatialRayState& Ray,
-                                         const FCrawlStepResult& Result, bool bBias,
+                                         const FCrawlStepResult& Result,
                                          const USpatialAudioSettings& Settings) {
 	Ray.CrawlStepProbes.Empty();
 	Ray.BatchPhase = FSpatialRayState::ERayBatchPhase::None;
@@ -766,7 +752,7 @@ void FAsyncCastManager::ApplyCrawlResult(const USpatialAudioComponent& Component
 		Ray.BounceWaypoints.Add({Ray.Origin, Ray.CumulativeDistance});
 	}
 	else {
-		Ray.Dir = Math::ComputeBouncedDirection(Ray.CrawlInDir, Ray.CrawlHitNormal, !Ray.bLoSFound && bBias,
+		Ray.Dir = Math::ComputeBouncedDirection(Ray.CrawlInDir, Ray.CrawlHitNormal, !Ray.bLoSFound,
 		                                  Ray.CrawlHitLoc, Component.AsyncSteeringListenerPos, Settings.SurfaceRoughness,
 		                                  Settings.BounceListenerBias);
 		Ray.Origin = Ray.CrawlHitLoc + Ray.CrawlHitNormal * Settings.RaySurfaceBias;
@@ -775,7 +761,7 @@ void FAsyncCastManager::ApplyCrawlResult(const USpatialAudioComponent& Component
 }
 
 void FAsyncCastManager::ProcessCrawlBatch(const USpatialAudioComponent& Component, FSpatialRayState& Ray, UWorld* World,
-                                          bool bBias, float Budget, bool& bAllDone,
+                                          float Budget, bool& bAllDone,
                                           const USpatialAudioSettings& Settings) {
 	FTraceDatum RangeData;
 	if (!AreCrawlTracesReady(World, Ray, RangeData)) {
@@ -800,11 +786,9 @@ void FAsyncCastManager::ProcessCrawlBatch(const USpatialAudioComponent& Componen
 		DrawCrawlDebugVisualization(Ray, World, Result, Limit, Settings);
 	}
 
-	ApplyCrawlResult(Component, Ray, Result, bBias, Settings);
+	ApplyCrawlResult(Component, Ray, Result, Settings);
 
-	if (Settings.bEnableSurfaceCrawl) {
-		Ray.bNextHitCrawls = !Ray.bNextHitCrawls;
-	}
+	Ray.bNextHitCrawls = !Ray.bNextHitCrawls;
 
 	if (!Ray.bLoSFound) {
 		TryAddListenerLoSProbe(Component, Ray, World, Ray.Origin, Ray.CumulativeDistance, Budget, Settings);
@@ -998,11 +982,10 @@ void FAsyncCastManager::SubmitFinalizeBatch(USpatialAudioComponent& Component, c
 	const bool bDirectLoSFound = !Component.bPreSweepCast && Math::HasAnyDirectLoS(Component.AsyncRays);
 
 	const FCachedPointAccum Accum = AccumulateCachedPoints(
-		Component.PendingValidCachedPoints, Settings);
+		Component.PendingValidCachedPoints, Component.MaxRayDistance, Settings);
 
-	// Only these three take a further contribution from the rays below.
+	// Only these two take a further contribution from the rays below.
 	int32 RaysReached = Accum.RaysReached;
-	int32 TotalLoSBounces = 0;
 	float MinLoSDist = Accum.MinLoSDist;
 
 	Component.Finalize.RefineProbes.Reset();
@@ -1012,7 +995,6 @@ void FAsyncCastManager::SubmitFinalizeBatch(USpatialAudioComponent& Component, c
 
 		if (Ray.bLoSFound) {
 			++RaysReached;
-			TotalLoSBounces += Ray.LoSBounces;
 			MinLoSDist = FMath::Min(MinLoSDist, Ray.LoSCumulativeDistance);
 		}
 
@@ -1031,7 +1013,6 @@ void FAsyncCastManager::SubmitFinalizeBatch(USpatialAudioComponent& Component, c
 	}
 
 	Component.Finalize.RaysReached = RaysReached;
-	Component.Finalize.TotalLoSBounces = TotalLoSBounces;
 	Component.Finalize.MinLoSDist = MinLoSDist;
 	Component.Finalize.WeightedPosSum = Accum.WeightedPos;
 	Component.Finalize.TotalWeight = Accum.TotalWeight;

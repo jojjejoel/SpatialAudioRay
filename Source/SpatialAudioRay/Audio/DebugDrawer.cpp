@@ -299,7 +299,7 @@ void USpatialAudioComponent::DrawSweepPacingDebugText(const uint64 Base, const U
 
 	const auto [PacingLabel, PacingColor] = ComputePacingDebugInfo(
 		SweepScheduling.GeometryBurstTimer, bBothStationary,
-		SweepScheduling.bStationaryIdleMode && !Settings.IsRateThrottlingDisabled(),
+		SweepScheduling.bStationaryIdleMode,
 		Settings.GeometryChangeBurstMultiplier, StoredEffFullSweepInterval, SweepScheduling.GeometryBurstTimer,
 		Settings.StationaryIdleMultiplier, CoverageFraction,
 		VelocityScaling.SmoothedSourceSpeed, VelocityScaling.SmoothedListenerSpeed,
@@ -351,9 +351,6 @@ void USpatialAudioComponent::DrawTraceStatsDebugText(const uint64 Base) const {
 
 void USpatialAudioComponent::DrawEdgeTimerDebugText(const uint64 Base, const USpatialAudioSettings& Settings) const {
 	// ── Slot 8: Edge timer activity ───────────────────────────────────────
-	if (!Settings.bCacheEdgePoints) {
-		return;
-	}
 	const float Ph0Interval = Settings.Phase0CheckInterval * VelocityScaling.EdgeMultiplier;
 
 	int32 Ph0Pending = 0;

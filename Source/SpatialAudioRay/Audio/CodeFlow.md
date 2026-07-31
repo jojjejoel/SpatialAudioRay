@@ -11,19 +11,17 @@ First time here? Read `ReadingGuide.md` instead. It is a step-by-step tour. This
 | File | What lives here |
 |---|---|
 | `SpatialAudioComponent.h/.cpp` | Main class and `TickComponent`. All state lives here. |
-| `AsyncCastManager.cpp` | Multi-frame async ray pipeline, the full sweep. |
-| `Updater.cpp` | Per-frame sync update cast and audio parameter writes. |
+| `AsyncCastManagerSubmit.cpp` | Sweep launch and the per-frame ray advance. |
+| `AsyncCastManagerReadback.cpp` | Finalize readback and the cache merge. |
+| `UpdaterCast.cpp` | Per-frame LoS sampling, update cast, LoS-break sweep. |
+| `UpdaterAudio.cpp` | Writing the final numbers to the `UAudioComponent`s. |
 | `EdgeCache.cpp` | Per-frame validation and eviction of cached diffraction edges. |
-| `RayPhysics.cpp` | Shared surface-crawl and LoS-sampling helpers, used by both casts. |
+| `RayPhysics.cpp` | Shared surface-crawl and bounce helpers, used by both casts. |
 | `DebugDrawer.cpp` | Debug overlay. Nothing here affects audio. |
 | `SpatialAudioDebugSubsystem.h/.cpp` | Registry of active components, global HUD, all debug key polling. |
 | `SpatialAudioTypes.h` | Shared structs: `FSpatialRayState`, `FCachedEdgePoint` and the rest. |
-| `Math.h` | Pure stateless helpers: occlusion formula, Fibonacci directions, path maths. |
+| `Math.h` | Pure stateless helpers: Fibonacci directions, clustering, path maths. |
 | `SpatialAudioSettings.h/.cpp` | The `UDataAsset` holding every tunable. |
-
-### Debug drawing notes
-
-Every `DrawDebugSphere` call in the plugin passes `SDPG_Foreground` so spheres render through walls, matching what `DrawDebugString`'s screen-space labels already did. `DrawDebugLine` calls stay depth-tested. `DebugLineDuration` lives in `USpatialAudioSettings`, read as `Settings.DebugLineDuration` where a `Settings` param is in scope and `Component.GetSettings().DebugLineDuration` in the two functions without one, `FUpdater::SyncOffsetLoSFraction` and `FEdgeCache::TickPhase0OffsetReadback`.
 
 ### Debug subsystem notes
 
@@ -37,32 +35,13 @@ The subsystem polls all debug keys, reading key config from the first registered
 
 ---
 
-## Start here: `TickComponent`
+## Frame order
 
-`TickComponent` in `SpatialAudioComponent.cpp` is the heartbeat. Everything runs from here in a fixed order every frame. Read it before any individual system.
+`TickComponent` calls its phases in a fixed order every frame and is short enough to read directly; `ReadingGuide.md` Stop 3 walks it. Two parts of it are not obvious from the call sequence.
 
-```
-1.  ReadbackFinalizeBatch()      read async probes submitted last frame
-2.  TickAsyncCast()              advance the full cast by one bounce level
-3.  UpdateVelocityScaling()      smoothed speeds into SweepMultiplier / EdgeMultiplier
-4.  UpdateGeometryBurstAndIdleState()
-5.  EdgeCache->TickCachedEdgeEviction()
-6.  ComputeEffectiveSweepInterval()
-7.  TickMovementSweepTrigger()   listener moved far, request an early sweep
-8.  TickDirectLoSSampling()      offset-LoS fraction and TargetOcclusion, every frame
-9.  branch:
-    a. StartAsyncFullCast()      interval elapsed, nothing running, and LoS confirmed
-                                 absent or occlusion in the pre-sweep band
-    b. PerformUpdateRayCast()    no cast running
-    c. nothing                   cast in progress
-10. PerformLoSBreakSweep()       only if LoS was just lost
-11. Blend occlusion and virtual source position toward targets
-12. UpdateAudioParameters()      write final values to the AudioComponents
-```
+**Sweep pacing** is decided by `ComputeEffectiveSweepInterval`, which folds together velocity scaling, geometry burst, stationary idle and the post-movement cache-fill state. Movement-triggered sweeps arm `MovementCacheFillMaxSweeps` and clear every edge's `bNewSinceFillArm`. Until `MovementCacheFillRequiredEdges` new edges are cached, meaning fresh slots or displacements rather than merge-matched re-confirmations, and non-relayed and non-evicting, sweeps keep burst pace even after movement stops. Budget is spent only by sweeps that leave the target short.
 
-Step 6 folds together velocity scaling, geometry burst, stationary idle and the post-movement cache-fill state. Movement-triggered sweeps arm `MovementCacheFillMaxSweeps` and clear every edge's `bNewSinceFillArm`. Until `MovementCacheFillRequiredEdges` new edges are cached, meaning fresh slots or displacements rather than merge-matched re-confirmations, and non-relayed and non-evicting, sweeps keep burst pace even after movement stops. Budget is spent only by sweeps that leave the target short.
-
-Step 9a's pre-sweep band is occlusion at or above `PreSweepOcclusionThreshold` while partial LoS remains. It pre-warms the edge cache before full occlusion, and such casts ignore direct-hit rays and skip cache clears and discards.
+**The pre-sweep band** is occlusion at or above `PreSweepOcclusionThreshold` while partial LoS remains. It pre-warms the edge cache before full occlusion, and such casts ignore direct-hit rays and skip cache clears and discards.
 
 ---
 
@@ -72,11 +51,11 @@ The main ray survey. It runs every `EffFullSweepInterval` seconds and takes `Max
 
 ### 1. `StartAsyncFullCast`
 
-Fires at the start of a sweep. Distributes `AsyncActualRays` directions over a Fibonacci sphere, submits the first async trace per ray, and sets `bAsyncCastActive`.
+Fires at the start of a sweep. Distributes `AsyncTotalRays` directions over a Fibonacci sphere, submits the first async trace per ray, and sets `bAsyncCastActive`.
 
 If `FullSweepCycleCount` is above 1 a sweep splits into sub-cycles, tracked by `CycleAccum.Index`. Positions and ray counts are captured on cycle 0 only.
 
-Cached edges are snapshotted into `PendingValidCachedPoints` at cycle 0. Direct, non-evicting entries count as free results and reduce the rays needed. Relayed and evicting entries stay in the snapshot for presentation but do not substitute for rays and do not exclude their directions, which `BuildCachedEdgeExclusionDirs` skips. A relay is an audible stopgap rather than a found path, so the sweep keeps searching at full budget, and the region around a relayed edge is exactly where its replacement most likely is.
+Cached edges are snapshotted into `PendingValidCachedPoints` at cycle 0. Direct, non-evicting entries count as free results and reduce the rays needed. Relayed and evicting entries stay in the snapshot for presentation but do not substitute for rays and do not have their directions skipped, which `BuildCachedEdgeSkipIndices` handles. A relay is an audible stopgap rather than a found path, so the sweep keeps searching at full budget, and the region around a relayed edge is exactly where its replacement most likely is.
 
 **Steering prediction.** With `SteeringPredictionLeadTime` above 0 the sweep also captures `AsyncSteeringSourcePos` and `AsyncSteeringListenerPos`, the actual positions led by the smoothed velocity vectors. The lead is signed, in `ComputeSteeringLead`. Within the lead time of losing direct LoS, which covers pre-sweep-band casts and the LoS-break sweep, steering aims at where the listener was, because the aperture just crossed is behind them, between there and the source. Once occlusion is sustained it flips to forward prediction.
 
@@ -113,9 +92,9 @@ Verified and unverified segments can interleave along the final polyline rather 
 
 Runs the frame after `SubmitFinalizeBatch`, at the top of the next `TickComponent`.
 
-If the sweep found no direct LoS it first re-checks the four listener offset points synchronously at current positions. If any has LoS to the source the entire sweep is discarded, because the listener gained partial LoS while the multi-frame cast was in flight and publishing would stomp `bHasDirectLoS` and register edges thrown away a frame later.
+If the sweep found no direct LoS, `TryDiscardStaleSweep` re-runs the five-sample LoS check synchronously at current positions. If occlusion has fallen back below `PreSweepOcclusionThreshold` the entire sweep is discarded, because the listener regained sight while the multi-frame cast was in flight and publishing would stomp `bHasDirectLoS` and register edges thrown away a frame later. Results inside the pre-sweep band are deliberately kept, since warming the cache during partial LoS is the point of pre-sweeps.
 
-Otherwise it reads back the refinement probes, picks the best virtual source position, upserts confirmed results into `CachedEdgePoints`, and writes `TargetOcclusion`, `TargetVirtualSourceLocation`, `TargetPathAttenuation`, `CycleAccum` (accumulated across sub-cycles, published only on the last) and `StoredLoSPaths` for per-frame recheck in the update cast.
+Otherwise `AccumulateRefineProbesIntoCycle` reads back the refinement probes into `CycleAccum` (accumulated across sub-cycles, published only on the last) and into `StoredLoSPaths` for per-frame recheck in the update cast, `MergeStoredPathsIntoCache` upserts confirmed results into `CachedEdgePoints`, and `PublishSweepAudioTargets` writes `TargetVirtualSourceLocation` and `TargetPathAttenuation`. It does not write `TargetOcclusion`, which the per-frame sampler owns; the one exception is zeroing it the moment a sweep confirms direct LoS.
 
 ---
 
@@ -151,7 +130,7 @@ Finally, `TargetOcclusion = 1 - smoothed fraction`.
 
 `PerformUpdateRayCast` in `UpdaterCast.cpp` runs only when no full cast is active. It is the fast path keeping the virtual source position and path attenuation responsive between sweeps.
 
-It weights cached edges using source-side weights only, meaning eviction confidence and geometric falloff, and writes `TargetVirtualSourceLocation` while refreshing `CurrentSourceToVirtualDistance` and `TargetPathAttenuation` from the cache. Then it clusters edges into virtual voices through `ClusterEdgePoints` and `SyncVirtualVoicesToClusters`. Finally it captures intermediate values into `AudioDiag` for the debug HUD.
+It weights cached edges using source-side weights only, meaning eviction confidence and geometric falloff, and writes `TargetVirtualSourceLocation` while refreshing `CurrentSourceToVirtualDistance` and `TargetPathAttenuation` from the cache. Then it clusters edges into virtual voices through `ClusterEdgePoints` and `SyncVirtualVoicesToClusters`. It casts no new rays of its own.
 
 Both steps stay active while occluded and through the pre-sweep band, gated on `bVirtualPathActive = !bHasDirectLoS || IsPreSweepActive()`. The crossfade gate starts opening before full occlusion, so the voices must already exist, be positioned and carry real path attenuation by then. Gating on `!bHasDirectLoS` alone left the gate opening onto an empty voice list, with crossfade above 0 and gain stuck at 0, until LoS fully dropped.
 
@@ -167,17 +146,13 @@ Cluster grouping still uses the edge points themselves, because pulled-back poin
 
 ### Per-edge phases, in order
 
-**TickEvictionFade.** If `bEvicting`, count down `EvictionAlpha` and remove at zero.
+`TickSingleEdge` runs them in sequence: `TickEvictionFade`, `TickPhase0Readback`, `TickPhase0OffsetReadback`, `TickMovementThresholdEviction`, `TickRelayMaintenance`, `TickPhase0Submission`. What the names do not say:
 
-**TickPhase0Readback.** Reads back the async listener-to-edge trace submitted last frame. A blocking hit first tries `TryPromoteToInnerAnchor`: if the previous point on the edge's own `ShortestPath`, one step back toward the source, already has direct unobstructed listener LoS, the edge shrinks back to that point instead. That is strictly better, since no diffraction is needed for what is now a direct leg, and `PathDist` is corrected by the trimmed segment's straight-line length. Only if that fails does it fan out to the listener offset points rather than evicting. A clear hit after blocking restores the edge, but only from listener-side evictions. Source-side ones, flagged `bSourceSideEviction` and caused by the movement threshold or the shortest-path recheck, cannot be revalidated by listener-to-edge LoS, which is typically still clear in both cases. Only a sweep rewriting the entry rehabilitates them.
+**A blocked Phase 0 trace does not evict.** It first tries `TryPromoteToInnerAnchor`: if the previous point on the edge's own `ShortestPath`, one step back toward the source, already has direct unobstructed listener LoS, the edge shrinks back to that point. That is strictly better, since no diffraction is needed for what is now a direct leg, and `PathDist` is corrected by the trimmed segment's straight-line length. Only if that fails does it fan out to four listener offset points at `DirectLoSSampleRadius`, and only if all of those are blocked does it try a relay rescue and then evict. The fan fires only on a blocked centre, so it costs nothing while the edge is comfortably visible.
 
-**TickPhase0OffsetReadback.** Reads back the fan submitted on a blocked centre trace: four points around the listener at `DirectLoSSampleRadius`, resolved with `ResolveOffsetPoint`, traced to the edge. Any clear point keeps the edge alive. All blocked attempts a relay rescue, and only if that fails does eviction start. The fan only fires when the centre is blocked, so it costs nothing while the edge is comfortably visible.
+**Restoring after a clear trace only applies to listener-side evictions.** Source-side ones, flagged `bSourceSideEviction` and caused by the movement threshold or the shortest-path recheck, cannot be revalidated by a listener-to-edge trace, which is typically still clear in both cases. Only a sweep rewriting the entry rehabilitates them.
 
-**TickMovementThresholdEviction.** If the source moved beyond `CachedEdgeUpdateMoveThreshold`, begin eviction. Listener movement never evicts, since listener-side validity is entirely Phase 0's job.
-
-**TickRelayMaintenance.** Covered below.
-
-**TickPhase0Submission.** Submits a new listener to `EffectivePoint()` trace for next frame's readback.
+**Listener movement never evicts anything.** Only source movement past `CachedEdgeUpdateMoveThreshold` does. Listener-side validity is entirely Phase 0's job.
 
 ### Per-cache phases
 
@@ -193,7 +168,7 @@ This path alone enables sub-segment refinement, via `bAllowSubSegmentRefine`. Wh
 
 Relay conversion is what actually piles them up, because it is inherently simultaneous: several edges bending around the same physical corner lose LoS on the same tick, each converts along its own edge-to-relay leg, and those legs all terminate at that one corner. Duplicates are not free. Each costs a cache slot, one `SubstituteCount` against the sweep ray budget, one exclusion direction so sweeps under-search a region holding a single corner, and, since `Math::ClusterEdgePoints` sums member weights into `Cluster.TotalWeight`, a larger share of the voice mix than a genuinely distinct opening gets.
 
-The survivor is the shortest `EffectivePathDist()`. At one point the listener leg is shared and the rank score's listener term cancels, so travelled distance is all that separates them. Bounce count deliberately does not enter, unlike the sweep's `IsBetter`, which compares candidates at different positions. Relayed entries are excluded and the test is on `EdgePoint`, never `EffectivePoint()`: relays rescued through the same clear fan point share a `RelayPoint` while their edges are distinct corners, so keying on the presented point would delete real edges, the same failure mode as the removed relay-yield rule. A converted relay clears `bRelayed` and is picked up on the next tick regardless.
+The survivor is the shortest `EffectivePathDist()`. At one point the listener leg is shared and the rank score's listener term cancels, so travelled distance is all that separates them. Bounce count deliberately does not enter, unlike the sweep's `OutranksIncumbent`, which compares candidates at different positions. Relayed entries are excluded and the test is on `EdgePoint`, never `EffectivePoint()`: relays rescued through the same clear fan point share a `RelayPoint` while their edges are distinct corners, so keying on the presented point would delete real edges, the same failure mode as the removed relay-yield rule. A converted relay clears `bRelayed` and is picked up on the next tick regardless.
 
 ### Relay rescue and conversion
 
@@ -207,19 +182,11 @@ When the readback instead confirms the relay still valid, it converts the relay 
 
 `BisectListenerLoS` derives its step count from the bracket length so the corner lands within half `CachedEdgeMergeRadius` however long the leg is. At a fixed five steps a 20 metre leg resolved to only about 60 centimetres, so relays converging on one corner from different legs each landed in their own 60 centimetre window and stayed permanently unmergeable. When no midpoint traces clear, the fallback is the relay point itself, which has the same acoustics, and promotion refinement walks it back toward the true corner on later intervals since the appended segment is exactly the bracket it bisects.
 
-### Two standing notes
-
-Phase 0 does not set `SweepScheduling.bGeometryChangeDetected`. Edge points sit on geometry surfaces, so a blocking hit does not reliably indicate that geometry changed. It fires inconsistently even with static geometry, and triggering a burst would cause permanent re-sweeping.
-
-Valid cached edges are snapshotted into `PendingValidCachedPoints` at the start of each sweep and injected as free confirmed results during readback. Only direct, non-evicting entries reduce the ray budget or exclude directions. Relayed and evicting ones present but do not stop the search for their replacement.
-
----
-
 ## How results reach the audio components
 
 `UpdateAudioParameters` and `UpdateDualModeAudio` in `UpdaterAudio.cpp`, called at the very end of every `TickComponent`. By then `CurrentOcclusion` has been smoothed toward `TargetOcclusion` and `CurrentVirtualSourceLocation` interpolated toward its target.
 
-**The source components.** Every component tagged `AudioComponentSource`, since an object can carry several co-located sounds all writing the shared diffraction bus, plus any live `PlaySoundThroughSpatialBus` one-shots, receives `CurvedOcclusion` through `OcclusionParamName`. Each MetaSound graph shapes its own volume and filtering from it continuously, with no external crossfade. Finished one-shots auto-destroy and their stale entries are pruned in the same loop. `ReadAttenuationSettings` uses the widest-range source for `AttenuationInnerRadius` and automatic `MaxRayDistance`.
+**The source components.** Every component tagged `AudioComponentSource`, since an object can carry several co-located sounds all writing the shared diffraction bus, plus any live `PlaySoundThroughSpatialBus` one-shots, receives `CurvedOcclusion` through `OcclusionParamName`. Each MetaSound graph shapes its own volume and filtering from it continuously, with no external crossfade. Finished one-shots auto-destroy and their stale entries are pruned in the same loop. `ReadAttenuationSettings` uses the widest-range source for `AttenuationInnerRadius` and for the ray range, which is that source's audible range times `MaxRayDistanceScale`.
 
 **The virtual crossfade gate**, running `ComputeVirtualCrossfadeRamp` into a low-pass into `ComputeVirtualCrossfadeTarget` into `ComputeVirtualCrossfadeSlew`. With `VirtualCrossfadeStartOcclusion` below 1, an occlusion-keyed ramp fades the virtual in through the band between that threshold and full occlusion, which is the pinhole and pre-sweep state, keyed to the same smoothed `CurrentOcclusion` the source's muffling follows. The ramp is low-passed over `VirtualCrossfadeSmoothingTime` because its band mapping amplifies occlusion-sampling wobble by `1/(1-Start)`.
 
@@ -233,7 +200,7 @@ A completed blank ring cycle forces the target to 1, meaning the full rotation f
 
 This makes the source-to-emitter leg cost what the engine charges for the same distance on the emitter-to-listener leg. With the old flat linear ramp, an emitter close to the listener with a long acoustic path behind it out-shouted a farther emitter with a shorter path, because the native curve restarted at full volume at the emitter while Leg1 was barely penalised.
 
-The blend toward `Leg1Geom` through `PathAttenuationGeomBlend`, 0 for pure travelled and the default, is unchanged and applied to the distance before curve evaluation. `Leg1Geom` is computed per call site from that site's own source and virtual-position pair: the per-frame cache-weighted path in `UpdaterCast.cpp`, the cluster target in `BuildDesiredVoices`, and the sweep readback. The existing `FInterpTo` smoothing toward the target is untouched. The pure linear `Math::ComputePathAttenuation` survives as the ray accumulator's form, which is unit-tested, and as the fallback when no attenuation asset exists.
+The blend toward `Leg1Geom` through `PathAttenuationGeomBlend`, 0 for pure travelled and the default, is unchanged and applied to the distance before curve evaluation. `Leg1Geom` is computed per call site from that site's own source and virtual-position pair: the per-frame cache-weighted path in `UpdaterCast.cpp`, the cluster target in `BuildDesiredVoices`, and the sweep readback. The existing `FInterpTo` smoothing toward the target is untouched. When no attenuation asset can be found, `EvaluateVirtualAttenuationVolumeAt` falls back to a linear ramp over the ray range.
 
 All of these are written to `AudioDiag` for the debug HUD and sent through `SetFloatParameter` to the `UAudioComponent`s.
 
@@ -241,41 +208,13 @@ All of these are written to `AudioDiag` for the debug HUD and sent through `SetF
 
 ## Key state groups on the component
 
-| Member | What it is |
-|---|---|
-| `AsyncRays` | Active rays during a sweep. Empty between sweeps. |
-| `Finalize` | Batch submitted when rays finish. Pending for exactly one frame. |
-| `CycleAccum` | Accumulates across sub-cycles, published on the last. |
-| `StoredLoSPaths` | LoS origins from the last sweep, for per-frame recheck. |
-| `CachedEdgePoints` | Confirmed diffraction edges surviving across sweeps. |
-| `TargetOcclusion` / `TargetVirtualSourceLocation` | What both casts write. `TickComponent` smooths toward them. |
-| `VelocityScaling` | Smoothed speeds and per-axis interval multipliers. |
-| `SweepScheduling` | Burst timer, stationary-idle mode, movement-trigger state. |
-| `AudioDiag` | Debug only. Last audio parameter values written each frame. |
-| `TraceDiag` | Debug only. Trace counts, per-sweep stats, snapshot history. |
+Every group is documented at its declaration in `SpatialAudioComponent.h`; read the private section top to bottom. The distinction that is not local to any one of them: `Target*` members are what the casts write and `Current*` members are what `TickComponent` smooths toward them, so nothing audible ever snaps. `AudioDiag` and `TraceDiag` are debug-only and no audio path reads them.
 
 ---
 
 ## The ray physics helpers
 
-`CrawlSurfaceToEdge` and `ProcessRayHit` in `RayPhysics.cpp` are called identically by the async cast, through `TickAsyncCast` into `ProcessRayHit`, and by the sync LoS-break sweep in `FUpdater::TraceSingleLoSBreakRay`. Reading them together explains both.
-
-`ProcessRayHit` decides what happens when a ray hits a surface. Crawls and reflections alternate, driven by `bNextHitCrawls`. On a crawl turn it calls `CrawlSurfaceToEdge`, which walks along the wall until the back-probe misses, marking the edge. On a bounce turn it reflects the direction with `Math::ReflectDir`.
-
-`CrawlSurfaceToEdge` blends the wall-slide direction with the projected listener direction to steer the crawl toward the listener. At each step it fires a back-probe along the negated surface normal to detect when the wall ends. The crawl range is `MaxCrawlSteps × CrawlStepSize`, capped further by `MaxStraightFlightDistance` when set, with a minimum of one step. A crawl that exhausts its range without finding an edge bounces off the wall from the original hit point.
-
----
-
-## Reading order summary
-
-1. `SpatialAudioTypes.h`, the struct shapes.
-2. `SpatialAudioComponent.h`, the state layout.
-3. `TickComponent`, the per-frame sequence.
-4. `StartAsyncFullCast`, `TickAsyncCast`, `SubmitFinalizeBatch`, `ReadbackFinalizeBatch`, the full cast.
-5. `TickDirectLoSSampling` and `PerformUpdateRayCast`, the per-frame fast path.
-6. `TickCachedEdgeEviction`, edge lifetime.
-7. `ProcessRayHit` and `CrawlSurfaceToEdge`, the ray physics.
-8. `UpdateAudioParameters` and `UpdateDualModeAudio`, how it becomes sound.
+`CrawlSurfaceToEdge` and `ProcessRayHit` in `RayPhysics.cpp` are shared by the async cast and the sync LoS-break sweep, so reading them once explains both. `ReadingGuide.md` Stop 7 covers what they do. The one number worth knowing is the crawl range: `MaxCrawlSteps × CrawlStepSize`, capped further by `MaxStraightFlightDistance` when set, with a minimum of one step. A crawl that exhausts it without finding an edge bounces off the wall from the original hit point.
 
 ---
 
@@ -322,7 +261,7 @@ It deliberately does not read the spatial component's direct-line-of-sight timer
 
 Playback injects the line's wave into the owner's voice `UAudioComponent`, tagged both `AudioComponentSource` so the pipeline above feeds it bus and occlusion, and `NPCVoiceAudio`, through `SetWaveParameter` before `Play`. A voice line therefore diffracts and muffles exactly like any other co-located sound.
 
-A playing line is never modified mid-flight, and bucket changes apply to the next line, with one exception. `TickBargeIn` handles three moments worth reacting to, ranked by `EvaluateBargeIn`: direct line of sight breaking, sight returning, and the committed bucket drifting at least `TransitionBucketDelta` steps from the bucket the playing line started at. The line is cut with a short declick fade, and one tick later a line from the reason's category fires through `FindBargeInLine`, which prefers the exact target bucket then the nearest rendered one, followed after `PostTransitionLineDelay` by a full line at the new effort.
+A playing line is never modified mid-flight, and bucket changes apply to the next line, with one exception. `TickSightReaction` handles three moments worth reacting to, ranked by `EvaluateBargeIn`: direct line of sight breaking, sight returning, and the committed bucket drifting at least `TransitionBucketDelta` steps from the bucket the playing line started at. The line is cut with a short declick fade, and one tick later a line from the reason's category fires through `FindBargeInLine`, which prefers the exact target bucket then the nearest rendered one, followed after `PostTransitionLineDelay` by a full line at the new effort.
 
 Visibility outranks effort drift deliberately. Losing sight inflates the acoustic path, which climbs the effort bands, so both trigger on the same tick, and ranking drift first would report a listener "moving away" who only stepped behind a wall.
 

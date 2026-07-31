@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Math/RandomStream.h"
@@ -26,6 +26,7 @@ public:
 
 	static FCachedPointAccum AccumulateCachedPoints(
 		const TArray<FCachedEdgePoint>& Points,
+		float MaxRayDistance,
 		const USpatialAudioSettings& Settings);
 
 	struct FRayAccumulatorInput {
@@ -33,25 +34,17 @@ public:
 		float MinLoSDist = TNumericLimits<float>::Max();
 		FVector WeightedPos = FVector::ZeroVector;
 		float TotalWeight = 0.f;
-		float DirectDist = 0.f;
 		float MaxRayDistance = 0.f;
 		bool bDirectLoSFound = false;
-		/** Needed to derive the straight-line source→virtual distance (Leg1Geom) for
-		 *  PathAttenuationGeomBlend, unused otherwise. */
-		FVector SourcePos = FVector::ZeroVector;
 	};
 
 	struct FRayAccumulatorOutput {
-		float OcclusionValue = 1.f;
-		float PathAttenuation = 0.f;
 		FVector VirtualSourcePos = FVector::ZeroVector;
 		bool bHasVirtualSource = false;
 		float MinLoSDist = 0.f;
 	};
 
-	static FRayAccumulatorOutput ComputeAudioFromRayAccumulator(
-		const FRayAccumulatorInput& In,
-		const USpatialAudioSettings& Settings);
+	static FRayAccumulatorOutput ComputeAudioFromRayAccumulator(const FRayAccumulatorInput& In);
 
 	// Seeded per (source, listener, ray index) so the lateral-band bias resampling in
 	// StartAsyncFullCast is reproducible while the player and source are stationary.
@@ -85,6 +78,25 @@ private:
 	static void AccumulateRefineProbesIntoCycle(USpatialAudioComponent& Component, const UWorld* World, const USpatialAudioSettings& Settings);
 	static void MergeStoredPathsIntoCache(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings);
 	static void AdvanceSweepCycleAndIdleState(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings);
+	static void PublishSweepAudioTargets(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings);
+
+	// ── MergeStoredPathsIntoCache phases ─────────────────────────────────────
+	// Mirrors the cluster priority: source-path falloff over listener-proximity falloff, the
+	// listener term inert while ListenerDistanceFalloff is 0.
+	static float RankScore(const USpatialAudioComponent& Component, const USpatialAudioSettings& Settings,
+	                       float PathDist, const FVector& Point);
+	static bool OutranksIncumbent(const USpatialAudioComponent& Component, const USpatialAudioSettings& Settings,
+	                              const FStoredLoSPath& Found, const FCachedEdgePoint& Incumbent);
+	static void WriteEntry(USpatialAudioComponent& Component, FCachedEdgePoint& Edge, const FStoredLoSPath& Found);
+	static int32 FindMergeCandidate(const USpatialAudioComponent& Component, const FVector& Point, float MergeRadiusSq);
+	static bool IsWorseIncumbent(const USpatialAudioComponent& Component, const USpatialAudioSettings& Settings,
+	                             const FCachedEdgePoint& Candidate, const FCachedEdgePoint& Worst);
+	static int32 FindWorstIncumbent(const USpatialAudioComponent& Component, const USpatialAudioSettings& Settings,
+	                                const TArray<bool>& bMatchedThisCycle);
+	static void MergeIntoSameCorner(USpatialAudioComponent& Component, FCachedEdgePoint& Edge,
+	                                const FStoredLoSPath& Found);
+	static bool TryDisplaceWorstIncumbent(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings,
+	                                      const FStoredLoSPath& Found, TArray<bool>& bMatchedThisCycle);
 
 	// A ray with probes still in flight waits one more tick, picked up via bTerminalLoSPending.
 	static void FinishOrDefer(FSpatialRayState& Ray, bool& bAllDone);
@@ -106,15 +118,15 @@ private:
 
 	// ── TickAsyncCast per-ray phases ─────────────────────────────────────────
 	static void TickSingleRay(USpatialAudioComponent& Component, FSpatialRayState& Ray, UWorld* World,
-	                          bool bBias, float Budget, bool& bAllDone, const USpatialAudioSettings& Settings);
+	                          float Budget, bool& bAllDone, const USpatialAudioSettings& Settings);
 	static bool TryProcessMidAirTurn(const USpatialAudioComponent& Component, FSpatialRayState& Ray, UWorld* World,
-	                                 bool bBias, float Budget, bool bSegMissed, bool& bAllDone,
+	                                 float Budget, bool bSegMissed, bool& bAllDone,
 	                                 const USpatialAudioSettings& Settings);
 	static void ProcessRayTermination(const USpatialAudioComponent& Component, FSpatialRayState& Ray, UWorld* World,
 	                                  const FTraceDatum& SegData, bool bSegMissed, float Budget, bool& bAllDone,
 	                                  const USpatialAudioSettings& Settings);
 	static void ProcessRayBounceContinuation(USpatialAudioComponent& Component, FSpatialRayState& Ray, UWorld* World,
-	                                         const FHitResult& Hit, bool bBias, float Budget, bool& bAllDone,
+	                                         const FHitResult& Hit, float Budget, bool& bAllDone,
 	                                         const USpatialAudioSettings& Settings);
 	static bool TrySetupSurfaceCrawl(USpatialAudioComponent& Component, FSpatialRayState& Ray, UWorld* World,
 	                                 const FHitResult& Hit, const USpatialAudioSettings& Settings);
@@ -165,10 +177,10 @@ private:
 	static void DrawCrawlDebugVisualization(const FSpatialRayState& Ray, const UWorld* World,
 	                                        const FCrawlStepResult& Result, int32 Limit, const USpatialAudioSettings& Settings);
 	static void ApplyCrawlResult(const USpatialAudioComponent& Component, FSpatialRayState& Ray,
-	                             const FCrawlStepResult& Result, bool bBias, const USpatialAudioSettings& Settings);
+	                             const FCrawlStepResult& Result, const USpatialAudioSettings& Settings);
 
 	static void ProcessCrawlBatch(const USpatialAudioComponent& Component, FSpatialRayState& Ray, UWorld* World,
-	                              bool bBias, float Budget, bool& bAllDone,
+	                              float Budget, bool& bAllDone,
 	                              const USpatialAudioSettings& Settings);
 	static void SubmitSegmentLoSProbes(const USpatialAudioComponent& Component, FSpatialRayState& Ray, UWorld* World,
 	                                   const FVector& SegOrigin, const FVector& SegDir,

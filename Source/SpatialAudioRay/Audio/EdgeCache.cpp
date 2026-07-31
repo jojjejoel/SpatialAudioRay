@@ -109,7 +109,7 @@ void FEdgeCache::TickPhase0Readback(USpatialAudioComponent& Component, FCachedEd
 	}
 
 	if (bBlocked) {
-		if (Settings.bEnableOffsetLoSChecks && Settings.DirectLoSSampleRadius > 0.f) {
+		if (Settings.DirectLoSSampleRadius > 0.f) {
 			SubmitPhase0OffsetFan(Component, Edge, World, ListenerPos, Settings.DirectLoSSampleRadius);
 		}
 		else {
@@ -539,10 +539,6 @@ bool FEdgeCache::TickSingleEdge(USpatialAudioComponent& Component, FCachedEdgePo
 }
 
 void FEdgeCache::TickCachedEdgeEviction(USpatialAudioComponent& Component, const float DeltaTime, const USpatialAudioSettings& Settings) {
-	if (!Settings.bCacheEdgePoints) {
-		return;
-	}
-
 	if (Component.bHasDirectLoS) {
 		Component.bPhase0HandlesStale = true;
 		return;

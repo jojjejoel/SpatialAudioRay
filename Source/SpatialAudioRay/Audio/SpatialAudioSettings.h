@@ -1,4 +1,4 @@
-﻿// Copyright Epic Games, Inc. All Rights Reserved.
+// Copyright Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -64,17 +64,16 @@ public:
 		meta = (ClampMin = "0.05"))
 	float FullSweepInterval = 0.5f;
 
-	/** Read the max ray distance from the AudioComponent's attenuation asset at BeginPlay. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Ray Casting")
-	bool bAutoMaxDistance = true;
-
 	/**
-	 * Maximum travel distance per ray segment in cm. Also used as the per-cast budget baseline.
-	 * Only used when bAutoMaxDistance is false.
+	 * Scales the ray range, which is otherwise the audible range of the widest-range source's
+	 * attenuation (inner extent + falloff), read at BeginPlay. That range is the right default
+	 * because a diffraction path found beyond it belongs to a sound already attenuated to
+	 * silence. Below 1 trades far-field paths for trace budget; above 1 searches past the
+	 * audible range, which only pays off when a long detour still lands inside it.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Ray Casting",
-		meta = (EditCondition = "!bAutoMaxDistance"))
-	float MaxRayDistance = 5000.f;
+		meta = (ClampMin = "0.1", ClampMax = "4.0"))
+	float MaxRayDistanceScale = 1.f;
 
 	/**
 	 * Multiplier on MaxRayDistance that sets the total cumulative travel budget across all bounces.
@@ -126,31 +125,13 @@ public:
 	 * 0.15–0.3 gives a gentle lean — keeps momentum from the reflected direction while
 	 * steering rays toward the listener side, helping them find diffraction edges sooner
 	 * without collapsing all rays to the same path.
-	 * Applied after the existing lateral-band bias (bBiasRayDirections) so both can be active.
+	 * Applied after the lateral-band bias on the launch direction, so both shape the same ray.
 	 * If the blended direction would go through the surface, it is re-projected onto the
 	 * hemisphere above the hit normal.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Ray Casting",
 		meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float BounceListenerBias = 0.f;
-
-	/**
-	 * Bias ray directions toward the lateral band (perpendicular to the source→listener axis).
-	 *
-	 * When the direct path is blocked, rays fired straight toward the listener hit the same
-	 * geometry that blocked it — wasted budget. Rays fired straight away from the listener
-	 * need to bounce all the way back around — almost never useful.
-	 * The lateral band is where diffraction edges actually exist.
-	 *
-	 * Forward rays (toward listener) are suppressed proportionally to how blocked the direct
-	 * path is. Backward rays (away from listener) are always suppressed. Lateral rays are kept.
-	 *
-	 * This does not change the total ray count — rejected directions are replaced by
-	 * independently sampled lateral-band candidates. Disable to restore the uniform
-	 * Fibonacci sphere (useful for debugging or comparing results).
-	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Ray Casting")
-	bool bBiasRayDirections = true;
 
 	/**
 	 * Seconds of movement to lead ray STEERING by: the sweep's aiming axis and every
@@ -171,31 +152,12 @@ public:
 
 	// ── Performance ───────────────────────────────────────────────────────────
 	// Adaptive behaviors that trade sweep frequency, ray count, and exploration
-	// breadth for lower CPU cost. Three independent groups can each be disabled
-	// separately, or all at once with bDisableAllOptimizations.
-	//
-	// Typical debug workflow: toggle bDisableAllOptimizations to see baseline ray
-	// behavior, confirm it looks correct, then re-enable groups one at a time to
-	// verify each optimization is having the expected effect.
-
-	/** Disable all performance optimizations in one toggle.
-	 *  Sweeps always fire at FullSweepInterval with full FullSweepRayCount, MaxBounces,
-	 *  and every ray direction cast — no adaptive throttling of any kind. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Performance")
-	bool bDisableAllOptimizations = false;
-
+	// breadth for lower CPU cost.
 
 	// ─ Sweep rate ─────────────────────────────────────────────────────────────
 	// Controls how often full sweeps fire. All of these modulate FullSweepInterval
 	// up or down at runtime: distance stretches it, velocity and geometry-change
 	// compress it, and stationary idle stretches it dramatically.
-
-	/** Disable all sweep-rate adaptation. Sweeps fire at exactly FullSweepInterval
-	 *  at all times — no distance stretch, no velocity speedup, no idle throttle,
-	 *  no movement triggers, no geometry-change burst. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Performance",
-		meta = (EditCondition = "!bDisableAllOptimizations"))
-	bool bDisableSweepRateThrottling = false;
 
 	/**
 	 * Seconds between full async sweeps at maximum distance (zero priority).
@@ -203,7 +165,7 @@ public:
 	 * Set equal to FullSweepInterval to disable interval scaling.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Performance",
-		meta = (EditCondition = "!bDisableAllOptimizations && !bDisableSweepRateThrottling", ClampMin = "0.05"))
+		meta = (ClampMin = "0.05"))
 	float MaxFullSweepInterval = 2.0f;
 
 	/**
@@ -217,7 +179,7 @@ public:
 	 * 0 = disable velocity-based interval scaling.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Performance",
-		meta = (EditCondition = "!bDisableAllOptimizations && !bDisableSweepRateThrottling", ClampMin = "0.0"))
+		meta = (ClampMin = "0.0"))
 	float VelocityScaleMaxSpeed = 400.f;
 
 	/**
@@ -226,36 +188,34 @@ public:
 	 * 1.0 = disable velocity scaling.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Performance",
-		meta = (EditCondition = "!bDisableAllOptimizations && !bDisableSweepRateThrottling", ClampMin = "0.05", ClampMax = "1.0"))
+		meta = (ClampMin = "0.05", ClampMax = "1.0"))
 	float VelocityIntervalScale = 0.5f;
 
 	/** Factor applied to the full sweep interval once a full sweep has completed while both
 	 *  source and listener were stationary and neither has moved significantly since.
 	 *  Applied instead of GeometryChangeBurstMultiplier in this deeper idle state.
-	 *  Burst mode still overrides this. 20 = sweeps fire 20× less often.
-	 *  Only active when bCacheEdgePoints is true. */
+	 *  Burst mode still overrides this. 20 = sweeps fire 20× less often. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Performance",
-		meta = (EditCondition = "!bDisableAllOptimizations && !bDisableSweepRateThrottling", ClampMin = "1.0", ClampMax = "100.0"))
+		meta = (ClampMin = "1.0", ClampMax = "100.0"))
 	float StationaryIdleMultiplier = 20.0f;
 
 	/** Distance (cm) either source or listener must move from their positions when stationary
-	 *  idle mode was entered to break out of idle and resume normal sweep pacing.
-	 *  Only active when bCacheEdgePoints is true. */
+	 *  idle mode was entered to break out of idle and resume normal sweep pacing. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Performance",
-		meta = (EditCondition = "!bDisableAllOptimizations && !bDisableSweepRateThrottling && bCacheEdgePoints", ClampMin = "1.0", ClampMax = "200.0"))
+		meta = (ClampMin = "1.0", ClampMax = "200.0"))
 	float StationaryIdleBreakDist = 25.0f;
 
 	/** Distance in cm the listener must move since the last sweep to request an early new sweep,
 	 *  bypassing the FullSweepInterval timer. Helps discover better edges quickly after the
 	 *  player moves to a new area. 0 = disable movement-triggered sweeps. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Performance",
-		meta = (EditCondition = "!bDisableAllOptimizations && !bDisableSweepRateThrottling", ClampMin = "0.0", ClampMax = "1000.0"))
+		meta = (ClampMin = "0.0", ClampMax = "1000.0"))
 	float MovementSweepTriggerDist = 200.f;
 
 	/** Minimum seconds between movement-triggered sweeps. Prevents continuous sweep thrashing
 	 *  while the player is running. Does not gate interval-triggered sweeps. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Performance",
-		meta = (EditCondition = "!bDisableAllOptimizations && !bDisableSweepRateThrottling", ClampMin = "0.0", ClampMax = "5.0"))
+		meta = (ClampMin = "0.0", ClampMax = "5.0"))
 	float MovementSweepCooldown = 0.3f;
 
 	/** After a movement-triggered sweep, keep sweeping at GeometryChangeBurstMultiplier speed for
@@ -265,7 +225,7 @@ public:
 	 *  without this, arriving occluded in a new spot can wait out the slow steady-state interval
 	 *  without re-surveying. The sweep cap bounds the cost when nothing new exists to find. 0 = off. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Performance",
-		meta = (EditCondition = "!bDisableAllOptimizations && !bDisableSweepRateThrottling && bCacheEdgePoints", ClampMin = "0", ClampMax = "20"))
+		meta = (ClampMin = "0", ClampMax = "20"))
 	int32 MovementCacheFillMaxSweeps = 0;
 
 	/** Newly-discovered (since the movement trigger; non-relayed, non-evicting) cached edge
@@ -273,42 +233,28 @@ public:
 	 *  the same spot don't count, and neither do relays — the point of the burst is discovering
 	 *  edges for the NEW position. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Performance",
-		meta = (EditCondition = "!bDisableAllOptimizations && !bDisableSweepRateThrottling && bCacheEdgePoints", ClampMin = "1", ClampMax = "16"))
+		meta = (ClampMin = "1", ClampMax = "16"))
 	int32 MovementCacheFillRequiredEdges = 1;
 
 	/** Seconds to run in burst mode after detecting a geometry change (a previously-missed
 	 *  direction now finds LoS, or a cached edge is evicted by chain-validation failure
 	 *  while stationary). During burst the sweep interval is multiplied by
-	 *  GeometryChangeBurstMultiplier to re-survey the scene quickly.
-	 *  Only active when bCacheEdgePoints is true. */
+	 *  GeometryChangeBurstMultiplier to re-survey the scene quickly. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Performance",
-		meta = (EditCondition = "!bDisableAllOptimizations && !bDisableSweepRateThrottling && bCacheEdgePoints", ClampMin = "0.0", ClampMax = "10.0"))
+		meta = (ClampMin = "0.0", ClampMax = "10.0"))
 	float GeometryChangeBurstDuration = 3.0f;
 
 	/** Multiplier applied to the full sweep interval during a geometry-change burst.
-	 *  Values < 1 produce faster sweeps. 0.25 = sweeps fire 4× more often.
-	 *  Only active when bCacheEdgePoints is true. */
+	 *  Values < 1 produce faster sweeps. 0.25 = sweeps fire 4× more often. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Performance",
-		meta = (EditCondition = "!bDisableAllOptimizations && !bDisableSweepRateThrottling && bCacheEdgePoints", ClampMin = "0.05", ClampMax = "1.0"))
+		meta = (ClampMin = "0.05", ClampMax = "1.0"))
 	float GeometryChangeBurstMultiplier = 0.25f;
 
 
 	// ─ Ray budget ─────────────────────────────────────────────────────────────
 	// Scales ray count and bounce depth with listener distance. Distant sources
 	// get fewer rays and shallower bounces, saving async trace cost when detail
-	// matters less. When disabled, always fires FullSweepRayCount / MaxBounces.
-
-	/** Disable distance-based ray count and bounce scaling. Always fires FullSweepRayCount
-	 *  rays and traces MaxBounces levels, regardless of how far the listener is. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Performance",
-		meta = (EditCondition = "!bDisableAllOptimizations"))
-	bool bDisableRayBudgetScaling = false;
-
-	/** Reduce ray count and bounce depth for sources far from the listener. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Performance",
-		meta = (EditCondition = "!bDisableAllOptimizations && !bDisableRayBudgetScaling"))
-	bool bScaleRaysByDistance = true;
-
+	// matters less.
 	/**
 	 * Shape of the distance priority falloff curve.
 	 * 1.0 = linear. >1 = priority holds higher for longer then drops steeply near max distance
@@ -316,12 +262,12 @@ public:
 	 * 2.0 = quadratic, 3.0 = cubic.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Performance",
-		meta = (EditCondition = "!bDisableAllOptimizations && !bDisableRayBudgetScaling && bScaleRaysByDistance", ClampMin = "0.5", ClampMax = "8.0"))
+		meta = (ClampMin = "0.5", ClampMax = "8.0"))
 	float DistancePriorityExponent = 2.0f;
 
 	/** Minimum full-sweep ray count when distance scaling is active. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Performance",
-		meta = (EditCondition = "!bDisableAllOptimizations && !bDisableRayBudgetScaling && bScaleRaysByDistance", ClampMin = "4"))
+		meta = (ClampMin = "4"))
 	int32 MinFullSweepRayCount = 16;
 
 	/**
@@ -331,7 +277,7 @@ public:
 	 * Set equal to MaxBounces to disable bounce scaling.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Performance",
-		meta = (EditCondition = "!bDisableAllOptimizations && !bDisableRayBudgetScaling", ClampMin = "0", ClampMax = "16"))
+		meta = (ClampMin = "0", ClampMax = "16"))
 	int32 MinMaxBounces = 1;
 
 
@@ -340,11 +286,6 @@ public:
 	// crawl along the surface until it finds the geometric edge, then continue from there.
 	// This directly finds diffraction edges rather than relying on random bounces to stumble
 	// onto them. Only applied in the per-frame sync update cast.
-
-	/** Enable surface-crawl edge detection on ray-wall hits in the per-frame update cast. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Surface Crawl")
-	bool bEnableSurfaceCrawl = true;
-
 	/**
 	 * Maximum number of crawl steps taken along a wall surface to find its edge.
 	 * Combined with CrawlStepSize this sets the maximum crawl range.
@@ -372,15 +313,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Surface Crawl",
 		meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float CrawlListenerBias = 0.5f;
-
-	/**
-	 * When enabled, surface crawling is only attempted on the first wall hit per ray (Bounce 0).
-	 * Reduces the maximum extra traces from (MaxBounces × MaxCrawlSteps) to MaxCrawlSteps per ray.
-	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Surface Crawl")
-	bool bCrawlOnFirstBounceOnly = false;
-
-
 	// ── Occlusion ─────────────────────────────────────────────────────────────
 	// Controls how the blocked/muffled effect is calculated and applied to audio.
 
@@ -388,27 +320,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Occlusion")
 	FName OcclusionParamName = "Occlusion";
 
-
-	/**
-	 * Controls how much path-length ratio is needed to reach full occlusion.
-	 * Occlusion = clamp( (AvgPathDist / DirectDist − 1) / OcclusionExcessPathScale )
-	 * where the numerator is the fractional excess: 0 = no detour, 1 = path is twice the direct distance.
-	 *
-	 * Lower values → occlusion rises faster with path ratio.
-	 * Higher values → sound stays clearer even with a long detour.
-	 *
-	 * Example: Scale = 1.5 → fully occluded when diffracted path exceeds 2.5× the direct distance.
-	 *
-	 * This is distance-invariant: occlusion depends on the ratio of path to direct distance,
-	 * so a source 50 cm away behind a wall is treated the same as one 500 cm away with the
-	 * same proportional detour. If no rays reach at all, occlusion is always 1.0.
-	 *
-	 * NOTE: if upgrading from an older version that used the absolute-excess formula
-	 * (ExcessDist / (MaxRayDistance × scale)), you will need to re-tune this value.
-	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Occlusion",
-		meta = (ClampMin = "0.05", ClampMax = "10.0"))
-	float OcclusionExcessPathScale = 1.5f;
 
 	/**
 	 * Seconds for occlusion to reach fully blocked (1.0) when no rays reach the listener at all.
@@ -486,23 +397,11 @@ public:
 	float OcclusionCurveExponent = 1.5f;
 
 	/**
-	 * Enable the 4 rotating ring sample points around the listener for the direct LoS check.
-	 * The check always traces the listener center; with this enabled it adds 4 points on a ring
-	 * perpendicular to the source direction, rotated a golden angle each check so successive
-	 * checks sample new directions. The clear fraction over all 5 points drives occlusion —
-	 * center-only LoS (e.g. through a small hole) reads as mostly occluded, not fully clear.
-	 * When disabled, only the center trace is used and occlusion is binary.
-	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Occlusion")
-	bool bEnableOffsetLoSChecks = true;
-
-	/**
 	 * Radius (cm) of the ring sample points around the listener for the direct LoS check.
 	 * Larger values widen the occlusion transition zone in listener-travel terms.
-	 * Only used when bEnableOffsetLoSChecks is enabled.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Occlusion",
-		meta = (ClampMin = "0.0", EditCondition = "bEnableOffsetLoSChecks"))
+		meta = (ClampMin = "0.0"))
 	float DirectLoSSampleRadius = 50.f;
 
 	/**
@@ -515,10 +414,9 @@ public:
 	 * source, and a sample already inside it is clear without tracing. Models source extent at
 	 * no extra trace cost (still 5 traces/check; cap points are computed, not resolve-traced).
 	 * 1 = sphere at the inner radius, 0 = point source (traces reach the exact center).
-	 * Only used when bEnableOffsetLoSChecks is enabled.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Occlusion",
-		meta = (ClampMin = "0.0", EditCondition = "bEnableOffsetLoSChecks"))
+		meta = (ClampMin = "0.0"))
 	float SourceLoSSampleRadiusScale = 1.f;
 
 	/** How often (in seconds) to run the direct LoS sample (center + ring, 5 sync traces plus 4
@@ -548,7 +446,7 @@ public:
 	 * 0.25 = checks fire 4x as often at full speed. 1.0 = no velocity scaling.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Occlusion",
-		meta = (ClampMin = "0.05", ClampMax = "1.0", EditCondition = "bEnableOffsetLoSChecks"))
+		meta = (ClampMin = "0.05", ClampMax = "1.0"))
 	float OffsetLoSVelocityScale = 0.25f;
 
 	/** How many checks it takes the ring to complete one rotation pattern (step = 90°/N).
@@ -556,7 +454,7 @@ public:
 	 *  yields an exactly constant value (no sampling wobble) while covering 4×N distinct
 	 *  directions. Higher = finer angular resolution but slower response; 1 = fixed ring. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Occlusion",
-		meta = (ClampMin = "1", ClampMax = "8", EditCondition = "bEnableOffsetLoSChecks"))
+		meta = (ClampMin = "1", ClampMax = "8"))
 	int32 OffsetRingRotationSteps = 4;
 
 	/** Exponent shaping the annulus radius ladder: check k of a rotation cycle samples its ring
@@ -566,7 +464,7 @@ public:
 	 *  higher biases further inward; 0 = rim-only (pre-annulus behavior). Costs nothing — the
 	 *  trace count and cycle length are unchanged, only the sample radii move. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Occlusion",
-		meta = (ClampMin = "0.0", ClampMax = "4.0", EditCondition = "bEnableOffsetLoSChecks"))
+		meta = (ClampMin = "0.0", ClampMax = "4.0"))
 	float OffsetRingRadiusExponent = 0.5f;
 
 	/** Time constant (seconds) for smoothing the pattern-averaged LoS fraction that drives
@@ -615,11 +513,6 @@ public:
 
 	// ── Virtual Source ────────────────────────────────────────────────────────
 	// Controls where the diffraction point is placed and how the audio component moves toward it.
-
-	/** Move the AudioComponent to the virtual source position each tick. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Virtual Source")
-	bool bDriveSourcePosition = true;
-
 	/**
 	 * Seconds for the AudioComponent to follow its blended target position.
 	 * The target is the lerp between actor position and the virtual source,
@@ -627,7 +520,7 @@ public:
 	 * 0 = instant, 0.125 = eighth of a second, 1 = roughly one second.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Virtual Source",
-		meta = (EditCondition = "bDriveSourcePosition", ClampMin = "0.0", ClampMax = "10.0"))
+		meta = (ClampMin = "0.0", ClampMax = "10.0"))
 	float AudioSourceMoveTime = 0.125f;
 
 	/**
@@ -813,16 +706,10 @@ public:
 	// budget and anchoring the virtual source between full sweeps.
 	// Direction exclusion and sweep-rate effects driven by the cache live in Performance.
 
-	/** Cache confirmed diffraction edges across sweeps to stabilise the virtual source
-	 *  and reduce the stochastic ray budget. Each cached point costs 2 traces per frame
-	 *  (source→edge, edge→listener) and saves one ray from the update/full-cast budget. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Edge Cache")
-	bool bCacheEdgePoints = true;
-
 	/** Maximum number of edge points cached simultaneously.
 	 *  Each additional point costs 2 extra synchronous traces per frame. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Edge Cache",
-		meta = (ClampMin = "1", ClampMax = "32", EditCondition = "bCacheEdgePoints"))
+		meta = (ClampMin = "1", ClampMax = "32"))
 	int32 CachedEdgeMaxCount = 4;
 
 	/** Distance in cm within which two diffraction points count as the same geometric corner and
@@ -832,7 +719,7 @@ public:
 	 *  least to reach the corner survives: at one point the listener leg is shared, so path
 	 *  length is all that separates them. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Edge Cache",
-		meta = (ClampMin = "5.0", ClampMax = "200.0", EditCondition = "bCacheEdgePoints"))
+		meta = (ClampMin = "5.0", ClampMax = "200.0"))
 	float CachedEdgeMergeRadius = 25.f;
 
 	/**
@@ -844,7 +731,7 @@ public:
 	 * Set to 0 for the original instant-removal behaviour.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Edge Cache",
-		meta = (ClampMin = "0.0", ClampMax = "2.0", EditCondition = "bCacheEdgePoints"))
+		meta = (ClampMin = "0.0", ClampMax = "2.0"))
 	float CachedEdgeEvictionFadeTime = 0.3f;
 
 	/** Minimum distance (cm) the SOURCE must have moved since a cached edge's path data was
@@ -854,7 +741,7 @@ public:
 	 *  and entries are otherwise only displaced by better-ranking sweep finds.
 	 *  0 = disable source-movement eviction. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Edge Cache",
-		meta = (ClampMin = "0.0", ClampMax = "500.0", EditCondition = "bCacheEdgePoints"))
+		meta = (ClampMin = "0.0", ClampMax = "500.0"))
 	float CachedEdgeUpdateMoveThreshold = 15.f;
 
 	/**
@@ -866,7 +753,7 @@ public:
 	 * 0 = check every frame (original behaviour).
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Edge Cache",
-		meta = (ClampMin = "0.0", ClampMax = "1.0", EditCondition = "bCacheEdgePoints"))
+		meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float Phase0CheckInterval = 0.1f;
 
 	/**
@@ -883,7 +770,7 @@ public:
 	 * just genuine geometry changes — a deliberate trade-off of enabling this. 0 = off.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Edge Cache",
-		meta = (ClampMin = "0.0", ClampMax = "5.0", EditCondition = "bCacheEdgePoints"))
+		meta = (ClampMin = "0.0", ClampMax = "5.0"))
 	float ShortestPathRecheckInterval = 0.f;
 
 	/**
@@ -897,7 +784,7 @@ public:
 	 * the way to the source. 0 = off.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Edge Cache",
-		meta = (ClampMin = "0.0", ClampMax = "5.0", EditCondition = "bCacheEdgePoints"))
+		meta = (ClampMin = "0.0", ClampMax = "5.0"))
 	float ShortestPathPromotionInterval = 0.f;
 
 	/**
@@ -919,7 +806,7 @@ public:
 	 * permanently unmergeable duplicates.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Edge Cache",
-		meta = (ClampMin = "0", ClampMax = "12", EditCondition = "bCacheEdgePoints"))
+		meta = (ClampMin = "0", ClampMax = "12"))
 	int32 ShortestPathPromotionBisectSteps = 0;
 
 
@@ -939,10 +826,4 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Debug",
 		meta = (ClampMin = "0.01"))
 	float DebugLineDuration = 0.5f;
-
-
-	// ── Helpers ───────────────────────────────────────────────────────────────
-
-	bool IsRateThrottlingDisabled()    const { return bDisableAllOptimizations || bDisableSweepRateThrottling; }
-	bool IsRayBudgetScalingDisabled()  const { return bDisableAllOptimizations || bDisableRayBudgetScaling; }
 };

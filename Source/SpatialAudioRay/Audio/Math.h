@@ -129,29 +129,6 @@ namespace Math {
 		return FMath::Max(0.f, LateralWeight - ForwardPenalty);
 	}
 
-	inline float ComputeOcclusionFromPathRatio(float AvgPathDist, float DirectDist,
-	                                           const USpatialAudioSettings& S) {
-		const float PathExcessRatio = DirectDist > 0.f
-			                              ? FMath::Max(0.f, AvgPathDist / DirectDist - 1.f)
-			                              : 0.f;
-		return FMath::Clamp(PathExcessRatio / FMath::Max(S.OcclusionExcessPathScale, 0.001f), 0.f, 1.f);
-	}
-	
-	// Leg1Geom = straight-line source→virtual-position distance, same basis VirtualPathBend
-	// already blends against (see ComputeVirtualAudioParams) — PathAttenuationGeomBlend applies
-	// the same idea to gain. Blending the distance itself (rather than two separately-computed
-	// attenuation values) keeps this a single pass through the existing formula below.
-	// NOTE: this pure linear form only backs the ray accumulator (and its unit tests) and the
-	// no-attenuation-asset fallback. The live audible paths use
-	// USpatialAudioComponent::ComputePathAttenuationCurved, which evaluates the actual source
-	// attenuation curve at the blended Leg1 distance so the source→emitter leg attenuates with
-	// the same shape the engine applies to the emitter→listener leg.
-	inline float ComputePathAttenuation(float AvgPathDist, float Leg1Geom,
-	                                    float MaxRayDistance, const USpatialAudioSettings& S) {
-		const float BlendedDist = FMath::Lerp(AvgPathDist, Leg1Geom, S.PathAttenuationGeomBlend);
-		return FMath::Clamp(BlendedDist / FMath::Max(MaxRayDistance, 1.f) * S.PathAttenuationStrength, 0.f, 1.f);
-	}
-
 	/** Floor on the attenuation falloff scale — a zero-length falloff would cut straight from
 	 *  full volume to silence at the inner radius. */
 	constexpr float MinFalloffScale = 0.05f;

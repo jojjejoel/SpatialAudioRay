@@ -1,4 +1,4 @@
-﻿#include "CoreMinimal.h"
+#include "CoreMinimal.h"
 #include "SpatialAudioTypes.h"
 #include "Misc/AutomationTest.h"
 #include "Audio/Math.h"
@@ -85,66 +85,6 @@ bool FReflectDirection_DoubleReflection::RunTest(const FString& Parameters) {
 	return true;
 }
 
-
-// ─── ComputePathAttenuation ───────────────────────────────────────────────────
-
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FPathAttenuation_NoExcess,
-	"SpatialAudioRay.Math.PathAttenuation.NoExcess",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
-)
-
-bool FPathAttenuation_NoExcess::RunTest(const FString& Parameters) {
-	const auto Settings = NewObject<USpatialAudioSettings>();
-	Settings->PathAttenuationStrength = 1.f; // full strength for testing;
-	// Path equal to direct distance → no attenuation. Leg1Geom == AvgPathDist so
-	// PathAttenuationGeomBlend (default 0) can't change the result either way.
-	const float Result = Math::ComputePathAttenuation(1000.f, 1000.f, 1000.f, *Settings);
-	TestEqual(TEXT("Equal path and max distance gives full attenuation"), Result, 1.f);
-	return true;
-}
-
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FPathAttenuation_FullExcess,
-	"SpatialAudioRay.Math.PathAttenuation.FullExcess",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
-)
-
-bool FPathAttenuation_FullExcess::RunTest(const FString& Parameters) {
-	const auto Settings = NewObject<USpatialAudioSettings>();
-	// Path at max distance → full attenuation. Leg1Geom == AvgPathDist, same reasoning as above.
-	const float Result = Math::ComputePathAttenuation(2000.f, 2000.f, 1000.f, *Settings);
-	TestTrue(TEXT("Path exceeding max distance gives attenuation > 0"), Result > 0.f);
-	TestTrue(TEXT("Attenuation is clamped to 1"), Result <= 1.f);
-	return true;
-}
-
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FPathAttenuation_GeomBlend,
-	"SpatialAudioRay.Math.PathAttenuation.GeomBlend",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
-)
-
-bool FPathAttenuation_GeomBlend::RunTest(const FString& Parameters) {
-	const auto Settings = NewObject<USpatialAudioSettings>();
-	Settings->PathAttenuationStrength = 1.f;
-
-	// A long, complex traveled path (2000) vs a much shorter straight-line distance (500),
-	// MaxRayDistance 2000.
-	Settings->PathAttenuationGeomBlend = 0.f;
-	const float PureTraveled = Math::ComputePathAttenuation(2000.f, 500.f, 2000.f, *Settings);
-	TestEqual(TEXT("Blend 0 ignores Leg1Geom entirely"), PureTraveled, 1.f);
-
-	Settings->PathAttenuationGeomBlend = 1.f;
-	const float PureGeom = Math::ComputePathAttenuation(2000.f, 500.f, 2000.f, *Settings);
-	TestEqual(TEXT("Blend 1 ignores traveled distance entirely"), PureGeom, 0.25f);
-
-	Settings->PathAttenuationGeomBlend = 0.5f;
-	const float Blended = Math::ComputePathAttenuation(2000.f, 500.f, 2000.f, *Settings);
-	TestTrue(TEXT("Blend 0.5 lands strictly between the two pure results"),
-	          Blended > PureGeom && Blended < PureTraveled);
-	return true;
-}
 
 // ─── GenerateFibonacciDirections ──────────────────────────────────────────────
 
@@ -275,35 +215,6 @@ bool FFibonacci_DeterministicForSamePole::RunTest(const FString& Parameters) {
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FOcclusionRatio_DirectPath,
-	"SpatialAudioRay.Math.OcclusionRatio.DirectPath",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
-)
-
-bool FOcclusionRatio_DirectPath::RunTest(const FString& Parameters) {
-	const auto Settings = NewObject<USpatialAudioSettings>();
-
-	const float Result = Math::ComputeOcclusionFromPathRatio(1000.f, 1000.f, *Settings);
-	TestEqual(TEXT("Direct path gives zero occlusion"), Result, 0.f);
-	return true;
-}
-
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FOcclusionRatio_Clamped,
-	"SpatialAudioRay.Math.OcclusionRatio.Clamped",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
-)
-
-bool FOcclusionRatio_Clamped::RunTest(const FString& Parameters) {
-	// Extremely long path → occlusion clamped to 1
-	const auto Settings = NewObject<USpatialAudioSettings>();
-	const float Result = Math::ComputeOcclusionFromPathRatio(99999.f, 100.f, *Settings);
-	TestTrue(TEXT("Extreme path excess is clamped to 1"), Result <= 1.f);
-	TestTrue(TEXT("Extreme path excess gives high occlusion"), Result > 0.9f);
-	return true;
-}
-
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FRayDirectionWeight_Perpendicular,
 	"SpatialAudioRay.Math.RayDirectionWeight.Perpendicular",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
@@ -366,29 +277,6 @@ bool FRayDirectionWeight_DirectLoSFraction::RunTest(const FString& Parameters) {
 	TestTrue(
 		TEXT("Higher DirectLoSFraction increases weight"),
 		FullLoS > NoLoS);
-
-	return true;
-}
-
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FOcclusionRatio_ZeroDirectDistance,
-	"SpatialAudioRay.Math.OcclusionRatio.ZeroDirectDistance",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
-)
-
-bool FOcclusionRatio_ZeroDirectDistance::RunTest(const FString& Parameters) {
-	const auto Settings = NewObject<USpatialAudioSettings>();
-
-	const float Result =
-		Math::ComputeOcclusionFromPathRatio(
-			1000.f,
-			0.f,
-			*Settings);
-
-	TestEqual(
-		TEXT("Zero direct distance returns zero occlusion"),
-		Result,
-		0.f);
 
 	return true;
 }
