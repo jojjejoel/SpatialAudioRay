@@ -64,6 +64,40 @@ namespace Math {
 		return Distance / FMath::Sqrt(Distance * Distance + Radius * Radius);
 	}
 
+	// First candidate lying within MinDot of Dir (a cosine, so a larger value is a narrower
+	// cone), or INDEX_NONE. Backs both direction-skipping filters a sweep applies: the
+	// cached-edge exclusion and the known-miss match.
+	inline int32 FindDirectionWithinCone(const FVector& Dir, const TArray<FVector>& Candidates, float MinDot) {
+		for (int32 i = 0; i < Candidates.Num(); ++i) {
+			if (FVector::DotProduct(Dir, Candidates[i]) >= MinDot) {
+				return i;
+			}
+		}
+		return INDEX_NONE;
+	}
+
+	// Every LoS probe is gated on this same sum, and it only grows as a ray travels further:
+	// moving a distance D can close the gap to the listener by at most D, so the total can never
+	// dip back under the budget once it has passed it. That makes the bound a lossless prune —
+	// a ray that fails here can never produce a passing probe again, so flying it on would burn
+	// traces for no possible payoff.
+	inline bool IsWithinPathBudget(float CumulativeDistance, const FVector& Point,
+	                               const FVector& ListenerPos, float Budget) {
+		return CumulativeDistance + FVector::Dist(Point, ListenerPos) <= Budget;
+	}
+
+	// Length of the next straight flight segment: the ray's own reach, capped by what is left of
+	// the total path budget, then by MaxStraightFlightDistance when that turn-forcing cap is on
+	// (0 = off). Callers with no budget to spend pass an unbounded RemainingBudget.
+	inline float ComputeNextSegmentLength(float MaxRayDistance, float RemainingBudget,
+	                                      float MaxStraightFlightDistance) {
+		float Length = FMath::Min(MaxRayDistance, RemainingBudget);
+		if (MaxStraightFlightDistance > 0.f) {
+			Length = FMath::Min(Length, MaxStraightFlightDistance);
+		}
+		return Length;
+	}
+
 	inline TArray<FVector> GenerateFibonacciDirections(int32 NumRays, const FVector& PoleDir = FVector::UpVector) {
 		TArray<FVector> Directions;
 		if (NumRays <= 0) {

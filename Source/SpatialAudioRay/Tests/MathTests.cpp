@@ -1139,3 +1139,154 @@ bool FFalloffScaleForOuterRadius_Clamps::RunTest(const FString& Parameters) {
 		FMath::IsNearlyEqual(Math::ComputeFalloffScaleForOuterRadius(2000.f, 100.f, 0.f), 1.f, 0.001f));
 	return true;
 }
+
+// ─── IsWithinPathBudget ───────────────────────────────────────────────────────
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FIsWithinPathBudget_Bounds,
+	"SpatialAudioRay.Math.IsWithinPathBudget.Bounds",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FIsWithinPathBudget_Bounds::RunTest(const FString& Parameters) {
+	const FVector Listener(0.f, 0.f, 0.f);
+	const FVector Point(300.f, 0.f, 0.f);
+
+	TestTrue(TEXT("Travelled plus remaining under the budget passes"),
+		Math::IsWithinPathBudget(100.f, Point, Listener, 1000.f));
+
+	// The gate is inclusive: a probe whose best case spends exactly the budget is still worth
+	// submitting, and the prune that shares this bound must not kill that ray.
+	TestTrue(TEXT("Exactly on the budget passes"),
+		Math::IsWithinPathBudget(700.f, Point, Listener, 1000.f));
+
+	TestFalse(TEXT("One unit over the budget fails"),
+		Math::IsWithinPathBudget(701.f, Point, Listener, 1000.f));
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FIsWithinPathBudget_NeverRecovers,
+	"SpatialAudioRay.Math.IsWithinPathBudget.NeverRecovers",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FIsWithinPathBudget_NeverRecovers::RunTest(const FString& Parameters) {
+	// What makes the prune lossless: flying a ray straight at the listener is the best case a
+	// ray can do, and even then the sum only holds level — it never drops. So a ray that fails
+	// this bound once can never pass it again, whatever it does next.
+	const FVector Listener(0.f, 0.f, 0.f);
+	const float Budget = 999.f;
+
+	for (float Travelled = 0.f; Travelled <= 900.f; Travelled += 100.f) {
+		const FVector Point(1000.f - Travelled, 0.f, 0.f);
+		TestFalse(
+			FString::Printf(TEXT("Still over budget after travelling %.0f toward the listener"), Travelled),
+			Math::IsWithinPathBudget(Travelled, Point, Listener, Budget));
+	}
+
+	return true;
+}
+
+// ─── ComputeNextSegmentLength ─────────────────────────────────────────────────
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FNextSegmentLength_TakesTightestLimit,
+	"SpatialAudioRay.Math.NextSegmentLength.TakesTightestLimit",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FNextSegmentLength_TakesTightestLimit::RunTest(const FString& Parameters) {
+	TestTrue(TEXT("Remaining budget shorter than the ray's reach wins"),
+		FMath::IsNearlyEqual(Math::ComputeNextSegmentLength(2000.f, 500.f, 0.f), 500.f));
+
+	TestTrue(TEXT("Ray's reach shorter than the remaining budget wins"),
+		FMath::IsNearlyEqual(Math::ComputeNextSegmentLength(800.f, 5000.f, 0.f), 800.f));
+
+	TestTrue(TEXT("Straight-flight cap wins when it is the tightest of the three"),
+		FMath::IsNearlyEqual(Math::ComputeNextSegmentLength(2000.f, 1500.f, 300.f), 300.f));
+
+	TestTrue(TEXT("Straight-flight cap above the other limits does not extend the segment"),
+		FMath::IsNearlyEqual(Math::ComputeNextSegmentLength(900.f, 1500.f, 4000.f), 900.f));
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FNextSegmentLength_CapOffAndUnbounded,
+	"SpatialAudioRay.Math.NextSegmentLength.CapOffAndUnbounded",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FNextSegmentLength_CapOffAndUnbounded::RunTest(const FString& Parameters) {
+	// MaxStraightFlightDistance = 0 means the mid-air turn feature is off, not a zero-length
+	// segment — reading it as a real cap would stall every ray on the spot.
+	TestTrue(TEXT("A zero straight-flight cap is off, not a zero-length segment"),
+		FMath::IsNearlyEqual(Math::ComputeNextSegmentLength(1200.f, 3000.f, 0.f), 1200.f));
+
+	// The launch segment has spent no budget yet, so it passes an unbounded one and must come
+	// back with the ray's own reach rather than infinity.
+	TestTrue(TEXT("An unbounded budget leaves the ray's own reach as the limit"),
+		FMath::IsNearlyEqual(
+			Math::ComputeNextSegmentLength(1750.f, TNumericLimits<float>::Max(), 0.f), 1750.f));
+
+	return true;
+}
+
+// ─── FindDirectionWithinCone ──────────────────────────────────────────────────
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FFindDirectionWithinCone_Matches,
+	"SpatialAudioRay.Math.FindDirectionWithinCone.Matches",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FFindDirectionWithinCone_Matches::RunTest(const FString& Parameters) {
+	const TArray<FVector> Candidates = {FVector::UpVector, FVector::RightVector, FVector::ForwardVector};
+	const float MinDot = FMath::Cos(FMath::DegreesToRadians(30.f));
+
+	TestEqual(TEXT("An exact match returns its index"),
+		Math::FindDirectionWithinCone(FVector::RightVector, Candidates, MinDot), 1);
+
+	const FVector JustInside = FVector(FMath::Sin(FMath::DegreesToRadians(20.f)), 0.f,
+	                                   FMath::Cos(FMath::DegreesToRadians(20.f))).GetSafeNormal();
+	TestEqual(TEXT("20 degrees off matches inside a 30 degree cone"),
+		Math::FindDirectionWithinCone(JustInside, Candidates, MinDot), 0);
+
+	const FVector JustOutside = FVector(FMath::Sin(FMath::DegreesToRadians(40.f)), 0.f,
+	                                    FMath::Cos(FMath::DegreesToRadians(40.f))).GetSafeNormal();
+	TestEqual(TEXT("40 degrees off falls outside a 30 degree cone"),
+		Math::FindDirectionWithinCone(JustOutside, Candidates, MinDot), INDEX_NONE);
+
+	// The opposite direction must never match: dot goes negative, and a sweep that treated a
+	// direction as already covered by the edge behind it would drop the ray for nothing.
+	TestEqual(TEXT("The opposite direction never matches"),
+		Math::FindDirectionWithinCone(-FVector::UpVector, Candidates, MinDot), INDEX_NONE);
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FFindDirectionWithinCone_EmptyAndFirstWins,
+	"SpatialAudioRay.Math.FindDirectionWithinCone.EmptyAndFirstWins",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FFindDirectionWithinCone_EmptyAndFirstWins::RunTest(const FString& Parameters) {
+	// No cached edges and no recorded misses is the common case, and it must exclude nothing.
+	TestEqual(TEXT("An empty candidate set matches nothing"),
+		Math::FindDirectionWithinCone(FVector::UpVector, TArray<FVector>(), 0.5f), INDEX_NONE);
+
+	// Callers index back into the array with the result, so the first match has to be the one
+	// reported rather than the closest.
+	const TArray<FVector> Overlapping = {
+		FVector(0.f, 0.2f, 1.f).GetSafeNormal(),
+		FVector::UpVector
+	};
+	TestEqual(TEXT("The first candidate in range wins, not the nearest"),
+		Math::FindDirectionWithinCone(FVector::UpVector, Overlapping,
+		                              FMath::Cos(FMath::DegreesToRadians(30.f))), 0);
+
+	return true;
+}

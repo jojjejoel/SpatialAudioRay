@@ -387,3 +387,99 @@ bool FMidAirTurn_ResultIsNormalized::RunTest(const FString& Parameters) {
 	}
 	return true;
 }
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSelectCycleDirections_PartitionsTheSet,
+	"SpatialAudioRay.Async.SelectCycleDirections.PartitionsTheSet",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FSelectCycleDirections_PartitionsTheSet::RunTest(const FString& Parameters) {
+	// Staggering a sweep across cycles is only lossless if the cycles together hit every
+	// direction exactly once — a gap is a blind spot, an overlap is a wasted ray.
+	constexpr int32 Total = 10;
+	constexpr int32 CycleCount = 3;
+
+	TArray<FVector> All;
+	for (int32 i = 0; i < Total; ++i) {
+		All.Add(FVector(static_cast<double>(i), 0.0, 0.0));
+	}
+
+	TArray<int32> Seen;
+	for (int32 Cycle = 0; Cycle < CycleCount; ++Cycle) {
+		TArray<FVector> Dirs;
+		TArray<int32> Indices;
+		FAsyncCastManager::SelectCycleDirections(All, Cycle, CycleCount, Dirs, Indices);
+
+		TestEqual(TEXT("Every selected direction carries its index"), Dirs.Num(), Indices.Num());
+		for (int32 i = 0; i < Dirs.Num(); ++i) {
+			TestTrue(TEXT("Index refers to the direction it was taken from"),
+				Dirs[i].Equals(All[Indices[i]]));
+			Seen.Add(Indices[i]);
+		}
+	}
+
+	Seen.Sort();
+	TestEqual(TEXT("The cycles together cover the whole set"), Seen.Num(), Total);
+	for (int32 i = 0; i < Seen.Num(); ++i) {
+		TestEqual(TEXT("Each direction is cast exactly once across the sequence"), Seen[i], i);
+	}
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSelectCycleDirections_ResetsOutputs,
+	"SpatialAudioRay.Async.SelectCycleDirections.ResetsOutputs",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FSelectCycleDirections_ResetsOutputs::RunTest(const FString& Parameters) {
+	const TArray<FVector> All = {FVector::ForwardVector, FVector::RightVector};
+
+	TArray<FVector> Dirs = {FVector::UpVector, FVector::UpVector, FVector::UpVector};
+	TArray<int32> Indices = {99, 99, 99};
+	FAsyncCastManager::SelectCycleDirections(All, 0, 1, Dirs, Indices);
+
+	TestEqual(TEXT("Leftover directions from a previous cycle are cleared"), Dirs.Num(), 2);
+	TestEqual(TEXT("Leftover indices from a previous cycle are cleared"), Indices.Num(), 2);
+
+	// A start index past the end is a legal empty slice, not a read off the end.
+	FAsyncCastManager::SelectCycleDirections(All, 5, 1, Dirs, Indices);
+	TestEqual(TEXT("A start index past the end selects nothing"), Dirs.Num(), 0);
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FCountPrefixAnchorWaypoints_StopsAtTheEdge,
+	"SpatialAudioRay.Async.CountPrefixAnchorWaypoints.StopsAtTheEdge",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FCountPrefixAnchorWaypoints_StopsAtTheEdge::RunTest(const FString& Parameters) {
+	TArray<FSpatialRayState::FBounceWaypoint> Waypoints;
+	Waypoints.Add({FVector(100.f, 0.f, 0.f), 100.f});
+	Waypoints.Add({FVector(200.f, 0.f, 0.f), 250.f});
+	Waypoints.Add({FVector(300.f, 0.f, 0.f), 400.f});
+
+	TestEqual(TEXT("Only waypoints before the LoS origin are anchors"),
+		FAsyncCastManager::CountPrefixAnchorWaypoints(Waypoints, 260.f), 2);
+
+	// A waypoint sitting exactly at the LoS origin is the edge point itself, not a step on the
+	// source side of it, so string pulling must not try to shortcut to it.
+	TestEqual(TEXT("A waypoint exactly at the LoS distance is not an anchor"),
+		FAsyncCastManager::CountPrefixAnchorWaypoints(Waypoints, 250.f), 1);
+
+	TestEqual(TEXT("An LoS origin before every waypoint leaves no anchors"),
+		FAsyncCastManager::CountPrefixAnchorWaypoints(Waypoints, 50.f), 0);
+
+	TestEqual(TEXT("An LoS origin past every waypoint takes them all"),
+		FAsyncCastManager::CountPrefixAnchorWaypoints(Waypoints, 9000.f), 3);
+
+	const TArray<FSpatialRayState::FBounceWaypoint> NoWaypoints;
+	TestEqual(TEXT("A ray that never turned has no anchors"),
+		FAsyncCastManager::CountPrefixAnchorWaypoints(NoWaypoints, 500.f), 0);
+
+	return true;
+}
