@@ -394,7 +394,7 @@ private:
 	void PerformStartupLoSCheck();
 
 	void UpdateVelocityScaling(float DeltaTime, bool bInRange, const APawn* Pawn);
-	void UpdateGeometryBurstAndIdleState(float DeltaTime, bool bInRange, const APawn* Pawn);
+	void UpdateStationaryIdleState(bool bInRange, const APawn* Pawn);
 
 	/** Every component tagged AudioComponentSource on the owner, plus any live bus one-shots
 	 *  from PlaySoundThroughSpatialBus. Co-located sounds share ONE spatial pipeline (bus,
@@ -659,12 +659,6 @@ private:
 	} VelocityScaling;
 
 	struct FSweepSchedulingState {
-		float GeometryBurstTimer = 0.f;
-		/** Deliberately NOT set by edge-cache Phase 0. Edge points sit on geometry surfaces, so a
-		 *  listener-to-edge trace returns a blocking hit inconsistently even against static
-		 *  geometry, and bursting on that would re-sweep forever. */
-		bool bGeometryChangeDetected = false;
-
 		bool bStationaryIdleMode = false;
 		FVector StationaryIdleSourcePos = FVector::ZeroVector;
 		FVector StationaryIdleListenerPos = FVector::ZeroVector;
@@ -700,6 +694,11 @@ private:
 		 *  kept for the blocked-segment debug draw at readback. */
 		TArray<FVector> SegStarts;
 		TArray<FVector> SegEnds;
+		/** The live source position the first leg was traced from. On a clear result the entry
+		 *  re-anchors to it, which is how source movement is caught by measurement rather than by
+		 *  a distance threshold. False when that leg was unverified and could not be re-traced. */
+		bool bReanchored = false;
+		FVector ReanchorSource = FVector::ZeroVector;
 	} PathRecheck;
 
 	/** Round-robin state for opportunistic inner-anchor promotion (one edge per

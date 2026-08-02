@@ -19,13 +19,15 @@ private:
 	static int32 SelectRoundRobinEdge(const TArray<FCachedEdgePoint>& Points, int32& Cursor,
 	                                  const TFunctionRef<bool(const FCachedEdgePoint&)>& ShouldSkip);
 	// Segments shorter than 2*EndInset+1 are skipped.
+	// Unverified segments are skipped: they were blocked at discovery by design, so tracing them
+	// would evict every multi-corner edge.
 	static void SubmitPolylineRecheckTraces(USpatialAudioComponent& Component, UWorld* World,
-	                                        const TArray<FVector>& Path, float EndInset);
+	                                        const TArray<FVector>& Path, const TArray<bool>& SegmentVerified,
+	                                        float EndInset);
+	// Moves the entry's source anchor to the live position and re-measures PathDist/GeomDist.
+	static void ApplyRecheckReanchor(FCachedEdgePoint& Edge, const FVector& LiveSourcePos);
 	static void TickShortestPathReadback(USpatialAudioComponent& Component, UWorld* World,
 	                                     const FVector& SourcePos, const USpatialAudioSettings& Settings);
-	// Spread across [MoveThreshold/N, MoveThreshold] so one movement cannot evict every edge.
-	static TArray<float> ComputeProgressiveMoveThresholds(const USpatialAudioComponent& Component,
-	                                                       const FVector& SourcePos, float MoveThreshold);
 
 	// A handle from before a pipeline reset is meaningless, so drop the whole generation unread.
 	static void ClearStalePendingChecks(USpatialAudioComponent& Component);
@@ -35,8 +37,7 @@ private:
 	// True means the entry has faded out and the caller should drop it.
 	static bool TickSingleEdge(USpatialAudioComponent& Component, FCachedEdgePoint& Edge, UWorld* World,
 	                           const FVector& SourcePos, const FVector& ListenerPos, float DeltaTime,
-	                           float EffectiveMoveThreshold, bool bIntervalFired,
-	                           const USpatialAudioSettings& Settings);
+	                           bool bIntervalFired, const USpatialAudioSettings& Settings);
 
 	static bool TickEvictionFade(FCachedEdgePoint& Edge, float DeltaTime, float EvictFadeTime);
 	static void TickPhase0Readback(USpatialAudioComponent& Component, FCachedEdgePoint& Edge, UWorld* World,
@@ -56,8 +57,6 @@ private:
 	                                            const FVector& ListenerPos);
 	static void RescueOrEvict(USpatialAudioComponent& Component, FCachedEdgePoint& Edge, UWorld* World,
 	                          const FVector& SourcePos, const FVector& ListenerPos);
-	static bool TickMovementThresholdEviction(USpatialAudioComponent& Component, FCachedEdgePoint& Edge,
-	                                          const FVector& SourcePos, float EffectiveMoveThreshold);
 	static void TickPhase0Submission(const USpatialAudioComponent& Component, FCachedEdgePoint& Edge, UWorld* World,
 	                                 const FVector& ListenerPos, bool bIntervalFired);
 	static void StartEviction(USpatialAudioComponent& Component, FCachedEdgePoint& Edge, const FVector& SourcePos,

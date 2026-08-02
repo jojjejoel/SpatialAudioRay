@@ -563,7 +563,7 @@ void USpatialAudioComponent::TickComponent(const float DeltaTime, const ELevelTi
 	GetEffectiveRayCounts(ScaledRayCount, CurrentPriority);
 
 	UpdateVelocityScaling(DeltaTime, bInRange, TickPawn);
-	UpdateGeometryBurstAndIdleState(DeltaTime, bInRange, TickPawn);
+	UpdateStationaryIdleState(bInRange, TickPawn);
 
 	FEdgeCache::TickCachedEdgeEviction(*this, DeltaTime, GetSettings());
 
@@ -610,17 +610,14 @@ float USpatialAudioComponent::ComputeEffectiveSweepInterval() const {
 			GetSettings().MaxFullSweepInterval, GetSettings().FullSweepInterval, CurrentPriority)
 		* FMath::Min(VelocityScaling.SweepMultiplier, VelocityScaling.EdgeMultiplier);
 
-	if (SweepScheduling.GeometryBurstTimer > 0.f && bBothStationary) {
-		Interval *= GetSettings().GeometryChangeBurstMultiplier;
-	}
 	// Post-movement cache fill: velocity scaling stops accelerating the moment movement
 	// stops, but the sweeps it triggered may not have found anything yet — keep burst pace
 	// until enough NEW edges (found since the trigger; carried-over entries don't satisfy
 	// the re-survey) exist or the sweep budget runs out. Sits above idle mode so an
 	// unfilled burst can never idle-crawl.
-	else if (bBothStationary && SweepScheduling.CacheFillSweepsRemaining > 0
+	if (bBothStationary && SweepScheduling.CacheFillSweepsRemaining > 0
 		&& CountCacheFillEdges() < GetSettings().MovementCacheFillRequiredEdges) {
-		Interval *= GetSettings().GeometryChangeBurstMultiplier;
+		Interval *= GetSettings().MovementCacheFillMultiplier;
 	}
 	else if (bBothStationary && SweepScheduling.bStationaryIdleMode) {
 		Interval *= GetSettings().StationaryIdleMultiplier;
@@ -731,15 +728,7 @@ void USpatialAudioComponent::UpdateVelocityScaling(const float DeltaTime, const 
 		1.f, FMath::Max(0.05f, GetSettings().OffsetLoSVelocityScale), VelocityFraction);
 }
 
-void USpatialAudioComponent::UpdateGeometryBurstAndIdleState(const float DeltaTime, const bool bInRange, const APawn* Pawn) {
-	if (SweepScheduling.bGeometryChangeDetected) {
-		if (VelocityScaling.SweepMultiplier > 0.95f && VelocityScaling.EdgeMultiplier > 0.95f && SweepScheduling.GeometryBurstTimer <= 0.f) {
-			SweepScheduling.GeometryBurstTimer = GetSettings().GeometryChangeBurstDuration;
-		}
-		SweepScheduling.bGeometryChangeDetected = false;
-	}
-	SweepScheduling.GeometryBurstTimer = FMath::Max(0.f, SweepScheduling.GeometryBurstTimer - DeltaTime);
-
+void USpatialAudioComponent::UpdateStationaryIdleState(const bool bInRange, const APawn* Pawn) {
 	if (SweepScheduling.bStationaryIdleMode && bInRange && Pawn && GetOwner()) {
 		const float BreakDistSq = FMath::Square(GetSettings().StationaryIdleBreakDist);
 		if (FVector::DistSquared(GetOwner()->GetActorLocation(), SweepScheduling.StationaryIdleSourcePos) > BreakDistSq ||

@@ -193,8 +193,8 @@ public:
 
 	/** Factor applied to the full sweep interval once a full sweep has completed while both
 	 *  source and listener were stationary and neither has moved significantly since.
-	 *  Applied instead of GeometryChangeBurstMultiplier in this deeper idle state.
-	 *  Burst mode still overrides this. 20 = sweeps fire 20× less often. */
+	 *  Applied instead of MovementCacheFillMultiplier in this deeper idle state, which takes
+	 *  precedence while it is still running. 20 = sweeps fire 20× less often. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Performance",
 		meta = (ClampMin = "1.0", ClampMax = "100.0"))
 	float StationaryIdleMultiplier = 20.0f;
@@ -218,7 +218,7 @@ public:
 		meta = (ClampMin = "0.0", ClampMax = "5.0"))
 	float MovementSweepCooldown = 0.3f;
 
-	/** After a movement-triggered sweep, keep sweeping at GeometryChangeBurstMultiplier speed for
+	/** After a movement-triggered sweep, keep sweeping at MovementCacheFillMultiplier speed for
 	 *  up to this many completed full sweeps or until MovementCacheFillRequiredEdges NEW edges
 	 *  (discovered since the trigger — carried-over entries don't count) are cached, whichever
 	 *  comes first. Velocity scaling stops accelerating sweeps the moment movement stops —
@@ -236,19 +236,11 @@ public:
 		meta = (ClampMin = "1", ClampMax = "16"))
 	int32 MovementCacheFillRequiredEdges = 1;
 
-	/** Seconds to run in burst mode after detecting a geometry change (a previously-missed
-	 *  direction now finds LoS, or a cached edge is evicted by chain-validation failure
-	 *  while stationary). During burst the sweep interval is multiplied by
-	 *  GeometryChangeBurstMultiplier to re-survey the scene quickly. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Performance",
-		meta = (ClampMin = "0.0", ClampMax = "10.0"))
-	float GeometryChangeBurstDuration = 3.0f;
-
-	/** Multiplier applied to the full sweep interval during a geometry-change burst.
-	 *  Values < 1 produce faster sweeps. 0.25 = sweeps fire 4× more often. */
+	/** Multiplier applied to the full sweep interval while the post-movement cache fill above is
+	 *  still running. Values < 1 produce faster sweeps. 0.25 = sweeps fire 4× more often. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Performance",
 		meta = (ClampMin = "0.05", ClampMax = "1.0"))
-	float GeometryChangeBurstMultiplier = 0.25f;
+	float MovementCacheFillMultiplier = 0.25f;
 
 
 	// ─ Ray budget ─────────────────────────────────────────────────────────────
@@ -730,15 +722,6 @@ public:
 		meta = (ClampMin = "0.0", ClampMax = "2.0"))
 	float CachedEdgeEvictionFadeTime = 0.3f;
 
-	/** Minimum distance (cm) the SOURCE must have moved since a cached edge's path data was
-	 *  captured before the edge is evicted as stale (its PathDist/shortest path were measured
-	 *  from the old source position and nothing else revalidates the source side). Listener
-	 *  movement never evicts: listener validity is handled by Phase 0 (LoS/offset fan/relay),
-	 *  and entries are otherwise only displaced by better-ranking sweep finds.
-	 *  0 = disable source-movement eviction. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Edge Cache",
-		meta = (ClampMin = "0.0", ClampMax = "500.0"))
-	float CachedEdgeUpdateMoveThreshold = 15.f;
 
 	/**
 	 * Seconds between Phase 0 (listener→edge LoS) checks, PER CACHED EDGE.

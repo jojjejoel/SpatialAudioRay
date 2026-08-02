@@ -43,21 +43,15 @@ namespace {
 	};
 
 	FPacingDebugInfo ComputePacingDebugInfo(
-		float GeometryBurstTimer, bool bBothStationary, bool bStationaryIdleMode,
-		float GeometryChangeBurstMultiplier, float StoredEffFullSweepInterval, float GeometryBurstTimerVal,
+		bool bBothStationary, bool bStationaryIdleMode,
+		float MovementCacheFillMultiplier, float StoredEffFullSweepInterval,
 		float StationaryIdleMultiplier, float CoverageFraction,
 		float SmoothedSourceSpeed, float SmoothedListenerSpeed,
 		int32 CacheFillSweepsRemaining, int32 UsableEdges, int32 RequiredEdges) {
 		FPacingDebugInfo Info;
-		if (GeometryBurstTimer > 0.f && bBothStationary) {
-			Info.Label = FString::Printf(TEXT("BURST (%.2f×  %.2fs  %.1fs left)"),
-			                             GeometryChangeBurstMultiplier, StoredEffFullSweepInterval,
-			                             GeometryBurstTimerVal);
-			Info.Color = FColor::Cyan;
-		}
-		else if (bBothStationary && CacheFillSweepsRemaining > 0 && UsableEdges < RequiredEdges) {
+		if (bBothStationary && CacheFillSweepsRemaining > 0 && UsableEdges < RequiredEdges) {
 			Info.Label = FString::Printf(TEXT("CACHE-FILL (%.2f×  %.2fs  new edges %d/%d  %d sweeps left)"),
-			                             GeometryChangeBurstMultiplier, StoredEffFullSweepInterval,
+			                             MovementCacheFillMultiplier, StoredEffFullSweepInterval,
 			                             UsableEdges, RequiredEdges, CacheFillSweepsRemaining);
 			Info.Color = FColor::Cyan;
 		}
@@ -298,9 +292,8 @@ void USpatialAudioComponent::DrawSweepPacingDebugText(const uint64 Base, const U
 		                      : 0.f;
 
 	const auto [PacingLabel, PacingColor] = ComputePacingDebugInfo(
-		SweepScheduling.GeometryBurstTimer, bBothStationary,
-		SweepScheduling.bStationaryIdleMode,
-		Settings.GeometryChangeBurstMultiplier, StoredEffFullSweepInterval, SweepScheduling.GeometryBurstTimer,
+		bBothStationary, SweepScheduling.bStationaryIdleMode,
+		Settings.MovementCacheFillMultiplier, StoredEffFullSweepInterval,
 		Settings.StationaryIdleMultiplier, CoverageFraction,
 		VelocityScaling.SmoothedSourceSpeed, VelocityScaling.SmoothedListenerSpeed,
 		SweepScheduling.CacheFillSweepsRemaining, CountCacheFillEdges(),
