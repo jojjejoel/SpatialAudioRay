@@ -13,6 +13,13 @@ namespace {
 	}
 }
 
+// The per-edge validation intervals are periods per entry, not per cache. Dividing by the entry
+// count holds an edge's check rate steady whether the cache carries one or six, and turns what
+// used to be a burst of N submissions on one tick into one submission per slice.
+float FEdgeCache::PerEdgeInterval(const USpatialAudioComponent& Component, const float Interval) {
+	return Interval / FMath::Max(1, Component.CachedEdgePoints.Num());
+}
+
 int32 FEdgeCache::SelectRoundRobinEdge(const TArray<FCachedEdgePoint>& Points, int32& Cursor,
                                        const TFunctionRef<bool(const FCachedEdgePoint&)>& ShouldSkip) {
 	const int32 Num = Points.Num();
@@ -543,7 +550,9 @@ void FEdgeCache::ClearStalePendingChecks(USpatialAudioComponent& Component) {
 bool FEdgeCache::AdvancePhase0Timer(USpatialAudioComponent& Component, const float DeltaTime,
                                     const USpatialAudioSettings& Settings) {
 	Component.Phase0Timer += DeltaTime;
-	if (Component.Phase0Timer < Settings.Phase0CheckInterval * Component.VelocityScaling.EdgeMultiplier) {
+	const float Slice = PerEdgeInterval(
+		Component, Settings.Phase0CheckInterval * Component.VelocityScaling.EdgeMultiplier);
+	if (Component.Phase0Timer < Slice) {
 		return false;
 	}
 	Component.Phase0Timer = 0.f;
@@ -591,15 +600,26 @@ void FEdgeCache::TickCachedEdgeEviction(USpatialAudioComponent& Component, const
 	const FVector ListenerPos = Pawn->GetActorLocation();
 
 	ClearStalePendingChecks(Component);
-	const bool bIntervalFired = AdvancePhase0Timer(Component, DeltaTime, Settings);
+
+	// One entry per slice rather than the whole cache at once. The timer is already divided by
+	// the entry count, so each edge still comes round every Phase0CheckInterval.
+	// Passing over source-side evictions matches TickPhase0Submission's own guard, so a slice is
+	// never spent on an entry that would decline to submit.
+	const int32 SubmitIdx = AdvancePhase0Timer(Component, DeltaTime, Settings)
+		                        ? SelectRoundRobinEdge(Component.CachedEdgePoints, Component.Phase0Cursor,
+		                                               [](const FCachedEdgePoint& Edge) {
+			                                               return Edge.bEvicting && Edge.bSourceSideEviction;
+		                                               })
+		                        : INDEX_NONE;
 
 	const TArray<float> EffectiveThresholds = ComputeProgressiveMoveThresholds(
 		Component, SourcePos, Settings.CachedEdgeUpdateMoveThreshold);
 
-	// Backwards so a removal cannot disturb the indices still to come.
+	// Backwards so a removal cannot disturb the indices still to come, which also keeps SubmitIdx
+	// pointing at the entry it was chosen for.
 	for (int32 i = Component.CachedEdgePoints.Num() - 1; i >= 0; --i) {
 		if (TickSingleEdge(Component, Component.CachedEdgePoints[i], World, SourcePos, ListenerPos,
-		                   DeltaTime, EffectiveThresholds[i], bIntervalFired, Settings)) {
+		                   DeltaTime, EffectiveThresholds[i], i == SubmitIdx, Settings)) {
 			Component.CachedEdgePoints.RemoveAt(i);
 		}
 	}
@@ -641,7 +661,6 @@ void FEdgeCache::MergeCoincidentEdges(USpatialAudioComponent& Component,
 
 			if (TravelledFurther(Earlier, Later)) {
 				Later.bNewSinceFillArm = bEitherIsNew;
-				InheritDiscoveryIndex(Later, Earlier);
 				Component.CachedEdgePoints.RemoveAt(j);
 				// i slid down with the removal; keep scanning the remaining lower entries so a
 				// three-way pile collapses in one pass rather than one merge per tick.
@@ -649,19 +668,9 @@ void FEdgeCache::MergeCoincidentEdges(USpatialAudioComponent& Component,
 				continue;
 			}
 			Earlier.bNewSinceFillArm = bEitherIsNew;
-			InheritDiscoveryIndex(Earlier, Later);
 			Component.CachedEdgePoints.RemoveAt(i);
 			break;
 		}
-	}
-}
-
-// The survivor keeps its own index when it has one, so one corner still costs one skipped ray
-// after a merge instead of waiting for the next sweep to rediscover it.
-void FEdgeCache::InheritDiscoveryIndex(FCachedEdgePoint& Survivor, const FCachedEdgePoint& Absorbed) {
-	if (Survivor.DiscoveryDirIndex == INDEX_NONE && Absorbed.DiscoveryDirIndex != INDEX_NONE) {
-		Survivor.DiscoveryDirIndex = Absorbed.DiscoveryDirIndex;
-		Survivor.DiscoveryRayCount = Absorbed.DiscoveryRayCount;
 	}
 }
 
@@ -683,7 +692,7 @@ void FEdgeCache::TickShortestPathRecheck(USpatialAudioComponent& Component, UWor
 	}
 	const USpatialAudioComponent::FTraceBucketScope Bucket(Component, USpatialAudioComponent::ETraceBucket::PathCheck);
 	Component.ShortestPathCheckTimer += DeltaTime;
-	if (Component.ShortestPathCheckTimer < Settings.ShortestPathRecheckInterval
+	if (Component.ShortestPathCheckTimer < PerEdgeInterval(Component, Settings.ShortestPathRecheckInterval)
 		|| Component.PathRecheck.bPending) {
 		return;
 	}
@@ -782,7 +791,7 @@ void FEdgeCache::TickInnerAnchorPromotion(USpatialAudioComponent& Component, con
 	}
 	const USpatialAudioComponent::FTraceBucketScope Bucket(Component, USpatialAudioComponent::ETraceBucket::PathCheck);
 	Component.ShortestPathPromotionTimer += DeltaTime;
-	if (Component.ShortestPathPromotionTimer < Settings.ShortestPathPromotionInterval) {
+	if (Component.ShortestPathPromotionTimer < PerEdgeInterval(Component, Settings.ShortestPathPromotionInterval)) {
 		return;
 	}
 	Component.ShortestPathPromotionTimer = 0.f;

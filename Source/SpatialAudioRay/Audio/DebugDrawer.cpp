@@ -348,9 +348,9 @@ void USpatialAudioComponent::DrawTraceStatsDebugText(const uint64 Base) const {
 	GEngine->AddOnScreenDebugMessage(Base + 7, 0.f, FColor::Cyan,
 	                                 FString::Printf(
 		                                 TEXT(
-			                                 "  Traces  ~%.0f/fr  1s=%.0f/s  10s=%.0f/s  │  Last sweep: %d rays (%d cached)  %d fr  %.0fms/%.0fms%s"),
+			                                 "  Traces  ~%.0f/fr  1s=%.0f/s  10s=%.0f/s  │  Last sweep: %d rays  %d fr  %.0fms/%.0fms%s"),
 		                                 TraceDiag.SnapshotFrameTraces, TraceDiag.SnapshotTracesPerSec, TraceDiag.Avg10Sec,
-		                                 TraceDiag.LastSweepAsyncRays, TraceDiag.LastSweepCachedReplaced, TraceDiag.LastSweepFrames,
+		                                 TraceDiag.LastSweepAsyncRays, TraceDiag.LastSweepFrames,
 		                                 TraceDiag.LastSweepDuration * 1000.f, TraceDiag.LastSweepInterval * 1000.f,
 		                                 TraceDiag.LastSweepDuration > TraceDiag.LastSweepInterval ? TEXT("  OVER") : TEXT("")));
 

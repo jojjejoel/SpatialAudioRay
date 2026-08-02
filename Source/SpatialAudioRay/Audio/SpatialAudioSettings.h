@@ -271,6 +271,19 @@ public:
 	int32 MinFullSweepRayCount = 16;
 
 	/**
+	 * Ray-count multiplier once the edge cache is completely full, interpolated by how full it
+	 * actually is. A saturated cache can only improve by displacing an entry, which is rank-gated
+	 * and hysteresis-damped, so most of a full-budget sweep into a full cache is speculative.
+	 * This slows the search as the cache fills instead of stopping it, since a cache that stopped
+	 * searching could never find the better corner that would displace something. Floors at one
+	 * ray, not at MinFullSweepRayCount, which is the floor for distance scaling only.
+	 * 1 = no reduction.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Performance",
+		meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float FullCacheRayScale = 1.f;
+
+	/**
 	 * Minimum number of bounces at maximum distance (zero priority).
 	 * Scales linearly from MaxBounces (close) down to this value (far).
 	 * Fewer bounces = fewer async trace frames = cheaper for distant sources.
@@ -303,6 +316,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Surface Crawl",
 		meta = (ClampMin = "1.0", ClampMax = "1000.0"))
 	float CrawlStepSize = 10.f;
+
 
 	/**
 	 * How strongly the crawl direction is pulled toward the listener.
@@ -727,10 +741,11 @@ public:
 	float CachedEdgeUpdateMoveThreshold = 15.f;
 
 	/**
-	 * Seconds between Phase 0 (listener→edge LoS) submission batches.
-	 * Phase 0 submits one async trace per cached edge to detect when the listener's
-	 * view of an edge becomes blocked. At the default 0 all edges are checked every frame;
-	 * raising this reduces steady-state trace cost at the expense of eviction latency.
+	 * Seconds between Phase 0 (listener→edge LoS) checks, PER CACHED EDGE.
+	 * Phase 0 submits one async trace per cached edge to detect when the listener's view of an
+	 * edge becomes blocked. The interval is divided by the cache size and one entry is submitted
+	 * per slice round-robin, so an edge is checked this often whether the cache holds one or six,
+	 * and the cost spreads across the interval instead of arriving as one burst of N.
 	 * Scales down automatically with listener speed so checks stay frequent while moving.
 	 * 0 = check every frame (original behaviour).
 	 */
@@ -749,7 +764,9 @@ public:
 	 * normal eviction fade and requests a sweep immediately. Because unverified segments (a raw
 	 * crawl/bounce hop the string pull couldn't shortcut past) were already blocked at discovery,
 	 * this also evicts ordinary multi-corner diffraction paths the moment they're rechecked, not
-	 * just genuine geometry changes — a deliberate trade-off of enabling this. 0 = off.
+	 * just genuine geometry changes — a deliberate trade-off of enabling this.
+	 * PER CACHED EDGE: the interval is divided by the cache size, so each edge's polyline is
+	 * rechecked this often no matter how many entries share the rotation. 0 = off.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Edge Cache",
 		meta = (ClampMin = "0.0", ClampMax = "5.0"))
@@ -763,7 +780,9 @@ public:
 	 * rather than sitting wherever it was first discovered. Each check (round-robin, one edge)
 	 * tries only the single point immediately before the edge on its own polyline; if that point
 	 * has direct listener LoS too, the edge moves there — one step per interval, not a jump all
-	 * the way to the source. 0 = off.
+	 * the way to the source.
+	 * PER CACHED EDGE: the interval is divided by the cache size, so each edge takes a promotion
+	 * step this often regardless of how many entries share the rotation. 0 = off.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Edge Cache",
 		meta = (ClampMin = "0.0", ClampMax = "5.0"))

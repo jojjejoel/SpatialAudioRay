@@ -89,7 +89,9 @@ void FAsyncCastManager::CaptureSweepPositions(USpatialAudioComponent& Component,
 		+ Component.ComputeSteeringLead(Component.VelocityScaling.SmoothedListenerVelocity, Settings);
 }
 
-int32 FAsyncCastManager::CountFullStrengthEdges(const TArray<FCachedEdgePoint>& Points) {
+// Only counts entries the sweep would actually be re-finding. A relay is an audible stopgap
+// rather than a found path, so it must not throttle the search that replaces it.
+int32 FAsyncCastManager::CountHeldEdges(const TArray<FCachedEdgePoint>& Points) {
 	int32 Count = 0;
 	for (const FCachedEdgePoint& Edge : Points) {
 		if (!Edge.bRelayed && !Edge.bEvicting) {
@@ -99,45 +101,37 @@ int32 FAsyncCastManager::CountFullStrengthEdges(const TArray<FCachedEdgePoint>& 
 	return Count;
 }
 
+int32 FAsyncCastManager::ApplyCacheFullnessRayScale(const USpatialAudioComponent& Component, const int32 RayCount,
+                                                    const USpatialAudioSettings& Settings) {
+	if (Settings.FullCacheRayScale >= 1.f) {
+		return RayCount;
+	}
+	const float Fullness = FMath::Clamp(
+		static_cast<float>(CountHeldEdges(Component.CachedEdgePoints))
+		/ FMath::Max(1, Settings.CachedEdgeMaxCount), 0.f, 1.f);
+
+	// Floored at one ray, not at MinFullSweepRayCount. That setting is the floor for distance
+	// scaling, and reusing it here would cap this scale at whatever a distant source needs,
+	// which for a small budget is the whole reduction. FullCacheRayScale is itself the dial for
+	// how far to throttle, so it needs no second knob under it.
+	const float Scale = FMath::Lerp(1.f, Settings.FullCacheRayScale, Fullness);
+	return FMath::Max(1, FMath::RoundToInt(RayCount * Scale));
+}
+
 void FAsyncCastManager::ResolveSweepRayBudget(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings) {
 	int32 ScaledRayCount;
 	Component.GetEffectiveRayCounts(ScaledRayCount, Component.CurrentPriority);
 	Component.AsyncMaxBounces = FMath::Max(Settings.MinMaxBounces,
 	                                        FMath::RoundToInt(Settings.MaxBounces * Component.CurrentPriority));
-	Component.AsyncTotalRays = ScaledRayCount;
+	// Applied here rather than in GetEffectiveRayCounts, which the HUD's coverage fraction also
+	// reads: folding cache fullness into that denominator would make coverage climb as the cache
+	// filled purely because the number it divides by shrank.
+	Component.AsyncTotalRays = ApplyCacheFullnessRayScale(Component, ScaledRayCount, Settings);
 
 	Component.PendingValidCachedPoints.Reset();
 	Component.PendingValidCachedPoints.Append(Component.CachedEdgePoints);
 
-	const int32 SubstituteCount = CountFullStrengthEdges(Component.PendingValidCachedPoints);
-
 	Component.TraceDiag.SweepAsyncRayAccum = 0;
-	Component.TraceDiag.LastSweepCachedReplaced = SubstituteCount;
-}
-
-bool FAsyncCastManager::HasEitherEndMoved(const USpatialAudioComponent& Component, const FCachedEdgePoint& Edge,
-                                          const float MoveThresholdSq) {
-	return FVector::DistSquared(Component.AsyncSourcePos, Edge.CapturedSourcePos) > MoveThresholdSq
-		|| FVector::DistSquared(Component.AsyncListenerPos, Edge.CapturedListenerPos) > MoveThresholdSq;
-}
-
-void FAsyncCastManager::BuildCachedEdgeSkipIndices(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings) {
-	Component.CachedEdgeDirIndices.Reset();
-
-	const float MoveThresholdSq = FMath::Square(Settings.CachedEdgeUpdateMoveThreshold);
-	for (const FCachedEdgePoint& Edge : Component.PendingValidCachedPoints) {
-		// A relay must not skip its direction: that region is where a replacement most likely is.
-		if (Edge.bEvicting || Edge.bRelayed || Edge.DiscoveryDirIndex == INDEX_NONE) {
-			continue;
-		}
-		// A different ray count rebuilds the whole direction set, and either end moving rotates
-		// its pole. Either way the stored index no longer names the direction that found the edge.
-		if (Edge.DiscoveryRayCount != Component.AsyncTotalRays
-			|| HasEitherEndMoved(Component, Edge, MoveThresholdSq)) {
-			continue;
-		}
-		Component.CachedEdgeDirIndices.Add(Edge.DiscoveryDirIndex);
-	}
 }
 
 void FAsyncCastManager::ResetCycleAccumulator(USpatialAudioComponent& Component) {
@@ -206,12 +200,6 @@ void FAsyncCastManager::SubmitSweepRays(USpatialAudioComponent& Component, const
 	Component.AsyncRays.Reset(Directions.Num());
 
 	for (int32 i = 0; i < Directions.Num(); ++i) {
-		// This exact index already found an edge that is still valid, and MakeBiasStream is seeded
-		// from it, so re-casting it would fly the identical direction to the identical corner.
-		if (Component.CachedEdgeDirIndices.Contains(DirectionIndices[i])) {
-			continue;
-		}
-
 		FVector Dir = Directions[i];
 		if (bBias) {
 			Dir = ApplyLateralBandBias(Component, Dir, ToListenerDir, FullCastDistance, DirectionIndices[i], Settings);
@@ -220,7 +208,6 @@ void FAsyncCastManager::SubmitSweepRays(USpatialAudioComponent& Component, const
 		FSpatialRayState& Ray = Component.AsyncRays.AddDefaulted_GetRef();
 		Ray.Origin = Component.AsyncSourcePos;
 		Ray.Dir = Dir;
-		Ray.DirIndex = DirectionIndices[i];
 		Ray.LoSOrigin = Component.AsyncSourcePos;
 		Ray.bNextHitCrawls = i % 2 == 0;
 
@@ -256,7 +243,6 @@ void FAsyncCastManager::StartAsyncFullCast(USpatialAudioComponent& Component, co
 	}
 
 	ResolveSweepRayBudget(Component, Settings);
-	BuildCachedEdgeSkipIndices(Component, Settings);
 	ResetCycleAccumulator(Component);
 
 	Component.LoSDiffractionPaths.Reset();
@@ -1001,7 +987,6 @@ void FAsyncCastManager::SubmitFinalizeBatch(USpatialAudioComponent& Component, c
 		if (Ray.bLoSFound && Ray.LoSBounces > 0 && !bDirectLoSFound) {
 			FFinalizeRefineProbe Probe;
 			Probe.LoSOrigin = Ray.LoSOrigin;
-			Probe.DirIndex = Ray.DirIndex;
 			Probe.BasePathDist = ComputeStringPulledLeg1(Component, World, Ray, Component.AsyncSourcePos,
 			                                             Probe.ShortestPath, Probe.ShortestPathSegmentVerified);
 			Probe.LoSBounces = Ray.LoSBounces;

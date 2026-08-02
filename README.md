@@ -24,7 +24,7 @@ Three loops run at different rates:
 
 A sweep takes several frames, so by the time it lands its answer is slightly out of date. That is why occlusion is sampled separately every frame and never waits for a sweep, and why found edges are cached and kept alive independently instead of being re-derived each time.
 
-How much a sweep costs and how often it runs both adapt at runtime. The ray budget scales down with distance and can be split across several frames' worth of cycles. A cached edge remembers the index of the ray that found it, so the next sweep skips that direction outright: four cached edges, four fewer rays. The interval stretches when nothing is moving and tightens when something is, so a stationary scene settles into cheap upkeep instead of re-surveying itself.
+How much a sweep costs and how often it runs both adapt at runtime. The ray budget scales down with distance and can be split across several frames' worth of cycles. A warm cache thins the budget further, since a full cache can only improve by displacing an entry and most of a full-budget sweep into one is speculative. The interval stretches when nothing is moving and tightens when something is, so a stationary scene settles into cheap upkeep instead of re-surveying itself.
 
 ## Design notes
 

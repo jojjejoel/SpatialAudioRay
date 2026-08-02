@@ -569,7 +569,6 @@ private:
 		float Avg60Sec = 0.f;
 		int32 LastSweepFrames = 0;
 		int32 LastSweepAsyncRays = 0;
-		int32 LastSweepCachedReplaced = 0;
 		float LastSweepDuration = 0.f;
 		float LastSweepInterval = 0.f;
 		float SweepStartTime = 0.f;
@@ -589,10 +588,6 @@ private:
 	/** Snapshot of cached points validated synchronously at the start of StartAsyncFullCast.
 	 *  Injected as confirmed results in FinalizeAsyncCast after the async rays complete. */
 	TArray<FCachedEdgePoint> PendingValidCachedPoints;
-
-	/** Fibonacci indices already covered by a stationary cached edge. Built once per sweep and
-	 *  read by every cycle, so a cache of N edges costs N fewer rays per sweep sequence. */
-	TSet<int32> CachedEdgeDirIndices;
 
 	/** Last diffraction edge position computed while indirect LoS was active. Used as the
 	 *  virtual position target when the edge cache is momentarily empty, so the AudioComponent
@@ -639,6 +634,9 @@ private:
 	 *  jittery to drive the gate directly. */
 	float SmoothedCrossfadeRamp = 0.f;
 	float Phase0Timer = 0.f;
+	/** Which entry the next Phase 0 slice submits for. Phase 0 fires one edge per slice rather
+	 *  than the whole cache at once, so its cost spreads across the interval. */
+	int32 Phase0Cursor = 0;
 
 	struct FVelocityScalingState {
 		FVector LastSourcePos = FVector::ZeroVector;

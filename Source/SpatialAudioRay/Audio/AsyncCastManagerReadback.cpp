@@ -72,7 +72,6 @@ void FAsyncCastManager::AccumulateRefineProbesIntoCycle(USpatialAudioComponent& 
 
 		FStoredLoSPath StoredPath;
 		StoredPath.LoSOrigin = EdgePoint;
-		StoredPath.DirIndex = Probe.DirIndex;
 		StoredPath.LoSBounces = Probe.LoSBounces;
 		StoredPath.LoSCumulativeDistance = GeomDist;
 		StoredPath.PathDist = Probe.BasePathDist;
@@ -125,12 +124,6 @@ void FAsyncCastManager::WriteEntry(USpatialAudioComponent& Component, FCachedEdg
 	Edge.ShortestPath = Found.ShortestPath;
 	Edge.ShortestPathSegmentVerified = Found.ShortestPathSegmentVerified;
 	Edge.LoSBounces = Found.LoSBounces;
-	// Keep the old index when the find has none, so a promotion-moved entry does not lose its
-	// skip until a later sweep rediscovers it.
-	if (Found.DirIndex != INDEX_NONE) {
-		Edge.DiscoveryDirIndex = Found.DirIndex;
-		Edge.DiscoveryRayCount = Component.AsyncTotalRays;
-	}
 	Edge.CapturedSourcePos = Component.AsyncSourcePos;
 	Edge.CapturedListenerPos = Component.AsyncListenerPos;
 	Edge.bPhase0Pending = false;
@@ -339,7 +332,6 @@ void FAsyncCastManager::ReadbackFinalizeBatch(USpatialAudioComponent& Component,
 	if (Component.CycleAccum.bDirectLoSFound) {
 		Component.TargetOcclusion = 0.f;
 		Component.CachedEdgePoints.Empty();
-		Component.CachedEdgeDirIndices.Empty();
 	}
 }
 

@@ -53,7 +53,6 @@ public:
 	// Entries that stand in for a ray this sweep. A relay is an audible stopgap rather than a found
 	// path and an evicting entry is on its way out, so neither counts and the sweep keeps searching
 	// at full budget until a real path displaces them.
-	static int32 CountFullStrengthEdges(const TArray<FCachedEdgePoint>& Points);
 
 	// The cycles of a full sweep sequence partition the sphere with no direction cast twice.
 	// OutIndices must stay the whole-set index, since MakeBiasStream seeds off it.
@@ -105,9 +104,10 @@ private:
 	static void CaptureSweepPositions(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings,
 	                                  const AActor& Owner, const APawn& Pawn);
 	static void ResolveSweepRayBudget(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings);
-	static bool HasEitherEndMoved(const USpatialAudioComponent& Component, const FCachedEdgePoint& Edge,
-	                              float MoveThresholdSq);
-	static void BuildCachedEdgeSkipIndices(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings);
+	static int32 CountHeldEdges(const TArray<FCachedEdgePoint>& Points);
+	// Scales the sweep budget down as the cache fills, never below MinFullSweepRayCount.
+	static int32 ApplyCacheFullnessRayScale(const USpatialAudioComponent& Component, int32 RayCount,
+	                                        const USpatialAudioSettings& Settings);
 	static void ResetCycleAccumulator(USpatialAudioComponent& Component);
 	static void SubmitSweepRays(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings, UWorld* World,
 	                            const FVector& ToListenerDir, float FullCastDistance, int32 CycleCount);

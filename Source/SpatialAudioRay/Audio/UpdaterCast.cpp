@@ -266,7 +266,6 @@ void FUpdater::ClearCacheOnConfirmedDirectLoS(USpatialAudioComponent& Component,
 		if (Component.DirectLoSConfirmedDuration >= Settings.DirectLoSConfirmTime
 			&& !Component.IsPreSweepActive()) {
 			Component.CachedEdgePoints.Reset();
-			Component.CachedEdgeDirIndices.Reset();
 		}
 	}
 }
