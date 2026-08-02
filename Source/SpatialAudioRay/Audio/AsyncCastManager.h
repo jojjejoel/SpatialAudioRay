@@ -86,13 +86,13 @@ private:
 	                       float PathDist, const FVector& Point);
 	static bool OutranksIncumbent(const USpatialAudioComponent& Component, const USpatialAudioSettings& Settings,
 	                              const FStoredLoSPath& Found, const FCachedEdgePoint& Incumbent);
-	static void WriteEntry(USpatialAudioComponent& Component, FCachedEdgePoint& Edge, const FStoredLoSPath& Found);
+	static void WriteEntry(const USpatialAudioComponent& Component, FCachedEdgePoint& Edge, const FStoredLoSPath& Found);
 	static int32 FindMergeCandidate(const USpatialAudioComponent& Component, const FVector& Point, float MergeRadiusSq);
 	static bool IsWorseIncumbent(const USpatialAudioComponent& Component, const USpatialAudioSettings& Settings,
 	                             const FCachedEdgePoint& Candidate, const FCachedEdgePoint& Worst);
 	static int32 FindWorstIncumbent(const USpatialAudioComponent& Component, const USpatialAudioSettings& Settings,
 	                                const TArray<bool>& bMatchedThisCycle);
-	static void MergeIntoSameCorner(USpatialAudioComponent& Component, FCachedEdgePoint& Edge,
+	static void MergeIntoSameCorner(const USpatialAudioComponent& Component, FCachedEdgePoint& Edge,
 	                                const FStoredLoSPath& Found);
 	static bool TryDisplaceWorstIncumbent(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings,
 	                                      const FStoredLoSPath& Found, TArray<bool>& bMatchedThisCycle);

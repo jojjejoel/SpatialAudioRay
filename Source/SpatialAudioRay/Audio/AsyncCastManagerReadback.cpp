@@ -1,6 +1,5 @@
 ﻿#include "Audio/AsyncCastManager.h"
 #include "Audio/SpatialAudioComponent.h"
-#include "Audio/Math.h"
 #include "Audio/Updater.h"
 
 #include "DrawDebugHelpers.h"
@@ -116,7 +115,7 @@ bool FAsyncCastManager::OutranksIncumbent(const USpatialAudioComponent& Componen
 				> RankScore(Component, Settings, Incumbent.EffectivePathDist(), Incumbent.EffectivePoint()) * 1.01f);
 }
 
-void FAsyncCastManager::WriteEntry(USpatialAudioComponent& Component, FCachedEdgePoint& Edge,
+void FAsyncCastManager::WriteEntry(const USpatialAudioComponent& Component, FCachedEdgePoint& Edge,
                                    const FStoredLoSPath& Found) {
 	Edge.EdgePoint = Found.LoSOrigin;
 	Edge.GeomDist = Found.LoSCumulativeDistance;
@@ -151,7 +150,7 @@ int32 FAsyncCastManager::FindMergeCandidate(const USpatialAudioComponent& Compon
 	return BestIdx;
 }
 
-void FAsyncCastManager::MergeIntoSameCorner(USpatialAudioComponent& Component, FCachedEdgePoint& Edge,
+void FAsyncCastManager::MergeIntoSameCorner(const USpatialAudioComponent& Component, FCachedEdgePoint& Edge,
                                             const FStoredLoSPath& Found) {
 	// One corner means one shared listener leg, so the rank score's listener term cancels and
 	// only travelled distance separates the two routes. Bounce count is deliberately NOT the
