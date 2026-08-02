@@ -52,7 +52,7 @@ private:
 	// A source-side eviction is left alone, since this check cannot speak for that side.
 	static void RestoreFromListenerSideEviction(FCachedEdgePoint& Edge, const FVector& SourcePos,
 	                                            const FVector& ListenerPos);
-	static void RescueOrEvict(USpatialAudioComponent& Component, FCachedEdgePoint& Edge, const UWorld* World,
+	static void RescueOrEvict(USpatialAudioComponent& Component, FCachedEdgePoint& Edge, UWorld* World,
 	                          const FVector& SourcePos, const FVector& ListenerPos);
 	static bool TickMovementThresholdEviction(USpatialAudioComponent& Component, FCachedEdgePoint& Edge,
 	                                          const FVector& SourcePos, float EffectiveMoveThreshold);
@@ -60,8 +60,12 @@ private:
 	                                 const FVector& ListenerPos, bool bIntervalFired);
 	static void StartEviction(USpatialAudioComponent& Component, FCachedEdgePoint& Edge, const FVector& SourcePos,
 	                          bool bSourceSide = false);
-	static bool TryRelayRescue(const USpatialAudioComponent& Component, FCachedEdgePoint& Edge, const UWorld* World,
-	                           const FVector& ListenerPos);
+	// False when no rescue is possible at all, which is the caller's cue to evict now. True means
+	// traces are in flight and the verdict lands in TickRelayRescueReadback next tick.
+	static bool SubmitRelayRescueTraces(const USpatialAudioComponent& Component, FCachedEdgePoint& Edge,
+	                                    UWorld* World, const FVector& ListenerPos);
+	static void TickRelayRescueReadback(USpatialAudioComponent& Component, FCachedEdgePoint& Edge, UWorld* World,
+	                                    const FVector& SourcePos, const FVector& ListenerPos);
 	static bool ProbeListenerLoSPoint(const USpatialAudioComponent& Component, const UWorld* World,
 	                                  const FVector& ListenerPos, const FVector& Point);
 	static void DrawProbeResult(const USpatialAudioComponent& Component, const UWorld* World,

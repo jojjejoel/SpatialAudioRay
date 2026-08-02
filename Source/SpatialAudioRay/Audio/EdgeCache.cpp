@@ -156,6 +156,7 @@ int32 FEdgeCache::ResolveStepsForMergeRadius(const USpatialAudioComponent& Compo
 FVector FEdgeCache::BisectListenerLoS(const USpatialAudioComponent& Component, const UWorld* World, const FVector& ListenerPos,
                                       const FVector& BlockedEnd, const FVector& ClearEnd, bool& bOutFoundClear,
                                       const int32 ExplicitSteps) {
+	const USpatialAudioComponent::FTraceBucketScope Bucket(Component, USpatialAudioComponent::ETraceBucket::Bisect);
 	FVector BlockedPoint = BlockedEnd;
 	FVector ClearPoint = ClearEnd;
 	bOutFoundClear = false;
@@ -337,38 +338,67 @@ void FEdgeCache::RestoreFromListenerSideEviction(FCachedEdgePoint& Edge, const F
 	Edge.CapturedListenerPos = ListenerPos;
 }
 
-void FEdgeCache::RescueOrEvict(USpatialAudioComponent& Component, FCachedEdgePoint& Edge, const UWorld* World,
+void FEdgeCache::RescueOrEvict(USpatialAudioComponent& Component, FCachedEdgePoint& Edge, UWorld* World,
                                const FVector& SourcePos, const FVector& ListenerPos) {
-	if (!TryRelayRescue(Component, Edge, World, ListenerPos)) {
+	if (!SubmitRelayRescueTraces(Component, Edge, World, ListenerPos)) {
 		StartEviction(Component, Edge, SourcePos);
 	}
 }
 
 // Deliberately ignores sibling edges. A "skip while any direct edge exists" gate made the outcome
 // depend on processing order and killed most of a batch of simultaneous losses.
-bool FEdgeCache::TryRelayRescue(const USpatialAudioComponent& Component, FCachedEdgePoint& Edge, const UWorld* World,
-                                const FVector& ListenerPos) {
+bool FEdgeCache::SubmitRelayRescueTraces(const USpatialAudioComponent& Component, FCachedEdgePoint& Edge,
+                                         UWorld* World, const FVector& ListenerPos) {
+	if (Edge.bRescuePending) {
+		return true;
+	}
 	if (Edge.bRelayed || !Edge.bHasLastLoSListenerPos) {
 		return false;
 	}
+	const USpatialAudioComponent::FTraceBucketScope Bucket(Component, USpatialAudioComponent::ETraceBucket::Relay);
 	const FVector& Relay = Edge.LastLoSListenerPos;
-	FHitResult Hit;
-	const bool bLegAClear = !Component.TraceLine(World, Hit, Edge.EdgePoint, Relay)
-		&& !Component.TraceLine(World, Hit, Relay, Edge.EdgePoint);
-	if (!bLegAClear
-		|| Component.TraceLine(World, Hit, Relay, ListenerPos)
-		|| Component.TraceLine(World, Hit, ListenerPos, Relay)) {
-		return false;
+	Edge.RescueHandles[0] = Component.SubmitAsyncTrace(World, Edge.EdgePoint, Relay);
+	Edge.RescueHandles[1] = Component.SubmitAsyncTrace(World, Relay, Edge.EdgePoint);
+	Edge.RescueHandles[2] = Component.SubmitAsyncTrace(World, Relay, ListenerPos);
+	Edge.RescueHandles[3] = Component.SubmitAsyncTrace(World, ListenerPos, Relay);
+	Edge.bRescuePending = true;
+	return true;
+}
+
+void FEdgeCache::TickRelayRescueReadback(USpatialAudioComponent& Component, FCachedEdgePoint& Edge, UWorld* World,
+                                         const FVector& SourcePos, const FVector& ListenerPos) {
+	if (!Edge.bRescuePending) {
+		return;
+	}
+
+	FTraceDatum Data[4];
+	for (int32 i = 0; i < 4; ++i) {
+		if (!World->QueryTraceData(Edge.RescueHandles[i], Data[i])) {
+			return;
+		}
+	}
+	Edge.bRescuePending = false;
+
+	// The source moved while the traces flew. A relay only re-verifies the listener legs, so it
+	// cannot speak for a stale source side.
+	if (Edge.bEvicting && Edge.bSourceSideEviction) {
+		return;
+	}
+
+	for (const FTraceDatum& Leg : Data) {
+		if (!IsEdgeTraceClear(Leg)) {
+			StartEviction(Component, Edge, SourcePos);
+			return;
+		}
 	}
 
 	Edge.bRelayed = true;
-	Edge.RelayPoint = Relay;
-	Edge.RelayDist = FVector::Dist(Edge.EdgePoint, Relay);
+	Edge.RelayPoint = Edge.LastLoSListenerPos;
+	Edge.RelayDist = FVector::Dist(Edge.EdgePoint, Edge.RelayPoint);
 	Edge.bEvicting = false;
 	Edge.EvictionAlpha = 1.f;
 	// Reset the movement baseline, or the walk to the second corner evicts the fresh relay at once.
 	Edge.CapturedListenerPos = ListenerPos;
-	return true;
 }
 
 // While relayed, Phase 0 only watches the relay point, so these two legs need their own re-check.
@@ -377,6 +407,7 @@ void FEdgeCache::TickRelayMaintenance(USpatialAudioComponent& Component, FCached
 	if (!Edge.bRelayed) {
 		return;
 	}
+	const USpatialAudioComponent::FTraceBucketScope Bucket(Component, USpatialAudioComponent::ETraceBucket::Relay);
 	// No yield-to-direct-edge check here. Every relay converts on its first readback, so the yield
 	// only ever killed siblings mid-conversion.
 
@@ -489,7 +520,8 @@ bool FEdgeCache::TickMovementThresholdEviction(USpatialAudioComponent& Component
 
 void FEdgeCache::TickPhase0Submission(const USpatialAudioComponent& Component, FCachedEdgePoint& Edge, UWorld* World,
                                       const FVector& ListenerPos, bool bIntervalFired) {
-	if (!Edge.bPhase0Pending && !Edge.bPhase0OffsetPending && bIntervalFired && !(Edge.bEvicting && Edge.bSourceSideEviction)) {
+	if (!Edge.bPhase0Pending && !Edge.bPhase0OffsetPending && !Edge.bRescuePending && bIntervalFired
+		&& !(Edge.bEvicting && Edge.bSourceSideEviction)) {
 		Edge.AsyncPhase0Handle = Component.SubmitAsyncTrace(World, ListenerPos, Edge.EffectivePoint());
 		Edge.bPhase0Pending = true;
 	}
@@ -501,6 +533,7 @@ void FEdgeCache::ClearStalePendingChecks(USpatialAudioComponent& Component) {
 			Edge.bPhase0Pending = false;
 			Edge.bPhase0OffsetPending = false;
 			Edge.bRelayCheckPending = false;
+			Edge.bRescuePending = false;
 		}
 		Component.PathRecheck.bPending = false;
 	}
@@ -525,6 +558,7 @@ bool FEdgeCache::TickSingleEdge(USpatialAudioComponent& Component, FCachedEdgePo
 		return true;
 	}
 
+	TickRelayRescueReadback(Component, Edge, World, SourcePos, ListenerPos);
 	TickPhase0Readback(Component, Edge, World, SourcePos, ListenerPos, Settings);
 	TickPhase0OffsetReadback(Component, Edge, World, SourcePos, ListenerPos);
 
@@ -539,6 +573,7 @@ bool FEdgeCache::TickSingleEdge(USpatialAudioComponent& Component, FCachedEdgePo
 }
 
 void FEdgeCache::TickCachedEdgeEviction(USpatialAudioComponent& Component, const float DeltaTime, const USpatialAudioSettings& Settings) {
+	Component.CurrentTraceBucket = USpatialAudioComponent::ETraceBucket::Phase0;
 	if (Component.bHasDirectLoS) {
 		Component.bPhase0HandlesStale = true;
 		return;
@@ -646,6 +681,7 @@ void FEdgeCache::TickShortestPathRecheck(USpatialAudioComponent& Component, UWor
 	if (Settings.ShortestPathRecheckInterval <= 0.f || Component.CachedEdgePoints.IsEmpty()) {
 		return;
 	}
+	const USpatialAudioComponent::FTraceBucketScope Bucket(Component, USpatialAudioComponent::ETraceBucket::PathCheck);
 	Component.ShortestPathCheckTimer += DeltaTime;
 	if (Component.ShortestPathCheckTimer < Settings.ShortestPathRecheckInterval
 		|| Component.PathRecheck.bPending) {
@@ -744,6 +780,7 @@ void FEdgeCache::TickInnerAnchorPromotion(USpatialAudioComponent& Component, con
 	if (Settings.ShortestPathPromotionInterval <= 0.f || Component.CachedEdgePoints.IsEmpty()) {
 		return;
 	}
+	const USpatialAudioComponent::FTraceBucketScope Bucket(Component, USpatialAudioComponent::ETraceBucket::PathCheck);
 	Component.ShortestPathPromotionTimer += DeltaTime;
 	if (Component.ShortestPathPromotionTimer < Settings.ShortestPathPromotionInterval) {
 		return;

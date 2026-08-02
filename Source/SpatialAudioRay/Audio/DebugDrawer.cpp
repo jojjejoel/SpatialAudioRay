@@ -318,7 +318,10 @@ void USpatialAudioComponent::DrawSweepPacingDebugText(const uint64 Base, const U
 		SweepStatus = TEXT("idle");
 	}
 
-	const bool bSweepSuspended = bHasDirectLoS && !bAsyncCastActive;
+	// Mirrors the timer pin in TickComponent term for term. Dropping the pre-sweep term reported
+	// SUSPENDED throughout the band, which is the one state where LoS still exists AND sweeps run.
+	const bool bPreSweepBand = IsPreSweepActive();
+	const bool bSweepSuspended = bHasDirectLoS && !bPreSweepBand && !bAsyncCastActive;
 	FString SweepLine;
 	if (bSweepSuspended && LastOffsetLoSFraction <= 0.f) {
 		SweepLine = FString::Printf(TEXT("  Sweep  SUSPENDED (confirming LoS loss %d/%d)  │  timer=%.2f/%.2fs"),
@@ -331,7 +334,10 @@ void USpatialAudioComponent::DrawSweepPacingDebugText(const uint64 Base, const U
 		                            TimeSinceFullCast, SubInterval);
 	}
 	else {
-		SweepLine = FString::Printf(TEXT("  Sweep  %s  │  timer=%.2f/%.2fs  [%s]"),
+		// Naming the band explains why sweeps run while LoS still exists, which otherwise reads
+		// as the pacing state contradicting itself.
+		SweepLine = FString::Printf(TEXT("  Sweep  %s%s  │  timer=%.2f/%.2fs  [%s]"),
+		                            bPreSweepBand ? TEXT("PRE-SWEEP ") : TEXT(""),
 		                            *PacingLabel, TimeSinceFullCast, SubInterval, *SweepStatus);
 	}
 	GEngine->AddOnScreenDebugMessage(Base + 6, 0.f, bSweepSuspended ? FColor::Green : PacingColor, SweepLine);
@@ -347,6 +353,21 @@ void USpatialAudioComponent::DrawTraceStatsDebugText(const uint64 Base) const {
 		                                 TraceDiag.LastSweepAsyncRays, TraceDiag.LastSweepCachedReplaced, TraceDiag.LastSweepFrames,
 		                                 TraceDiag.LastSweepDuration * 1000.f, TraceDiag.LastSweepInterval * 1000.f,
 		                                 TraceDiag.LastSweepDuration > TraceDiag.LastSweepInterval ? TEXT("  OVER") : TEXT("")));
+
+	// ── Slot 9: what those per-frame traces were spent on ─────────────────
+	// Decomposes the ~/fr figure above. Smoothed and snapshotted identically, so the parts sum
+	// to the total rather than drifting against it.
+	const float* Buckets = TraceDiag.SnapshotBucketTraces;
+	GEngine->AddOnScreenDebugMessage(Base + 9, 0.f, FColor::Cyan,
+	                                 FString::Printf(
+		                                 TEXT("    of which  swp %.1f · occ %.1f · ph0 %.1f · rly %.1f · bis %.1f · pth %.1f · oth %.1f"),
+		                                 Buckets[static_cast<int32>(ETraceBucket::Sweep)],
+		                                 Buckets[static_cast<int32>(ETraceBucket::Occlusion)],
+		                                 Buckets[static_cast<int32>(ETraceBucket::Phase0)],
+		                                 Buckets[static_cast<int32>(ETraceBucket::Relay)],
+		                                 Buckets[static_cast<int32>(ETraceBucket::Bisect)],
+		                                 Buckets[static_cast<int32>(ETraceBucket::PathCheck)],
+		                                 Buckets[static_cast<int32>(ETraceBucket::Other)]));
 }
 
 void USpatialAudioComponent::DrawEdgeTimerDebugText(const uint64 Base, const USpatialAudioSettings& Settings) const {

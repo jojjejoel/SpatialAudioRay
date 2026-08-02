@@ -339,6 +339,8 @@ private:
 
 	bool TraceLine(const UWorld* World, FHitResult& Hit, const FVector& Start, const FVector& End) const;
 
+	void CountTrace() const;
+
 	FTraceHandle SubmitAsyncTrace(UWorld* World, const FVector& Start, const FVector& End) const;
 
 	void GetEffectiveRayCounts(int32& OutFull, float& OutPriority) const;
@@ -506,9 +508,36 @@ private:
 		float VirtualPathBend = 0.f;
 	} AudioDiag;
 
+	/** Which subsystem the traces being issued right now belong to. Set at the top of each tick
+	 *  phase; Other is the default so a phase nobody tagged shows up on the HUD as an unexplained
+	 *  bucket instead of silently inflating whichever one ran last. */
+	enum class ETraceBucket : uint8 { Sweep, Occlusion, Phase0, Relay, Bisect, PathCheck, Other, Count };
+	mutable ETraceBucket CurrentTraceBucket = ETraceBucket::Other;
+
+	/** Bills every trace in its lifetime to one bucket and restores the previous on exit, so a
+	 *  nested phase (a rescue inside a Phase 0 readback, a bisection inside a relay conversion)
+	 *  charges itself rather than its caller. */
+	struct FTraceBucketScope {
+		const USpatialAudioComponent& Comp;
+		const ETraceBucket Previous;
+		FTraceBucketScope(const USpatialAudioComponent& InComp, const ETraceBucket Bucket)
+			: Comp(InComp), Previous(InComp.CurrentTraceBucket) {
+			InComp.CurrentTraceBucket = Bucket;
+		}
+		~FTraceBucketScope() { Comp.CurrentTraceBucket = Previous; }
+	};
+
 	struct FTraceDiagnostics {
 		mutable int32 FrameCount = 0;
 		float SmoothedFrameTraces = 0.f;
+
+		/** Per-subsystem split of FrameCount, smoothed and snapshotted exactly like the total so
+		 *  the parts stay comparable with it. Answers "why was this frame expensive" directly,
+		 *  which the single total could only ever answer by inference. */
+		static constexpr int32 BucketCount = static_cast<int32>(ETraceBucket::Count);
+		mutable int32 BucketFrameCounts[BucketCount] = {};
+		float SmoothedBucketTraces[BucketCount] = {};
+		float SnapshotBucketTraces[BucketCount] = {};
 
 		float SnapshotTimer = 0.f;
 		int32 AccumBucket = 0;

@@ -37,13 +37,18 @@ USpatialAudioComponent::USpatialAudioComponent() {
 
 bool USpatialAudioComponent::TraceLine(const UWorld* World, FHitResult& Hit,
                                        const FVector& Start, const FVector& End) const {
-	++TraceDiag.FrameCount;
+	CountTrace();
 	return World->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility, TraceQueryParams);
 }
 
 FTraceHandle USpatialAudioComponent::SubmitAsyncTrace(UWorld* World, const FVector& Start, const FVector& End) const {
-	++TraceDiag.FrameCount;
+	CountTrace();
 	return World->AsyncLineTraceByChannel(EAsyncTraceType::Single, Start, End, ECC_Visibility, TraceQueryParams);
+}
+
+void USpatialAudioComponent::CountTrace() const {
+	++TraceDiag.FrameCount;
+	++TraceDiag.BucketFrameCounts[static_cast<int32>(CurrentTraceBucket)];
 }
 
 void USpatialAudioComponent::BeginPlay() {
@@ -370,6 +375,7 @@ float USpatialAudioComponent::TimeToBlendSpeed(const float Seconds) {
 }
 
 void USpatialAudioComponent::TickAsyncPipeline(const USpatialAudioSettings& Settings) {
+	CurrentTraceBucket = ETraceBucket::Sweep;
 	if (Finalize.bPending) {
 		FAsyncCastManager::ReadbackFinalizeBatch(*this, Settings);
 	}
@@ -389,7 +395,9 @@ void USpatialAudioComponent::TickAsyncPipeline(const USpatialAudioSettings& Sett
 }
 
 void USpatialAudioComponent::TickNormalSweepDispatch(const float DeltaTime, const bool bInRange, const float SubInterval) {
+	CurrentTraceBucket = ETraceBucket::Occlusion;
 	FUpdater::TickDirectLoSSampling(*this, DeltaTime, GetSettings());
+	CurrentTraceBucket = ETraceBucket::Sweep;
 
 	// Full sweeps may not start until one complete ring rotation has confirmed no-LoS
 	// (NoLoSSampleStreak resets on any clear sample). While moving, bHasDirectLoS drops on
@@ -486,6 +494,11 @@ void USpatialAudioComponent::UpdateTraceDiagnostics(const float DeltaTime) {
 
 	TraceDiag.SmoothedFrameTraces = FMath::FInterpTo(TraceDiag.SmoothedFrameTraces, static_cast<float>(TraceDiag.FrameCount),
 	                                                 DeltaTime, 4.f);
+	for (int32 b = 0; b < FTraceDiagnostics::BucketCount; ++b) {
+		TraceDiag.SmoothedBucketTraces[b] = FMath::FInterpTo(TraceDiag.SmoothedBucketTraces[b],
+		                                                     static_cast<float>(TraceDiag.BucketFrameCounts[b]),
+		                                                     DeltaTime, 4.f);
+	}
 
 	if (VelocityScaling.IsStationary()) {
 		TraceDiag.RestTraceAccum += TraceDiag.FrameCount;
@@ -507,6 +520,9 @@ void USpatialAudioComponent::UpdateTraceDiagnostics(const float DeltaTime) {
 	TraceDiag.SnapshotTimer = 0.f;
 	TraceDiag.AccumBucket = 0;
 	TraceDiag.SnapshotFrameTraces = TraceDiag.SmoothedFrameTraces;
+	for (int32 b = 0; b < FTraceDiagnostics::BucketCount; ++b) {
+		TraceDiag.SnapshotBucketTraces[b] = TraceDiag.SmoothedBucketTraces[b];
+	}
 
 	TraceDiag.History[TraceDiag.HistoryHead] = TraceDiag.SnapshotTracesPerSec;
 	TraceDiag.HistoryHead = (TraceDiag.HistoryHead + 1) % TraceDiag.HistoryLen;
@@ -533,6 +549,7 @@ void USpatialAudioComponent::TickComponent(const float DeltaTime, const ELevelTi
                                            FActorComponentTickFunction* ThisTickFunction) {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 	TraceDiag.FrameCount = 0;
+	FMemory::Memzero(TraceDiag.BucketFrameCounts);
 
 	TickAsyncPipeline(GetSettings());
 

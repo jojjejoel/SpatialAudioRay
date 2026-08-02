@@ -93,6 +93,13 @@ struct FCachedEdgePoint {
 	FTraceHandle RelayCheckHandles[4];
 	bool bRelayCheckPending = false;
 
+	/** In-flight relay-rescue traces (edge↔relay candidate and candidate↔listener, forward and
+	 *  reverse each), submitted the tick Phase 0 gives up on this edge and read back the next.
+	 *  The edge is left alone while they fly rather than fading pre-emptively: a doomed edge
+	 *  loses one frame off a fade it was about to start anyway, and a rescued one never dims. */
+	FTraceHandle RescueHandles[4];
+	bool bRescuePending = false;
+
 	void ClearRelay() {
 		bRelayed = false;
 		RelayPoint = FVector::ZeroVector;
