@@ -138,8 +138,8 @@ public:
 	 * listener-bias pull (bounce, crawl, mid-air turn) target where the listener and source
 	 * will be after this long at their current smoothed velocity, so sweep results are less
 	 * stale by the time they are consumed (they serve until the next sweep). Exception: for
-	 * this long after direct LoS is lost (including pre-sweep-band casts and the LoS-break
-	 * sweep), steering aims at the position this long in the PAST instead — the corner just
+	 * this long after direct LoS is lost (including pre-sweep-band casts and the first
+	 * sweeps after a break), steering aims at the position this long in the PAST instead — the corner just
 	 * crossed sits behind, and leading forward would aim into the shadow. Steering only —
 	 * LoS probes, budget gates, occlusion sampling, and the edge cache always verify against
 	 * the real positions, so a wrong prediction can never cache anything incorrect, it only
@@ -355,24 +355,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Occlusion",
 		meta = (ClampMin = "0.0"))
 	float OcclusionAttackTime = 0.1f;
-
-	/**
-	 * Number of rays in the one-shot sync sweep fired when direct LoS is first blocked.
-	 * Immediately seeds TargetVirtualSourceLocation so the virtual source starts at a
-	 * plausible edge on the same frame as LoS loss. Fewer = cheaper; 0 = disabled.
-	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Occlusion",
-		meta = (ClampMin = "0", ClampMax = "32"))
-	int32 LoSBreakSweepRayCount = 8;
-
-	/**
-	 * Minimum seconds between successive LoS-break sweeps.
-	 * Prevents repeated sync spikes when the listener oscillates at a shadow boundary.
-	 * 0 = fire on every transition.
-	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Occlusion",
-		meta = (ClampMin = "0.0"))
-	float LoSBreakSweepCooldownTime = 0.3f;
 
 	/**
 	 * Seconds bHasDirectLoS must be continuously true before the virtual source snaps

@@ -16,8 +16,7 @@ namespace Math {
 	// in the acceptance probability, not a direct lerp, so roughness keeps controlling the spread).
 	// BounceListenerBias then pulls the result the rest of the way toward the listener directly,
 	// re-projecting above the surface if that pull would send it through. Shared by the async
-	// bounce/crawl-bounce-out paths and the sync ProcessRayHit perp-wall/fallback bounces — all
-	// four must scatter identically.
+	// bounce and crawl-bounce-out paths, which must scatter identically.
 	inline FVector ComputeBouncedDirection(const FVector& InDir, const FVector& SurfaceNormal,
 	                                       bool bApplyBias, const FVector& HitLocation,
 	                                       const FVector& ListenerPos, float SurfaceRoughness,

@@ -13,10 +13,9 @@ First time here? Read `ReadingGuide.md` instead. It is a step-by-step tour. This
 | `SpatialAudioComponent.h/.cpp` | Main class and `TickComponent`. All state lives here. |
 | `AsyncCastManagerSubmit.cpp` | Sweep launch and the per-frame ray advance. |
 | `AsyncCastManagerReadback.cpp` | Finalize readback and the cache merge. |
-| `UpdaterCast.cpp` | Per-frame LoS sampling, update cast, LoS-break sweep. |
+| `UpdaterCast.cpp` | Per-frame LoS sampling and the update cast. |
 | `UpdaterAudio.cpp` | Writing the final numbers to the `UAudioComponent`s. |
 | `EdgeCache.cpp` | Per-frame validation and eviction of cached diffraction edges. |
-| `RayPhysics.cpp` | Shared surface-crawl and bounce helpers, used by both casts. |
 | `DebugDrawer.cpp` | Debug overlay. Nothing here affects audio. |
 | `SpatialAudioDebugSubsystem.h/.cpp` | Registry of active components, global HUD, all debug key polling. |
 | `SpatialAudioTypes.h` | Shared structs: `FSpatialRayState`, `FCachedEdgePoint` and the rest. |
@@ -57,9 +56,9 @@ If `FullSweepCycleCount` is above 1 a sweep splits into sub-cycles, tracked by `
 
 Cached edges are snapshotted into `PendingValidCachedPoints` at cycle 0. Direct, non-evicting entries count as free results and reduce the rays needed. Relayed and evicting entries stay in the snapshot for presentation but do not substitute for rays and do not have their directions skipped, which `BuildCachedEdgeSkipIndices` handles. A relay is an audible stopgap rather than a found path, so the sweep keeps searching at full budget, and the region around a relayed edge is exactly where its replacement most likely is.
 
-**Steering prediction.** With `SteeringPredictionLeadTime` above 0 the sweep also captures `AsyncSteeringSourcePos` and `AsyncSteeringListenerPos`, the actual positions led by the smoothed velocity vectors. The lead is signed, in `ComputeSteeringLead`. Within the lead time of losing direct LoS, which covers pre-sweep-band casts and the LoS-break sweep, steering aims at where the listener was, because the aperture just crossed is behind them, between there and the source. Once occlusion is sustained it flips to forward prediction.
+**Steering prediction.** With `SteeringPredictionLeadTime` above 0 the sweep also captures `AsyncSteeringSourcePos` and `AsyncSteeringListenerPos`, the actual positions led by the smoothed velocity vectors. The lead is signed, in `ComputeSteeringLead`. Within the lead time of losing direct LoS, which covers pre-sweep-band casts and the first sweeps after a break, steering aims at where the listener was, because the aperture just crossed is behind them, between there and the source. Once occlusion is sustained it flips to forward prediction.
 
-Only steering sites read those positions: the Fibonacci aiming axis, the lateral-band bias weight, every listener pull in flight through `BounceListenerBias`, `CrawlListenerBias`, `SelectEdgeDirection` and mid-air turns, plus the launch bias of the LoS-break sweep. Everything that verifies or caches stays on actual positions, including LoS probes, budget and probe gates, occlusion sampling, Phase 0 and readback ranking. A wrong prediction can therefore only aim rays less well, never cache a false edge. Stationary, the lead decays to zero and behaviour including seeded-bias determinism is unchanged.
+Only steering sites read those positions: the Fibonacci aiming axis, the lateral-band bias weight, and every listener pull in flight through `BounceListenerBias`, `CrawlListenerBias`, `SelectEdgeDirection` and mid-air turns. Everything that verifies or caches stays on actual positions, including LoS probes, budget and probe gates, occlusion sampling, Phase 0 and readback ranking. A wrong prediction can therefore only aim rays less well, never cache a false edge. Stationary, the lead decays to zero and behaviour including seeded-bias determinism is unchanged.
 
 ### 2. `TickAsyncCast`
 
@@ -68,13 +67,13 @@ Runs every frame while `bAsyncCastActive`, advancing every ray in `AsyncRays` on
 - `DrainPendingLoSProbes` reads back in-flight mid-segment LoS probe results.
 - `ProcessCrawlBatch` reads back all step probes if a crawl was submitted last frame. It is all-or-nothing and returns without advancing if any probe is not ready.
 - `SubmitSegmentLoSProbes` samples the current segment for LoS to the listener with async traces spaced along it.
-- The next step is decided. If the segment hit a surface, `ProcessRayHit` in `RayPhysics.cpp` chooses crawl or bounce and sets the new origin and direction.
+- The next step is decided. If the segment hit a surface, `TickSingleRay` either starts a crawl through `TrySetupSurfaceCrawl` or bounces through `ProcessRayBounceContinuation`, alternating per ray via `bNextHitCrawls`.
 
 When all rays reach `bDone`, `TickAsyncCast` calls `SubmitFinalizeBatch` and clears `bAsyncCastActive`.
 
 **Mid-air turns.** With `MaxStraightFlightDistance` above 0, every segment and the crawl range are capped to that distance, and a segment that flies its full capped length without hitting anything turns instead of terminating. `ComputeMidAirTurnDirection` applies the same roughness scatter and listener bias as a bounce, but around the current direction since there is no surface normal. At zero roughness and zero bias, where the scatter formula would fly straight, it turns 90 degrees at an angle deterministically seeded from the turn point, so stationary scenes replay identical turns. Each turn consumes a bounce and records a `BounceWaypoint` so string pulling sees it, and the ray only terminates on LoS, budget exhaustion or `MaxBounces`. At the default of 0 a miss terminates the ray. `Ray.SegSubmitLen` records each submitted segment length so the miss handler knows the actual flown distance, since recomputing it from the budget formulas would overshoot the clamp.
 
-**Best-case pruning**, always on with no setting. Every LoS probe is gated on `CumDist + dist(point, listener) <= Budget`, and by the triangle inequality that sum can only grow with further travel. So at every decision point, meaning bounce, crawl exit, mid-air turn and the loop head of both sync sweeps, a ray past that bound dies immediately. It cannot produce a result and flying on would only burn traces. This is lossless: it never kills a ray that could still publish anything.
+**Best-case pruning**, always on with no setting. Every LoS probe is gated on `CumDist + dist(point, listener) <= Budget`, and by the triangle inequality that sum can only grow with further travel. So at every decision point, meaning bounce, crawl exit and mid-air turn, a ray past that bound dies immediately. It cannot produce a result and flying on would only burn traces. This is lossless: it never kills a ray that could still publish anything.
 
 ### 3. `SubmitFinalizeBatch`
 
@@ -100,7 +99,7 @@ Otherwise `AccumulateRefineProbesIntoCycle` reads back the refinement probes int
 
 ## Per-frame direct-LoS sampling
 
-`TickDirectLoSSampling` in `UpdaterCast.cpp` runs every frame, including while a full cast is in flight, because occlusion must keep updating during sweeps instead of stalling until they finish. It is the sole owner of `TargetOcclusion`. Neither the cast readback nor the LoS-break sweep writes it.
+`TickDirectLoSSampling` in `UpdaterCast.cpp` runs every frame, including while a full cast is in flight, because occlusion must keep updating during sweeps instead of stalling until they finish. It is the sole owner of `TargetOcclusion`. The cast readback does not write it, apart from zeroing it the moment a sweep confirms direct LoS.
 
 ### Sampling the fraction
 
@@ -212,9 +211,9 @@ Every group is documented at its declaration in `SpatialAudioComponent.h`; read 
 
 ---
 
-## The ray physics helpers
+## Surface crawling
 
-`CrawlSurfaceToEdge` and `ProcessRayHit` in `RayPhysics.cpp` are shared by the async cast and the sync LoS-break sweep, so reading them once explains both. `ReadingGuide.md` Stop 7 covers what they do. The one number worth knowing is the crawl range: `MaxCrawlSteps × CrawlStepSize`, capped further by `MaxStraightFlightDistance` when set, with a minimum of one step. A crawl that exhausts it without finding an edge bounces off the wall from the original hit point.
+`TrySetupSurfaceCrawl` and `EvaluateCrawlSteps` in `AsyncCastManagerSubmit.cpp` are the only crawl implementation; `ReadingGuide.md` Stop 7 covers what they do. The one number worth knowing is the crawl range: `MaxCrawlSteps × CrawlStepSize`, capped further by `MaxStraightFlightDistance` when set, with a minimum of one step. A crawl that exhausts it without finding an edge bounces off the wall from the original hit point.
 
 ---
 

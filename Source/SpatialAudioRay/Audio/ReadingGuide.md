@@ -71,11 +71,11 @@ ComputeEffectiveSweepInterval        how long until the next sweep is allowed
 TickMovementSweepTrigger   listener moved far, request an early sweep
 TickNormalSweepDispatch    per-frame LoS sampling always, then either start a
                            sweep or run the cheap update cast
-PerformLoSBreakSweep       only on the frame LoS was lost: an instant sync sweep so
-                           the virtual source exists before the crossfade opens
 SmoothTowardTargets        interpolate all Current values
 UpdateAudioParameters      write the final numbers to the AudioComponents (Stop 8)
 ```
+
+One inline branch sits between the dispatch and the smoothing: the frame direct line of sight is lost sets `bMovementRequested`, which starts the next sweep immediately instead of waiting out the interval timer, so the edge cache refills while the crossfade is still opening.
 
 Read `BeginPlay` too. It caches every `UAudioComponent` tagged `AudioComponentSource`, since one pipeline serves all co-located sounds on an actor, creates a transient `UAudioBus` for the sources to write into, and builds the virtual voice pool. The pool is twice `MaxVirtualVoices` components, all playing silently from frame one so a fade-in never pays MetaSound startup latency.
 
@@ -113,9 +113,13 @@ The shortest-path recheck is round-robin, re-tracing one edge's stored polyline 
 
 Whether an eviction can be undone depends on which side failed. Listener-side evictions un-evict the moment Phase 0 sees the edge again. Source-side ones, flagged `bSourceSideEviction`, can only be rehabilitated by a fresh sweep, because the listener leg is usually still clear and would otherwise resurrect them forever.
 
-## Stop 7. The synchronous mirror
+## Stop 7. The crawl mechanic, and the cheap path
 
-`ProcessRayHit` and `CrawlSurfaceToEdge` in `RayPhysics.cpp` are synchronous versions of the crawl-or-bounce logic from Stop 5, shared with `FUpdater::TraceSingleLoSBreakRay`, the instant sweep fired when line of sight breaks. Read `CrawlSurfaceToEdge` for the crawl mechanic in its plainest form: step along the wall, back-probe toward the surface at each step, and when the back-probe misses, the wall has ended and that is the edge.
+Surface crawling deserves its own read, since it is what actually finds most diffraction edges. The mechanic is simple: step along the wall away from the hit point, and at each step probe back toward the surface. While the back-probe hits, the wall is still there. The step where it misses is past the end of the wall, and that point is the edge.
+
+The code splits that across two phases, because every probe is asynchronous. `TrySetupSurfaceCrawl` computes the crawl direction, blending the ray's slide vector along the wall with the wall-projected direction to the listener by `CrawlListenerBias`, then submits every step's three traces in one batch: the back-probe, a line-of-sight probe to the listener, and a forward probe for a perpendicular wall in the way. Submitting the whole batch up front is the point. A crawl costs one frame of latency however many steps it runs, instead of one frame per step.
+
+`EvaluateCrawlSteps` reads that batch back the next frame and walks the steps in order, asking three questions per step, each its own named function: did this step see the listener, did the forward probe hit a perpendicular wall, and did the back-probe miss. The first yes wins and ends the crawl. Note that it is all-or-nothing, returning without advancing if any probe in the batch is not ready yet, since a partial read would evaluate steps out of order.
 
 Then `PerformUpdateRayCast` in `UpdaterCast.cpp`, the cheap per-frame path used when no sweep is running. It casts no new rays. It re-weights the existing cache in `AccumulateCachedEdgeWeights`, where the `SrcW` and `PosW` split is what enforces listener independence, refreshes the virtual position target and path attenuation, then clusters edges into voices. `Math::ClusterEdgePoints` groups cache entries by radius and `SyncVirtualVoicesToClusters` diffs desired against active: within glide range a voice keeps its slot and glides, otherwise the old slot fades out where it is and a new one fades in.
 
@@ -149,7 +153,7 @@ Tests live in `Source/SpatialAudioRay/Tests/`, registered as `SpatialAudioRay.Ma
 4. `TickDirectLoSSampling`, occlusion
 5. `StartAsyncFullCast`, `TickAsyncCast`, `SubmitFinalizeBatch`, `ReadbackFinalizeBatch`, the sweep
 6. `TickCachedEdgeEviction`, edge lifetime
-7. `CrawlSurfaceToEdge` and `ProcessRayHit`, then `PerformUpdateRayCast`
+7. `TrySetupSurfaceCrawl` and `EvaluateCrawlSteps`, then `PerformUpdateRayCast`
 8. `UpdateDualModeAudio` and `Math.h`, numbers into sound
 9. Run it with the debug keys, skim the tests
 

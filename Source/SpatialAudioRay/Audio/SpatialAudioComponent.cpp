@@ -394,8 +394,7 @@ void USpatialAudioComponent::TickNormalSweepDispatch(const float DeltaTime, cons
 	// Full sweeps may not start until one complete ring rotation has confirmed no-LoS
 	// (NoLoSSampleStreak resets on any clear sample). While moving, bHasDirectLoS drops on
 	// the first blocked sample, which would otherwise fire the expensive sweep pipeline for
-	// what may be a brief occluder flicker; the LoS-break sweep below still fires instantly
-	// so the virtual source is seeded for the transition. The pre-sweep band bypasses the
+	// what may be a brief occluder flicker. The pre-sweep band bypasses the
 	// rotation gate entirely (IsPreSweepActive reads CurrentOcclusion, not bHasDirectLoS):
 	// a fast occlusion jump that drops bHasDirectLoS in a single sample still starts sweeping
 	// the moment the debug-visible occlusion crosses the threshold, without waiting on the
@@ -557,8 +556,8 @@ void USpatialAudioComponent::TickComponent(const float DeltaTime, const ELevelTi
 
 	// Held at zero while direct/offset LoS exists and occlusion is low (sweeps are LoS-gated):
 	// losing LoS then starts a fresh interval instead of firing instantly off an accumulated
-	// timer — the LoS-break sweep below handles the immediate response to a break. In the
-	// pre-sweep band the timer runs so pre-warm sweeps can pace normally.
+	// timer — the bMovementRequested set below handles the immediate response to a break. In
+	// the pre-sweep band the timer runs so pre-warm sweeps can pace normally.
 	TimeSinceFullCast = bHasDirectLoS && !IsPreSweepActive() ? 0.f : TimeSinceFullCast + DeltaTime;
 
 	TickMovementSweepTrigger(DeltaTime, bInRange, TickPawn);
@@ -568,12 +567,11 @@ void USpatialAudioComponent::TickComponent(const float DeltaTime, const ELevelTi
 	const float SubInterval = EffFullSweepInterval / CycleCount;
 	TickNormalSweepDispatch(DeltaTime, bInRange, SubInterval);
 
-	if (bPrevHadDirectLoS && !bHasDirectLoS && LoSBreakSweepCooldown <= 0.f) {
-		FUpdater::PerformLoSBreakSweep(*this, GetSettings());
-		LoSBreakSweepCooldown = GetSettings().LoSBreakSweepCooldownTime;
+	// Losing LoS starts the async sweep on this frame instead of waiting out the interval timer,
+	// so the edge cache refills while the crossfade is still opening.
+	if (bPrevHadDirectLoS && !bHasDirectLoS) {
 		SweepScheduling.bMovementRequested = true;
 	}
-	LoSBreakSweepCooldown = FMath::Max(0.f, LoSBreakSweepCooldown - DeltaTime);
 
 	const float OccBlendSpeed = UpdateDirectLoSConfirmationAndBlendSpeed(DeltaTime);
 	const bool bConfirmedDirectLoS = DirectLoSConfirmedDuration >= GetSettings().DirectLoSConfirmTime;
@@ -617,7 +615,7 @@ float USpatialAudioComponent::ComputeEffectiveSweepInterval() const {
 FVector USpatialAudioComponent::ComputeSteeringLead(const FVector& SmoothedVelocity,
                                                     const USpatialAudioSettings& Settings) const {
 	const float Lead = Settings.SteeringPredictionLeadTime;
-	// Freshly-occluded sweeps (pre-sweep band, LoS-break, first sweeps after loss) aim at the
+	// Freshly-occluded sweeps (pre-sweep band, first sweeps after loss) aim at the
 	// PAST position: the corner just crossed sits between there and the source, and forward
 	// prediction would aim deeper into the shadow, away from the edge carrying the sound.
 	// "Fresh" = the position Lead seconds ago still fell inside the LoS era.

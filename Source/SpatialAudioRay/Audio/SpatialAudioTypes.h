@@ -251,18 +251,6 @@ struct FSpatialRayState {
 	int32 CrawlMaxSteps = 0;
 };
 
-struct FRayHitOutput {
-	bool bCrawlSucceeded = false;
-	bool bLoSFound = false;
-	FVector LoSPoint = FVector::ZeroVector;
-	float LoSCumDist = 0.f;
-	float CrawlDist = 0.f;
-	TArray<FVector> CrawlSteps;
-	TArray<FVector> CrawlProbeEnds;
-	bool bPerpWall = false;
-	FVector PerpWallEdgePoint = FVector::ZeroVector;
-};
-
 struct FFinalizeRefineProbe {
 	FVector LoSOrigin = FVector::ZeroVector;
 	int32 DirIndex = INDEX_NONE;

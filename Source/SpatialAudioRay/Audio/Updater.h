@@ -1,7 +1,6 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
-#include "Audio/AsyncCastManager.h"
 
 class UAudioComponent;
 class USpatialAudioComponent;
@@ -18,7 +17,6 @@ public:
 	static void TickDirectLoSSampling(USpatialAudioComponent& Component, float DeltaTime, const USpatialAudioSettings& Settings);
 	static void PerformUpdateRayCast(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings);
 	static void UpdateAudioParameters(USpatialAudioComponent& Component, float DeltaTime, const USpatialAudioSettings& Settings);
-	static void PerformLoSBreakSweep(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings);
 
 	// A blocked candidate is clamped to the hit location, nudged back toward the listener so the
 	// next trace does not start inside geometry, rather than discarded.
@@ -123,37 +121,4 @@ private:
 	                                   const TArray<bool>& VoiceClaimed);
 	static void AssignDesiredToVoices(USpatialAudioComponent& Component, TArray<FVirtualVoice>& Voices,
 	                                  TArray<FDesired>& Desired);
-
-	// ── PerformLoSBreakSweep phases ──────────────────────────────────────────
-	struct FLoSBreakRayResult {
-		bool bFound = false;
-		FVector Point = FVector::ZeroVector;
-		float CumDist = 0.f;
-	};
-	// Per-sweep constants every ray of one LoS-break sweep shares.
-	struct FSweepRayParams {
-		FVector ToListenerDir = FVector::ForwardVector;
-		float SteerDist = 0.f;
-		float MaxPathDist = 0.f;
-		int32 EffMaxBounces = 0;
-		bool bBias = false;
-	};
-	static FAsyncCastManager::FRayAccumulatorInput AccumulateLoSBreakHits(
-		const USpatialAudioComponent& Component, UWorld* World, const USpatialAudioSettings& Settings,
-		const FVector& SourcePos, const FVector& ListenerPos, const FSweepRayParams& RayParams);
-	static FVector PickBiasedLaunchDirection(const USpatialAudioComponent& Component,
-	                                         const USpatialAudioSettings& Settings,
-	                                         const FVector& ToListenerDir, float SteerDist, bool bBias);
-	static bool TryConfirmLoSAtPoint(const USpatialAudioComponent& Component, const UWorld* World, const FVector& Point,
-	                                 const FVector& ListenerPos, float CumDist, float MaxPathDist,
-	                                 FLoSBreakRayResult& OutResult);
-	static bool TrySampleSegmentForLoS(const USpatialAudioComponent& Component, const UWorld* World,
-	                                   const USpatialAudioSettings& Settings, const FVector& SegOrigin,
-	                                   const FVector& SegDir, float SegLen, float SegStartCumDist,
-	                                   const FVector& ListenerPos, float MaxPathDist,
-	                                   FLoSBreakRayResult& OutResult);
-	static FLoSBreakRayResult TraceSingleLoSBreakRay(const USpatialAudioComponent& Component, UWorld* World,
-	                                                 const USpatialAudioSettings& Settings, const FVector& SourcePos,
-	                                                 const FVector& ListenerPos, const FVector& ToListenerDir, bool bBias,
-	                                                 int32 EffMaxBounces, float MaxPathDist, float SteerDist, int32 RayIndex);
 };

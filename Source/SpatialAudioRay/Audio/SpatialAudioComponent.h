@@ -337,58 +337,6 @@ private:
 	void SmoothTowardTargets(float DeltaTime, float OccBlendSpeed, bool bConfirmedDirectLoS);
 	void UpdateTraceDiagnostics(float DeltaTime);
 
-	bool StepSampleSegmentForLoS(const FVector& SegStart, const FVector& SegDir, float SegLen,
-	                             float CumDistBase, const FVector& ListenerPos, float MaxBudget,
-	                             const USpatialAudioSettings& S, const UWorld* World,
-	                             FVector& OutLoSPoint, float& OutLoSCumDist) const;
-
-	void ProcessRayHit(const FHitResult& Hit,
-	                   FVector& InOutOrigin, FVector& InOutDir,
-	                   float& InOutCumDist, int32& InOutBounce, bool& InOutNextHitCrawls,
-	                   bool bLoSAlreadyFound, bool bBias,
-	                   const FVector& ListenerPos,
-	                   const USpatialAudioSettings& Settings, const UWorld* World,
-	                   FRayHitOutput& Out) const;
-
-	/**
-	 * Crawls along a wall surface from HitPoint in a direction blending the ray's slide vector
-	 * and the wall-projected listener direction. At each step casts a short back-probe in -Normal
-	 * to detect whether the wall still exists there. When the probe misses, the wall edge has been
-	 * found and OutEdgePoint/OutCrawlDir/OutCrawlDist are populated.
-	 * Returns false if no edge is found within MaxCrawlSteps.
-	 */
-	struct FCrawlOutput {
-		TArray<FVector> Steps;
-		TArray<FVector> ProbeEnds;
-		FHitResult PerpHit;
-		bool bPerpWallHit = false;
-		FVector LoSPoint = FVector::ZeroVector;
-		float LoSCumDist = 0.f;
-		bool bLoSFound = false;
-	};
-
-	bool CrawlSurfaceToEdge(const FVector& HitPoint, const FVector& IncomingDir,
-	                        const FVector& SurfaceNormal, const FVector& ListenerPos,
-	                        const UWorld* World,
-	                        FVector& OutEdgePoint, FVector& OutCrawlDir, float& OutCrawlDist,
-	                        const USpatialAudioSettings& S,
-	                        float InCumDist = 0.f,
-	                        FCrawlOutput* Out = nullptr) const;
-
-	// ── CrawlSurfaceToEdge phases ────────────────────────────────────────────
-	/** Forward-probes from NudgedStart along CrawlDir to see whether the wall ends before the
-	 *  full step cap; shrinks OutEffMaxSteps/OutMaxCrawlRange to the hit distance if so. */
-	void ComputeCrawlStepBudget(const FVector& NudgedStart, const FVector& CrawlDir, const UWorld* World,
-	                            const USpatialAudioSettings& S, int32 CrawlStepCap,
-	                            int32& OutEffMaxSteps, float& OutMaxCrawlRange) const;
-	/** Continues the LoS-only search past the stepped range (debug-only, Out required) up to
-	 *  MaxCrawlRange; the main loop already tried perp-wall/back-probe edges within EffMaxSteps. */
-	bool TryFindLoSBeyondCrawlSteps(const FVector& NudgedStart, const FVector& CrawlDir,
-	                                const FVector& SurfaceNormal, const FVector& ListenerPos,
-	                                const UWorld* World, const USpatialAudioSettings& S,
-	                                int32 FromStep, float MaxCrawlRange, float InCumDist,
-	                                FCrawlOutput& Out) const;
-
 	bool TraceLine(const UWorld* World, FHitResult& Hit, const FVector& Start, const FVector& End) const;
 
 	FTraceHandle SubmitAsyncTrace(UWorld* World, const FVector& Start, const FVector& End) const;
@@ -550,7 +498,6 @@ private:
 	float CurrentSourceToVirtualDistance = 0.f;
 
 	float LastDirectLoSFraction = 0.f;
-	float LoSBreakSweepCooldown = 0.f;
 
 	struct FAudioDiagnostics {
 		float CurvedOcclusion = 0.f;
