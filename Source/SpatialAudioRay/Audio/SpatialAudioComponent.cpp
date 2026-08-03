@@ -15,18 +15,11 @@
 #include "GameFramework/Actor.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/Pawn.h"
-#include "Framework/Application/SlateApplication.h"
 
 #include "Audio/AsyncCastManager.h"
 #include "Audio/EdgeCache.h"
 #include "Audio/SpatialAudioDebugSubsystem.h"
-
-
 #include "Audio/Updater.h"
-
-DECLARE_CYCLE_STAT(TEXT("SpatialAudio Update Cast"), STAT_SpatialAudio_UpdateCast, STATGROUP_Game);
-
-using namespace Math;
 
 USpatialAudioComponent::USpatialAudioComponent() {
 	PrimaryComponentTick.bCanEverTick = true;
@@ -604,7 +597,7 @@ void USpatialAudioComponent::TickComponent(const float DeltaTime, const ELevelTi
 
 
 float USpatialAudioComponent::ComputeEffectiveSweepInterval() const {
-	const bool bBothStationary = VelocityScaling.SweepMultiplier > 0.95f && VelocityScaling.EdgeMultiplier > 0.95f;
+	const bool bBothStationary = VelocityScaling.IsStationary();
 
 	float Interval = FMath::Lerp(
 			GetSettings().MaxFullSweepInterval, GetSettings().FullSweepInterval, CurrentPriority)

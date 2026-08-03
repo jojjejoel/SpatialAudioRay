@@ -132,13 +132,13 @@ void USpatialAudioDebugSubsystem::HandleSubModeKeyToggles(const USpatialAudioCom
 	ApplyToggle(First.ToggleVirtualSourceKey, bPrevSubModeKeyDown[0], &USpatialAudioComponent::bShowVirtualSourceRays);
 	ApplyToggle(First.ToggleBounceRaysKey, bPrevSubModeKeyDown[1], &USpatialAudioComponent::bShowBounceRays);
 	ApplyToggle(First.ToggleDebugTextKey, bPrevSubModeKeyDown[2], &USpatialAudioComponent::bShowDebugText);
-	ApplyToggle(First.ToggleDiffractionPathsKey, bPrevSubModeKeyDown[4], &USpatialAudioComponent::bShowDiffractionPaths);
-	ApplyToggle(First.ToggleEdgePointsKey, bPrevSubModeKeyDown[5], &USpatialAudioComponent::bShowEdgePoints);
-	ApplyToggle(First.ToggleSurfaceCrawlKey, bPrevSubModeKeyDown[6], &USpatialAudioComponent::bShowSurfaceCrawl);
-	ApplyToggle(First.ToggleLoSChecksKey, bPrevSubModeKeyDown[7], &USpatialAudioComponent::bShowLoSChecks);
-	ApplyToggle(First.ToggleOffsetLoSChecksKey, bPrevSubModeKeyDown[8], &USpatialAudioComponent::bShowOffsetLoSChecks);
-	ApplyToggle(First.ToggleShortestPathsKey, bPrevSubModeKeyDown[9], &USpatialAudioComponent::bShowShortestPaths);
-	ApplyToggle(First.ToggleSteeringPredictionKey, bPrevSubModeKeyDown[10], &USpatialAudioComponent::bShowSteeringPrediction);
+	ApplyToggle(First.ToggleDiffractionPathsKey, bPrevSubModeKeyDown[3], &USpatialAudioComponent::bShowDiffractionPaths);
+	ApplyToggle(First.ToggleEdgePointsKey, bPrevSubModeKeyDown[4], &USpatialAudioComponent::bShowEdgePoints);
+	ApplyToggle(First.ToggleSurfaceCrawlKey, bPrevSubModeKeyDown[5], &USpatialAudioComponent::bShowSurfaceCrawl);
+	ApplyToggle(First.ToggleLoSChecksKey, bPrevSubModeKeyDown[6], &USpatialAudioComponent::bShowLoSChecks);
+	ApplyToggle(First.ToggleOffsetLoSChecksKey, bPrevSubModeKeyDown[7], &USpatialAudioComponent::bShowOffsetLoSChecks);
+	ApplyToggle(First.ToggleShortestPathsKey, bPrevSubModeKeyDown[8], &USpatialAudioComponent::bShowShortestPaths);
+	ApplyToggle(First.ToggleSteeringPredictionKey, bPrevSubModeKeyDown[9], &USpatialAudioComponent::bShowSteeringPrediction);
 
 	const bool bDown = First.ToggleGlobalDebugTextKey.IsValid()
 		&& PC->IsInputKeyDown(First.ToggleGlobalDebugTextKey);

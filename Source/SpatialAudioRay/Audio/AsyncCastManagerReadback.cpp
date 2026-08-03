@@ -259,8 +259,7 @@ void FAsyncCastManager::AdvanceSweepCycleAndIdleState(USpatialAudioComponent& Co
 		&& Component.CountCacheFillEdges() < Settings.MovementCacheFillRequiredEdges) {
 		--Component.SweepScheduling.CacheFillSweepsRemaining;
 	}
-	if (bSweepSequenceComplete
-		&& Component.VelocityScaling.SweepMultiplier > 0.95f && Component.VelocityScaling.EdgeMultiplier > 0.95f) {
+	if (bSweepSequenceComplete && Component.VelocityScaling.IsStationary()) {
 		Component.SweepScheduling.bStationaryIdleMode = true;
 		Component.SweepScheduling.StationaryIdleSourcePos = Component.AsyncSourcePos;
 		Component.SweepScheduling.StationaryIdleListenerPos = Component.AsyncListenerPos;

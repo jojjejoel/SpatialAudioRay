@@ -76,10 +76,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice|Debug")
 	bool bShowDebugText = false;
 
-	/** Committed effort bucket (post-hysteresis) — what the next line will play at. */
-	UFUNCTION(BlueprintPure, Category = "NPC Voice")
-	ENPCVoiceEffort GetCurrentEffort() const { return BucketState.Committed; }
-
 private:
 	void ResolveOwnerComponents();
 	void LoadBank();

@@ -84,7 +84,6 @@ private:
 
 	// ── PerformUpdateRayCast phases ──────────────────────────────────────────
 	struct FEdgeWeightAccum {
-		int32 RaysReached = 0;
 		FVector WeightedPos = FVector::ZeroVector;
 		float PosWeightTotal = 0.f;
 		float SrcWeightTotal = 0.f;

@@ -13,10 +13,6 @@
 DECLARE_CYCLE_STAT(TEXT("SpatialAudio Async Tick"), STAT_SpatialAudio_AsyncTick, STATGROUP_Game);
 
 namespace {
-	bool IsTraceClear(const FTraceDatum& Datum) {
-		return Datum.OutHits.IsEmpty() || !Datum.OutHits[0].bBlockingHit;
-	}
-
 	FVector SelectEdgeDirection(const FVector& SurfaceNormal, const FVector& ToListener) {
 		return FVector::DotProduct(SurfaceNormal, ToListener) >= 0.f ? SurfaceNormal : -SurfaceNormal;
 	}
@@ -311,15 +307,15 @@ void FAsyncCastManager::ProcessRayTermination(const USpatialAudioComponent& Comp
 		const float RemainingBudget = FMath::Max(0.f, FMath::Min(
 			FMath::Min(Component.MaxRayDistance * Settings.RayLengthMultiplier, Ray.SegSubmitLen),
 			Budget - Ray.CumulativeDistance));
-		Ray.TerminalPoint = Ray.Origin + Ray.Dir * RemainingBudget;
+		const FVector TerminalPoint = Ray.Origin + Ray.Dir * RemainingBudget;
 
 		if (ShouldDrawFlightPaths(Component)) {
-			DrawDebugLine(World, Ray.Origin, Ray.TerminalPoint,
+			DrawDebugLine(World, Ray.Origin, TerminalPoint,
 			              FColor::Red, false, Settings.DebugLineDuration, 0, 0.5f);
 		}
 
 		if (!Ray.bLoSFound) {
-			const float SegLen = FVector::Dist(Ray.Origin, Ray.TerminalPoint);
+			const float SegLen = FVector::Dist(Ray.Origin, TerminalPoint);
 			SubmitSegmentLoSProbes(Component, Ray, World, Ray.Origin, Ray.Dir, SegLen, Budget, Settings);
 		}
 	}
@@ -549,7 +545,7 @@ void FAsyncCastManager::DrainPendingLoSProbes(const USpatialAudioComponent& Comp
 			continue;
 		}
 
-		if (!Ray.bLoSFound && IsTraceClear(LoSData) && Probe.CumDist < BestCumDist) {
+		if (!Ray.bLoSFound && Math::IsTraceClear(LoSData) && Probe.CumDist < BestCumDist) {
 			// A probe origin inside geometry exits silently forward, but the reverse trace hits the
 			// outer face and rejects it.
 			FHitResult SanityHit;
@@ -606,7 +602,7 @@ void FAsyncCastManager::TryConfirmLoSAtCrawlStep(const USpatialAudioComponent& C
 
 	FTraceDatum LoSData;
 	World->QueryTraceData(StepProbe.LoSHandle, LoSData);
-	if (!IsTraceClear(LoSData)) {
+	if (!Math::IsTraceClear(LoSData)) {
 		return;
 	}
 	// Reverse sanity trace, same reasoning as DrainPendingLoSProbes.
@@ -630,7 +626,7 @@ bool FAsyncCastManager::TryTakePerpWallExit(const FSpatialRayState& Ray, UWorld*
                                             const int32 StepIdx, FCrawlStepResult& OutResult) {
 	FTraceDatum PerpData;
 	World->QueryTraceData(StepProbe.PerpHandle, PerpData);
-	if (IsTraceClear(PerpData)) {
+	if (Math::IsTraceClear(PerpData)) {
 		return false;
 	}
 
@@ -653,7 +649,7 @@ bool FAsyncCastManager::TryTakeFreeEdgeExit(const USpatialAudioComponent& Compon
 	FTraceDatum BackData;
 	World->QueryTraceData(StepProbe.BackHandle, BackData);
 	// Clear means nothing is behind this step any more, so the crawl has walked off the edge.
-	if (!IsTraceClear(BackData)) {
+	if (!Math::IsTraceClear(BackData)) {
 		return false;
 	}
 
@@ -758,7 +754,7 @@ void FAsyncCastManager::ProcessCrawlBatch(const USpatialAudioComponent& Componen
 	// Anything past where the range trace hit is inside geometry, so those probes go unevaluated.
 	const int32 NumSteps = Ray.CrawlStepProbes.Num();
 	int32 EffMaxSteps = Ray.CrawlMaxSteps;
-	if (!IsTraceClear(RangeData)) {
+	if (!Math::IsTraceClear(RangeData)) {
 		const float HitDist = FVector::Dist(Ray.CrawlNudgedStart, RangeData.OutHits[0].Location);
 		EffMaxSteps = FMath::Min(
 			FMath::FloorToInt(HitDist / FMath::Max(Ray.CrawlStepSz, 1.f)),

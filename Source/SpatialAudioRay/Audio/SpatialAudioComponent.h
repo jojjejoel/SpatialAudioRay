@@ -110,16 +110,6 @@ public:
 		return AttenuationInnerRadius + BaseAttenuationFalloffDistance * AttenuationFalloffScale;
 	}
 
-	/** Seconds since the listener last had direct line of sight; 0 while they have it. Large
-	 *  when they never have. Lets consumers react to the moment sight breaks. */
-	UFUNCTION(BlueprintPure, Category = "Spatial Audio")
-	float GetTimeSinceDirectLoS() const { return TimeSinceHadDirectLoS; }
-
-	/** Seconds of unbroken direct line of sight; 0 the moment it is lost. The mirror of
-	 *  GetTimeSinceDirectLoS, for reacting to sight being regained. */
-	UFUNCTION(BlueprintPure, Category = "Spatial Audio")
-	float GetDirectLoSDuration() const { return DirectLoSConfirmedDuration; }
-
 	/** Per-source override of the attenuation shape's inner radius (cm). 0 = keep the assigned
 	 *  attenuation's value. Applied at BeginPlay to the Source component AND the virtual voice
 	 *  template (so pooled voices inherit it); every other attenuation setting stays exactly as
@@ -312,8 +302,8 @@ private:
 	friend class FUpdater;
 	friend class USpatialAudioDebugSubsystem;
 
-	/** Compute the effective full-sweep interval for this tick, accounting for velocity,
-	 *  geometry burst, post-movement cache fill, stationary coverage, and priority.
+	/** Compute the effective full-sweep interval for this tick: priority and velocity scaling,
+	 *  then either the post-movement cache-fill burst or stationary idle, whichever applies.
 	 *  Does NOT write StoredEffFullSweepInterval. */
 	float ComputeEffectiveSweepInterval() const;
 	/** Cached edges that count toward MovementCacheFillRequiredEdges: discovered since the
@@ -396,11 +386,10 @@ private:
 	void UpdateVelocityScaling(float DeltaTime, bool bInRange, const APawn* Pawn);
 	void UpdateStationaryIdleState(bool bInRange, const APawn* Pawn);
 
-	/** Every component tagged AudioComponentSource on the owner, plus any live bus one-shots
-	 *  from PlaySoundThroughSpatialBus. Co-located sounds share ONE spatial pipeline (bus,
-	 *  occlusion, edge cache, virtual pool) — all of them write the bus and receive the same
-	 *  occlusion parameter. Finished one-shots auto-destroy; their stale entries are pruned in
-	 *  the per-frame occlusion write. */
+	/** Every component tagged AudioComponentSource on the owner. Co-located sounds share ONE
+	 *  spatial pipeline (bus, occlusion, edge cache, virtual pool) — all of them write the bus
+	 *  and receive the same occlusion parameter. Entries whose component has been destroyed are
+	 *  pruned in the per-frame occlusion write. */
 	TArray<TWeakObjectPtr<UAudioComponent>> CachedAudioComponentSources;
 	TWeakObjectPtr<UAudioComponent> CachedAudioComponentVirtual;
 
@@ -503,7 +492,6 @@ private:
 
 	struct FAudioDiagnostics {
 		float CurvedOcclusion = 0.f;
-		float SourceCrossfade = 1.f;
 		float VirtualGain = 0.f;
 		float VirtualPathBend = 0.f;
 	} AudioDiag;
@@ -576,17 +564,19 @@ private:
 		int32 SweepAsyncRayAccum = 0;
 	} TraceDiag;
 
-	/** LoS origins saved from the last full cast. Re-checked each update cast to keep
-	 *  the virtual source position responsive between full sweeps. */
+	/** String-pulled LoS paths handed from the sweep readback to the cache merge. Filled by
+	 *  AccumulateRefineProbesIntoCycle and consumed by MergeStoredPathsIntoCache within the same
+	 *  ReadbackFinalizeBatch call, so it is empty by the time anything else in the tick runs. */
 	TArray<FStoredLoSPath> StoredLoSPaths;
 
-
-	/** Confirmed diffraction edges that survive across multiple sweeps.
-	 *  Validated with 2 traces per frame; reduce the ray budget and stabilise the virtual source. */
+	/** Confirmed diffraction edges that survive across multiple sweeps. Revalidated one entry per
+	 *  Phase 0 slice; a full cache scales the sweep's ray budget down through FullCacheRayScale
+	 *  and stabilises the virtual source. */
 	TArray<FCachedEdgePoint> CachedEdgePoints;
 
-	/** Snapshot of cached points validated synchronously at the start of StartAsyncFullCast.
-	 *  Injected as confirmed results in FinalizeAsyncCast after the async rays complete. */
+	/** Copy of the edge cache taken when a sweep starts, so the sweep finalises against the cache
+	 *  as it stood at capture rather than as the intervening ticks have since changed it.
+	 *  Accumulated alongside the fresh ray probes in SubmitFinalizeBatch. */
 	TArray<FCachedEdgePoint> PendingValidCachedPoints;
 
 	/** Last diffraction edge position computed while indirect LoS was active. Used as the
@@ -597,9 +587,9 @@ private:
 	bool bHasKnownEdge = false;
 
 	/**
-	 * Full paths of rays that contributed to the virtual source position in the last full cast.
-	 * Each entry is [source, wallHit0, wallHit1, ..., listener].
-	 * Rebuilt by FinalizeAsyncCast; drawn every tick when bShowDiffractionPaths.
+	 * One [source, virtual source, listener] polyline per completed sweep that published a
+	 * virtual source. Appended in ReadbackFinalizeBatch, cleared when a sweep starts or direct
+	 * LoS returns; drawn every tick when bShowDiffractionPaths.
 	 */
 	TArray<TArray<FVector>> LoSDiffractionPaths;
 

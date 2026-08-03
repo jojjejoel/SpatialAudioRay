@@ -1,15 +1,12 @@
 ﻿// Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "Audio/SpatialAudioComponent.h"
-#include "Audio/Math.h"
+#include "Audio/SpatialAudioSettings.h"
 #include "DrawDebugHelpers.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/Pawn.h"
-#include "Audio/SpatialAudioSettings.h"
-
-using namespace Math;
 
 namespace {
 	// Shared between the per-slot debug spheres and the VRT text line so the color words in
@@ -195,12 +192,12 @@ void USpatialAudioComponent::DrawDiffractionPathsDebug() {
 
 void USpatialAudioComponent::DrawSourceAudioDebugText(const uint64 Base) const {
 	// ── Slot 1: Source audio output ──────────────────────────────────────
-	// vol  = SourceCrossfade  (1.0 = full volume, fades as occlusion rises)
-	// occ  = CurvedOcclusion  (0–1 sent to MetaSound as OcclusionParam, drives LPF internally)
-	const FColor SrcColor = SelectThresholdColor(AudioDiag.SourceCrossfade, 0.7f, 0.3f);
+	// occ_param = CurvedOcclusion, the 0–1 the MetaSound receives as OcclusionParam and shapes its
+	// own volume and filtering from. There is deliberately no source gain reading beside it: that
+	// shaping happens inside the graph, so no value on this side would describe what you hear.
+	const FColor SrcColor = SelectThresholdColor(1.f - AudioDiag.CurvedOcclusion, 0.7f, 0.3f);
 	GEngine->AddOnScreenDebugMessage(Base + 1, 0.f, SrcColor,
-	                                 FString::Printf(TEXT("  SRC  vol=%3.0f%%  occ_param=%3.0f%%"),
-	                                                 AudioDiag.SourceCrossfade * 100.f,
+	                                 FString::Printf(TEXT("  SRC  occ_param=%3.0f%%"),
 	                                                 AudioDiag.CurvedOcclusion * 100.f));
 }
 
@@ -274,17 +271,16 @@ void USpatialAudioComponent::DrawEdgeCacheDebugText(const uint64 Base, const USp
 	GEngine->AddOnScreenDebugMessage(Base + 5, 0.f, FColor::Orange,
 	                                 FString::Printf(
 		                                 TEXT(
-			                                 "  Edges  %d/%d cached  (evict=%d  ph0=%d)  │  %d stored  │  PathAtten  cur=%3.0f%%  tgt=%3.0f%%"),
+			                                 "  Edges  %d/%d cached  (evict=%d  ph0=%d)  │  PathAtten  cur=%3.0f%%  tgt=%3.0f%%"),
 		                                 CachedEdgePoints.Num(), Settings.CachedEdgeMaxCount,
 		                                 NumEvicting, NumPhase0,
-		                                 StoredLoSPaths.Num(),
 		                                 CurrentPathAttenuation * 100.f, TargetPathAttenuation * 100.f));
 }
 
 void USpatialAudioComponent::DrawSweepPacingDebugText(const uint64 Base, const USpatialAudioSettings& Settings,
                                                        const int32 ScaledRayCount) const {
 	// ── Slot 6: Sweep pacing + timer ──────────────────────────────────────
-	const bool bBothStationary = VelocityScaling.SweepMultiplier > 0.95f && VelocityScaling.EdgeMultiplier > 0.95f;
+	const bool bBothStationary = VelocityScaling.IsStationary();
 	const float CoverageFraction = (ScaledRayCount > 0)
 		                      ? FMath::Clamp(
 			                      static_cast<float>(CachedEdgePoints.Num()) /

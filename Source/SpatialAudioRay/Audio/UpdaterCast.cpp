@@ -249,7 +249,6 @@ FUpdater::FEdgeWeightAccum FUpdater::AccumulateCachedEdgeWeights(USpatialAudioCo
 		Accum.PosWeightTotal += PosW;
 		Accum.WeightedDistSum += Ep.EffectivePathDist() * SrcW;
 		Accum.SrcWeightTotal += SrcW;
-		++Accum.RaysReached;
 
 		if (Component.bDrawDebugRays && Component.bShowEdgePoints) {
 			DrawDebugLine(World, Ep.EffectivePoint(), ListenerPos, FColor::Cyan, false, Settings.DebugLineDuration, 0,

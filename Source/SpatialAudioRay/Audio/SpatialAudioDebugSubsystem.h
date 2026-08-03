@@ -67,7 +67,9 @@ private:
 	bool bShowGlobalDebugText = false;
 	bool bPrevToggleKeyDown = false;
 	bool bPrevCycleKeyDown = false;
-	bool bPrevSubModeKeyDown[11] = {};
+	/** One edge-detector slot per sub-mode toggle in HandleSubModeKeyToggles; keep the size and
+	 *  that list in step. */
+	bool bPrevSubModeKeyDown[10] = {};
 
 	/** World-space name labels, toggled by ToggleActorLabelsKey. Only drawn on sources that
 	 *  currently have bDrawDebugRays true (the cycle-selected source, or the proximity-limited

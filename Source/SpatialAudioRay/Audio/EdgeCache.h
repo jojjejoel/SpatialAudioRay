@@ -97,9 +97,9 @@ private:
 	// Leaves bRelayed a transitional state rather than somewhere an entry rests.
 	static void ConvertRelayToEdge(const USpatialAudioComponent& Component, FCachedEdgePoint& Edge, const UWorld* World,
 	                               const FVector& ListenerPos);
-	// OutStraightFallback owns the fallback for the returned reference's lifetime.
-	static const TArray<FVector>& ResolveRecheckPath(const FCachedEdgePoint& Edge,
-	                                                 TArray<FVector>& OutStraightFallback);
+	// Promotion pops a vertex per jump, so an entry can be left without a usable polyline. Its
+	// straight source-to-edge line stands in, the same fallback ConvertRelayToEdge seeds.
+	static TArray<FVector> ResolveRecheckPath(const FCachedEdgePoint& Edge);
 	static int32 FindFirstBlockedSegment(const TArray<FTraceDatum>& Data);
 	// Null when the entry was rewritten or removed since its recheck was submitted.
 	static FCachedEdgePoint* FindEntryByExactEdgePoint(USpatialAudioComponent& Component,

@@ -50,10 +50,6 @@ public:
 	// StartAsyncFullCast is reproducible while the player and source are stationary.
 	static FRandomStream MakeBiasStream(const FVector& SourcePos, const FVector& ListenerPos, int32 RayIndex);
 
-	// Entries that stand in for a ray this sweep. A relay is an audible stopgap rather than a found
-	// path and an evicting entry is on its way out, so neither counts and the sweep keeps searching
-	// at full budget until a real path displaces them.
-
 	// The cycles of a full sweep sequence partition the sphere with no direction cast twice.
 	// OutIndices must stay the whole-set index, since MakeBiasStream seeds off it.
 	static void SelectCycleDirections(const TArray<FVector>& AllDirections, int32 StartIndex, int32 CycleCount,

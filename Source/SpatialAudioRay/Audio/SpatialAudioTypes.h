@@ -209,8 +209,6 @@ struct FSpatialRayState {
 	};
 	TArray<FBounceWaypoint> BounceWaypoints;
 
-	FVector TerminalPoint = FVector::ZeroVector;
-
 	enum class ERayBatchPhase : uint8 { None, CrawlBatch };
 
 	ERayBatchPhase BatchPhase = ERayBatchPhase::None;

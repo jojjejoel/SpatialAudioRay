@@ -46,7 +46,8 @@ void FUpdater::ApplySourceOcclusionParams(USpatialAudioComponent& Component, con
 			Ac->SetVolumeMultiplier(Component.bDebugSilenceSource ? 0.f : 1.f);
 		}
 		else {
-			// Finished bus one-shots auto-destroy, so drop their stale entries here.
+			// A destroyed source component leaves its weak pointer behind; walking backward is
+			// what makes dropping it mid-loop safe.
 			Component.CachedAudioComponentSources.RemoveAt(i);
 		}
 	}
@@ -174,7 +175,6 @@ void FUpdater::UpdateDualModeAudio(USpatialAudioComponent& Component, const floa
                                    const float CurvedOcclusion) {
 	const float VirtualCrossfade = UpdateVirtualCrossfadeGate(Component, DeltaTime, Settings);
 	Component.AudioDiag.CurvedOcclusion = CurvedOcclusion;
-	Component.AudioDiag.SourceCrossfade = 1.f;
 
 	ApplySourceOcclusionParams(Component, Settings, CurvedOcclusion);
 

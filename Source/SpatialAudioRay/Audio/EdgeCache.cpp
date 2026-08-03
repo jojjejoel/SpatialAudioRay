@@ -1,17 +1,10 @@
 ﻿#include "Audio/EdgeCache.h"
 
+#include "Audio/Math.h"
 #include "Audio/SpatialAudioComponent.h"
 #include "Audio/Updater.h"
 
 #include "DrawDebugHelpers.h"
-
-namespace {
-	// Distinct name from the equivalent in AsyncCastManagerSubmit.cpp. Two file-local functions
-	// with the same name collide in a unity build.
-	bool IsEdgeTraceClear(const FTraceDatum& Datum) {
-		return Datum.OutHits.IsEmpty() || !Datum.OutHits[0].bBlockingHit;
-	}
-}
 
 // The per-edge validation intervals are periods per entry, not per cache. Dividing by the entry
 // count holds an edge's check rate steady whether the cache carries one or six, and turns what
@@ -87,7 +80,7 @@ void FEdgeCache::TickPhase0Readback(USpatialAudioComponent& Component, FCachedEd
 
 	Edge.bPhase0Pending = false;
 
-	bool bBlocked = !IsEdgeTraceClear(Phase0Data);
+	bool bBlocked = !Math::IsTraceClear(Phase0Data);
 	if (bBlocked && !Edge.bRelayed
 		&& TryPromoteToInnerAnchor(Component, Edge, World, ListenerPos, /*bAllowSubSegmentRefine=*/false)) {
 		bBlocked = false;
@@ -295,7 +288,7 @@ bool FEdgeCache::ReadOffsetFanTraces(FCachedEdgePoint& Edge, UWorld* World, bool
 	}
 	Edge.bPhase0OffsetPending = false;
 	for (int32 i = 0; i < 4; ++i) {
-		OutFanClear[i] = IsEdgeTraceClear(Data[i]);
+		OutFanClear[i] = Math::IsTraceClear(Data[i]);
 	}
 	return true;
 }
@@ -371,7 +364,7 @@ void FEdgeCache::TickRelayRescueReadback(USpatialAudioComponent& Component, FCac
 	}
 
 	for (const FTraceDatum& Leg : Data) {
-		if (!IsEdgeTraceClear(Leg)) {
+		if (!Math::IsTraceClear(Leg)) {
 			StartEviction(Component, Edge, SourcePos);
 			return;
 		}
@@ -408,7 +401,7 @@ void FEdgeCache::TickRelayMaintenance(USpatialAudioComponent& Component, FCached
 		return;
 	}
 
-	if (IsEdgeTraceClear(Data[0]) && IsEdgeTraceClear(Data[1])) {
+	if (Math::IsTraceClear(Data[0]) && Math::IsTraceClear(Data[1])) {
 		Edge.ClearRelay();
 		Edge.LastLoSListenerPos = ListenerPos;
 		Edge.bHasLastLoSListenerPos = true;
@@ -418,7 +411,7 @@ void FEdgeCache::TickRelayMaintenance(USpatialAudioComponent& Component, FCached
 
 	// Relay dropped before evicting, or Phase 0's clear-restore would keep resurrecting a path
 	// that is already broken upstream.
-	if (!IsEdgeTraceClear(Data[2]) || !IsEdgeTraceClear(Data[3])) {
+	if (!Math::IsTraceClear(Data[2]) || !Math::IsTraceClear(Data[3])) {
 		Edge.ClearRelay();
 		StartEviction(Component, Edge, SourcePos);
 		return;
@@ -582,8 +575,9 @@ void FEdgeCache::TickCachedEdgeEviction(USpatialAudioComponent& Component, const
 }
 
 // Cached entries drift onto each other as relay conversion and promotion move them, and the
-// sweep's merge radius only gates incoming finds. Duplicates on one corner each cost a cache slot,
-// a ray substitution, an exclusion direction, and a share of the voice mix.
+// sweep's merge radius only gates incoming finds. Duplicates on one corner each cost a cache slot
+// and, since Math::ClusterEdgePoints sums member weights into Cluster.TotalWeight, a larger share
+// of the voice mix than a genuinely distinct opening earns.
 // Keyed on EdgePoint rather than EffectivePoint(): relays rescued through the same fan point
 // share a RelayPoint while their real corners differ.
 void FEdgeCache::MergeCoincidentEdges(USpatialAudioComponent& Component,
@@ -631,8 +625,9 @@ bool FEdgeCache::TravelledFurther(const FCachedEdgePoint& Edge, const FCachedEdg
 	return Edge.EffectivePathDist() > Other.EffectivePathDist();
 }
 
-// Nothing else watches the source side of a cached path. Unverified segments are checked too, so
-// this also evicts on ordinary multi-corner paths rather than only on real geometry change.
+// Nothing else watches the source side of a cached path: Phase 0 only covers the listener leg.
+// Only the verified segments are re-traced (see SubmitPolylineRecheckTraces), so a failure here
+// means geometry has actually closed rather than that the path was always a multi-corner detour.
 void FEdgeCache::TickShortestPathRecheck(USpatialAudioComponent& Component, UWorld* World,
                                          const FVector& SourcePos, const float DeltaTime,
                                          const USpatialAudioSettings& Settings) {
@@ -655,8 +650,7 @@ void FEdgeCache::TickShortestPathRecheck(USpatialAudioComponent& Component, UWor
 
 	FCachedEdgePoint& Edge = Component.CachedEdgePoints[Idx];
 
-	TArray<FVector> StraightFallback;
-	TArray<FVector> Path = ResolveRecheckPath(Edge, StraightFallback);
+	TArray<FVector> Path = ResolveRecheckPath(Edge);
 
 	// A 0-bounce entry's straight source-to-edge line was the flight itself, so it counts verified.
 	TArray<bool> FallbackVerified;
@@ -693,18 +687,16 @@ void FEdgeCache::TickShortestPathRecheck(USpatialAudioComponent& Component, UWor
 	Component.PathRecheck.bPending = true;
 }
 
-const TArray<FVector>& FEdgeCache::ResolveRecheckPath(const FCachedEdgePoint& Edge,
-                                                     TArray<FVector>& OutStraightFallback) {
+TArray<FVector> FEdgeCache::ResolveRecheckPath(const FCachedEdgePoint& Edge) {
 	if (Edge.ShortestPath.Num() >= 2) {
 		return Edge.ShortestPath;
 	}
-	OutStraightFallback = {Edge.CapturedSourcePos, Edge.EdgePoint};
-	return OutStraightFallback;
+	return {Edge.CapturedSourcePos, Edge.EdgePoint};
 }
 
 int32 FEdgeCache::FindFirstBlockedSegment(const TArray<FTraceDatum>& Data) {
 	for (int32 i = 0; i < Data.Num(); ++i) {
-		if (!IsEdgeTraceClear(Data[i])) {
+		if (!Math::IsTraceClear(Data[i])) {
 			return i / 2;
 		}
 	}
