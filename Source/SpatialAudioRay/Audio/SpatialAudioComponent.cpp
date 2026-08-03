@@ -328,13 +328,10 @@ float USpatialAudioComponent::GetEffectiveAcousticDistance(const FVector& Listen
 		MinPathDist = FMath::Min(MinPathDist, Total);
 	}
 	if (MinPathDist == TNumericLimits<float>::Max()) {
-		// Cache momentarily empty (between an eviction and the next sweep's re-discovery):
-		// the averaged fallback fields still beat snapping to the straight line.
-		if (!bHasKnownEdge) {
-			return DirectDist;
-		}
-		MinPathDist = CurrentSourceToVirtualDistance
-			+ static_cast<float>(FVector::Dist(CurrentVirtualSourceLocation, ListenerPos));
+		// No non-evicting edge means there is no diffraction route to describe, so the straight
+		// line is the honest answer. Synthesising one from the averaged fields would pair a stale
+		// Leg1 with a live listener leg, overstating the distance in the one window it covers.
+		return DirectDist;
 	}
 	return Math::ComputeEffectiveAcousticDistance(DirectDist, MinPathDist, CurrentOcclusion,
 	                                              DetourOcclusionFloor);

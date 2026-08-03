@@ -295,8 +295,6 @@ void FAsyncCastManager::PublishSweepAudioTargets(USpatialAudioComponent& Compone
 		Component.CurrentSourceToVirtualDistance, AvgSourceToEdgeDist,
 		Component.GetWorld()->GetDeltaSeconds(), 10.0f);
 	Component.TargetVirtualSourceLocation = AccumOut.VirtualSourcePos;
-	Component.LastKnownEdgePoint = AccumOut.VirtualSourcePos;
-	Component.bHasKnownEdge = true;
 }
 
 void FAsyncCastManager::ReadbackFinalizeBatch(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings) {

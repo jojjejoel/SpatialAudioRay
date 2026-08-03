@@ -252,13 +252,12 @@ void USpatialAudioComponent::DrawOcclusionDebugText(const uint64 Base) const {
 	GEngine->AddOnScreenDebugMessage(Base + 3, 0.f, OccColor,
 	                                 FString::Printf(
 		                                 TEXT(
-			                                 "  Occ %s  cur=%3.0f%%  tgt=%3.0f%%  │  LoS:%s  frac inst=%.0f%% avg=%.0f%% smooth=%.0f%%  edge:%s"),
+			                                 "  Occ %s  cur=%3.0f%%  tgt=%3.0f%%  │  LoS:%s  frac inst=%.0f%% avg=%.0f%% smooth=%.0f%%"),
 		                                 *Bar, CurrentOcclusion * 100.f, TargetOcclusion * 100.f,
 		                                 bHasDirectLoS ? TEXT("YES") : TEXT("NO"),
 		                                 LastOffsetLoSFraction * 100.f,
 		                                 WindowedLoSFraction * 100.f,
-		                                 LastDirectLoSFraction * 100.f,
-		                                 bHasKnownEdge ? TEXT("YES") : TEXT("NO")));
+		                                 LastDirectLoSFraction * 100.f));
 }
 
 void USpatialAudioComponent::DrawEdgeCacheDebugText(const uint64 Base, const USpatialAudioSettings& Settings) const {

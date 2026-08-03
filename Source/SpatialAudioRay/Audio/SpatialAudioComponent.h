@@ -286,7 +286,8 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Spatial Audio|Debug")
 	float CurrentVelocityIntervalMultiplier = 1.f;
 
-	/** Current smoothed virtual source position in world space. */
+	/** Current smoothed virtual source position in world space. Diagnostic: emitters are placed
+	 *  per voice from their own cluster centroid, so nothing audible reads this. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Spatial Audio|Virtual Source")
 	FVector CurrentVirtualSourceLocation = FVector::ZeroVector;
 
@@ -578,13 +579,6 @@ private:
 	 *  as it stood at capture rather than as the intervening ticks have since changed it.
 	 *  Accumulated alongside the fresh ray probes in SubmitFinalizeBatch. */
 	TArray<FCachedEdgePoint> PendingValidCachedPoints;
-
-	/** Last diffraction edge position computed while indirect LoS was active. Used as the
-	 *  virtual position target when the edge cache is momentarily empty, so the AudioComponent
-	 *  holds at the known edge rather than snapping back to the source.
-	 *  Reset to valid only once a real edge position has been established. */
-	FVector LastKnownEdgePoint = FVector::ZeroVector;
-	bool bHasKnownEdge = false;
 
 	/**
 	 * One [source, virtual source, listener] polyline per completed sweep that published a

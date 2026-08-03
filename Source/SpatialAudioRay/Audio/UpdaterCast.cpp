@@ -269,15 +269,13 @@ void FUpdater::ClearCacheOnConfirmedDirectLoS(USpatialAudioComponent& Component,
 	}
 }
 
+// No weighted edge means no clusters and so no voices, so nothing audible is positioned from this.
+// Following the source beats holding at a corner that no longer has a cached path through it.
 void FUpdater::UpdateVirtualSourceTarget(USpatialAudioComponent& Component, const FEdgeWeightAccum& Accum,
                                          const FVector& SourcePos) {
-	if (Accum.PosWeightTotal > 0.f) {
-		Component.TargetVirtualSourceLocation = Accum.WeightedPos / Accum.PosWeightTotal;
-		Component.LastKnownEdgePoint = Component.CurrentVirtualSourceLocation;
-		Component.bHasKnownEdge = true;
-		return;
-	}
-	Component.TargetVirtualSourceLocation = Component.bHasKnownEdge ? Component.LastKnownEdgePoint : SourcePos;
+	Component.TargetVirtualSourceLocation = Accum.PosWeightTotal > 0.f
+		                                        ? Accum.WeightedPos / Accum.PosWeightTotal
+		                                        : SourcePos;
 }
 
 void FUpdater::UpdatePathAttenuationTarget(USpatialAudioComponent& Component, const FEdgeWeightAccum& Accum,
