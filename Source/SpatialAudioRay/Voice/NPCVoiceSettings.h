@@ -17,15 +17,10 @@ class SPATIALAUDIORAY_API UNPCVoiceSettings : public UDataAsset {
 public:
 
 	// ── Effort Buckets ────────────────────────────────────────────────────────
-	// Bands over the EFFECTIVE acoustic distance (USpatialAudioComponent::
-	// GetEffectiveAcousticDistance: straight line while clear, diffraction path length
-	// while occluded) select effort inversely: whisper when the listener is acoustically
-	// close, shout when far. Occlusion never shifts the bucket directly: a bent path is
-	// simply longer, so someone just around a small corner gets at most a small step up
-	// while someone three rooms deep walks the bands toward Shout. Perceived loudness
-	// contrast is deliberately left to timbre: the engine's attenuation owns loudness
-	// (far shout and close whisper land at similar levels; the difference is the
-	// performance).
+	// Bands over the EFFECTIVE acoustic distance select effort inversely: whisper when the
+	// listener is acoustically close, shout when far. Occlusion never shifts the bucket
+	// directly; a bent path is simply longer. Loudness contrast is left to timbre, since the
+	// engine's attenuation owns level (far shout and close whisper land at similar volumes).
 
 	/** Effective acoustic distance (cm) at or below which the NPC whispers. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice|Effort Buckets",
@@ -43,17 +38,11 @@ public:
 		meta = (ClampMin = "0.0"))
 	float RaisedMaxDistance = 3000.f;
 
-	/** At or above this occlusion the listener counts as hidden, and line selection switches
-	 *  from the visible content contexts to the occluded ones.
-	 *
-	 *  It never shifts the effort bucket directly, since path length already encodes being hidden,
-	 *  but it IS the point from which the diffraction route starts counting toward the
-	 *  effective acoustic distance (passed to GetEffectiveAcousticDistance as its detour
-	 *  floor). Below it the effort follows the straight line: cached routes exist well before
-	 *  the source is hidden, and charging the NPC for a long way round while most of the sound
-	 *  still arrives straight makes it strain at a listener it can plainly see. Tying both to
-	 *  one threshold keeps effort and content from disagreeing about whether the detour is
-	 *  real. Nothing jumps at the crossing: the route phases in across the range above it. */
+	/** At or above this occlusion the listener counts as hidden, so line selection switches to the
+	 *  occluded contexts. It also gates the detour: below it effort follows the straight line, since
+	 *  cached routes exist well before the source is hidden and charging for a long way round makes
+	 *  the NPC strain at a listener it can plainly see. One threshold for both keeps effort and
+	 *  content from disagreeing. Nothing jumps at the crossing; the route phases in above it. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice|Effort Buckets",
 		meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float OcclusionShiftThreshold = 0.75f;
@@ -65,11 +54,9 @@ public:
 	float BucketDwellTime = 1.0f;
 
 	// ── Effort Reach ──────────────────────────────────────────────────────────
-	// Audible reach is DERIVED from the bands above rather than authored separately: an effort
-	// exists to be heard across its own band, so a whisper only has to carry as far as the
-	// distance at which the NPC would switch to conversational anyway. Applied at each line
-	// start via USpatialAudioComponent::SetAttenuationOuterRadius. The wavs stay at one LUFS
-	// (effort = timbre); reach differences live entirely in the engine attenuation.
+	// Derived from the bands above rather than authored separately: an effort exists to be heard
+	// across its own band, so a whisper only carries to where the NPC would switch anyway.
+	// Applied per line via SetAttenuationOuterRadius; the wavs stay at one LUFS.
 
 	/** Reach = the effort's own band max × this. Above 1 the effort stays audible past the
 	 *  band edge, which the scheduler needs: the bucket only commits after BucketDwellTime,
@@ -96,21 +83,15 @@ public:
 	}
 
 	// ── Content Contexts ──────────────────────────────────────────────────────
-	// Thresholds that pick WHICH acoustic situation the listener is in, so the bank can carry
-	// a line specific to it. Purely content selection: none of this reaches gain or path
-	// math. Any context with no line in the bank falls back to the generic Clear/Occluded
-	// entry for that half, so partial banks degrade instead of breaking.
+	// Thresholds picking WHICH acoustic situation the listener is in, so the bank can carry a
+	// line for it. Purely content selection: none of this reaches gain or path math. A context
+	// with no line falls back to the generic entry for its half, so partial banks degrade.
 
 	/** Occlusion at or above which a still-visible listener selects PartiallyOccluded content
-	 *  instead of Clear. 0 = off (the visible half stays one band).
-	 *
-	 *  Sits well below OcclusionShiftThreshold on purpose: those two thresholds answer different
-	 *  questions. OcclusionShiftThreshold asks "can they still see me at all", this asks "is the
-	 *  path actually unobstructed", and the answer to the second turns false as soon as any
-	 *  offset sample blocks, which is a long way below hidden. Default 0.15 catches roughly one
-	 *  blocked sample out of the five-point ring: a pillar or railing clipping the centre line
-	 *  while the sound still arrives nearly intact. Without it the NPC narrates "nothing between
-	 *  us, a perfectly straight line" at a listener standing behind a crate. */
+	 *  instead of Clear. 0 = off. Sits well below OcclusionShiftThreshold on purpose: that one asks
+	 *  "can they see me at all", this asks "is the path unobstructed", which turns false as soon as
+	 *  any offset sample blocks. Default 0.15 is roughly one blocked sample of five. Without it the
+	 *  NPC narrates "nothing between us" at a listener standing behind a crate. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice|Content Contexts",
 		meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float PartialOcclusionThreshold = 0.15f;
@@ -143,21 +124,12 @@ public:
 	float SightChangeReactionWindow = 6.f;
 
 	// ── Effort Gain ───────────────────────────────────────────────────────────
-	// How much louder the effort is AT THE SOURCE, sent to the voice MetaSound's EffortGainDb
-	// input at each line start. Reach (above) decides where a sound dies; this decides how
-	// loud it is at a given distance. Orthogonal, and both are real: a shout is louder AND
-	// carries further. Without this, crossing a band boundary changes almost nothing, because
-	// two falloff curves that end near each other differ by only a decibel or two where they
-	// overlap.
-	//
-	// This is what the bank's single LUFS target was FOR: normalizing the renders strips the
-	// TTS's accidental loudness variation so that deliberate, designed variation can be
-	// applied here instead. Effort is still timbre in the asset; level is the engine's job.
-	//
-	// Values are dB, unlike reach these are NOT derivable from the distance bands (loudness at
-	// the source has nothing to do with where the band edges sit). Shout anchors at 0 and
-	// everything scales DOWN: the sources share one mixing bus, so boosting above 0 risks
-	// clipping it when several sounds sum, and it mirrors how reach anchors on shout too.
+	// How much louder the effort is AT THE SOURCE, orthogonal to reach: a shout is louder AND
+	// carries further. Without it, crossing a band changes almost nothing, since two falloff
+	// curves ending near each other differ by a decibel or two where they overlap. Shout anchors
+	// at 0 and everything scales DOWN, because the sources share one bus and boosting above 0
+	// risks clipping it when several sum. Normalizing the bank to one LUFS is what makes this
+	// deliberate variation possible: effort stays timbre in the asset, level is the engine's job.
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice|Effort Gain",
 		meta = (ClampMax = "0.0"))
@@ -186,15 +158,10 @@ public:
 	}
 
 	// ── Barge-in ──────────────────────────────────────────────────────────────
-	// A playing line is normally never modified mid-flight. The exceptions are the three
-	// moments worth reacting to: direct line of sight breaking, sight coming back, and the
-	// committed effort drifting far from what the playing line was rendered at. The line is
-	// cut with a short declick fade, a line from the matching category fires, and the next
-	// full line follows quickly.
-	//
-	// Visibility outranks effort drift when both land on the same tick, which is the common
-	// case: losing sight inflates the acoustic path, which climbs the effort bands. Without
-	// that priority the NPC reports a listener "moving away" who only stepped behind a wall.
+	// A playing line is normally never modified mid-flight. The exceptions are sight breaking,
+	// sight returning, and committed effort drifting far from what the line was rendered at.
+	// Visibility outranks drift when both land on one tick, or the NPC reports a listener
+	// "moving away" who only stepped behind a wall. See VoiceLogic::EvaluateBargeIn.
 
 	/** Minimum bucket-step jump (|committed − playing line's bucket|) that triggers an
 	 *  effort barge-in. 1 = any band change interrupts (dwell time + cooldown keep it from

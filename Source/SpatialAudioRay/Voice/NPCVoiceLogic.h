@@ -4,12 +4,9 @@
 #include "NPCVoiceSettings.h"
 #include "NPCVoiceTypes.h"
 
-/**
- * Every scheduling decision the NPC voice system makes, as pure functions over explicit state:
- * no component, world, audio device or engine singleton. Mirrors the Audio/Math.h convention,
- * leaving UNPCVoiceComponent holding only engine wiring. Mutating functions take that state by
- * reference as the first parameter and touch nothing else.
- */
+/** Every scheduling decision as pure functions over explicit state: no component, world, audio
+ *  device or engine singleton, mirroring Audio/Math.h. Mutating functions take that state by
+ *  reference as the first parameter and touch nothing else. */
 namespace VoiceLogic {
 
 	/** Margin past the declick fade before the barge-in line starts, so Play cannot race the

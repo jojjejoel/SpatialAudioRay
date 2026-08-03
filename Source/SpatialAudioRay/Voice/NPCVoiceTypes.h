@@ -129,14 +129,10 @@ struct FNPCVoiceRuntimeLine {
 	TObjectPtr<USoundWave> Wave = nullptr;
 };
 
-/** Which barge-in reasons the loaded bank can actually service, resolved once at load.
- *
- *  Per-reason rather than one "has barge-in content" flag because the triggers are ranked and
- *  the first that fires wins: a bank carrying Transition lines but no SightRegained lines would
- *  otherwise let a sight-gained tick claim the barge-in, find nothing to play, and abort,
- *  swallowing the effort drift that fired on the same tick and did have content. Since a sight
- *  change is a one-tick edge and the playing line's bucket stays put, that barge-in is simply
- *  lost. */
+/** Resolved once at load, per reason rather than one flag: the triggers are ranked and the first
+ *  that fires wins, so a bank with Transition but no SightRegained lines would let a sight-gained
+ *  tick claim the barge-in, find nothing, and abort, swallowing the effort drift that fired on the
+ *  same tick and did have content. */
 struct FNPCVoiceBargeInAvailability {
 	bool bTransition = false;
 	bool bLostSight = false;
@@ -152,10 +148,8 @@ struct FNPCVoiceBargeInAvailability {
 	}
 };
 
-/** The acoustic situation, sampled once per tick and fed to content selection. Everything
- *  here is a listener-relative measurement, legitimate for choosing WHAT to say and how
- *  loudly, never for the virtual path's own gain (see the listener-independence rule in
- *  Audio/). */
+/** Sampled once per tick and fed to content selection. Listener-relative throughout, which is
+ *  legitimate for choosing WHAT to say, never for the virtual path's own gain. */
 struct FNPCVoiceAcousticState {
 	float Occlusion = 0.f;
 	/** Straight line, source to listener. */
@@ -163,10 +157,8 @@ struct FNPCVoiceAcousticState {
 	/** How far the sound actually travels: the straight line while clear, the diffraction
 	 *  route while occluded. Drives the effort bucket. */
 	float EffectiveDistanceCm = 0.f;
-	/** Whether the NPC still owes a reaction to the last visibility crossing: recent enough to
-	 *  be worth remarking on AND not already remarked on (VoiceLogic::IsSightReactionPending).
-	 *  Which of LostSight / SightRegained it opens is decided by the half the listener is in
-	 *  now, so one flag serves both. */
+	/** Recent enough to be worth remarking on AND not already remarked on. Which of LostSight or
+	 *  SightRegained it opens follows from the half the listener is in now, so one flag serves both. */
 	bool bSightReactionPending = false;
 
 	/** How much further the sound travels than the straight line. 1 = no detour. This is the
@@ -176,11 +168,9 @@ struct FNPCVoiceAcousticState {
 	}
 };
 
-// The four structs below are the voice scheduler's entire mutable state. They are plain
-// C++ (no reflection needed: no GC pointers, nothing designer-facing) and live here rather
-// than as loose component members so the pure decision functions in NPCVoiceLogic.h can take
-// them as explicit parameters, which is what makes those decisions unit-testable without a
-// component, world, or audio device.
+// The voice scheduler's entire mutable state. Plain C++ and held here rather than as loose
+// component members so the pure decisions in NPCVoiceLogic.h can take them as parameters, which
+// is what makes them testable without a component, world, or audio device.
 
 /** Edge detector for the listener crossing between visible and hidden. The voice layer's
  *  SOLE sight signal: both the content ladder's reaction window and the sight barge-in
@@ -188,16 +178,14 @@ struct FNPCVoiceAcousticState {
 struct FNPCVoiceSightState {
 	/** Whether the listener counted as hidden at the last sample. */
 	bool bHidden = false;
-	/** False until the first sample, which seeds bHidden without reporting a change. The
-	 *  listener's starting side is not something the NPC just watched happen. */
+	/** False until the first sample, which seeds bHidden without reporting a change: the starting
+	 *  side is not something the NPC just watched happen. */
 	bool bInitialized = false;
-	/** When the state last flipped. Far in the past so an unchanged scene offers no reaction
-	 *  content. */
+	/** Far in the past, so an unchanged scene offers no reaction content. */
 	float LastChangeTime = -1e9f;
-	/** Whether a line reacting to that crossing has already been spoken. Cleared by the next
-	 *  crossing. Without it the window is purely temporal, so the line following a reaction
-	 *  re-announces the same event, and since a bucket change is what usually schedules that
-	 *  next line, it re-announces it at a different vocal effort, which is the tell. */
+	/** Cleared by the next crossing. Without it the window is purely temporal, so the line after a
+	 *  reaction re-announces the same event, and since a bucket change usually schedules that line,
+	 *  it re-announces at a different effort, which is the tell. */
 	bool bReactionDelivered = false;
 };
 
@@ -209,8 +197,8 @@ struct FNPCVoiceBucketHysteresis {
 	/** Effort the distance currently maps to, waiting out the dwell time. */
 	ENPCVoiceEffort Candidate = ENPCVoiceEffort::Conversational;
 	float CandidateSince = 0.f;
-	/** False until the first sample, which commits instantly: there is nothing to smooth
-	 *  against, and starting from a default bucket would mis-deliver the opening line. */
+	/** False until the first sample, which commits instantly: starting from a default bucket would
+	 *  mis-deliver the opening line. */
 	bool bInitialized = false;
 };
 

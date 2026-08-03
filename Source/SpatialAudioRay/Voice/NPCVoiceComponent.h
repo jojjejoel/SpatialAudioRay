@@ -11,23 +11,12 @@ class UNPCVoiceSettings;
 class USpatialAudioComponent;
 
 /**
- * Drives an NPC's voice from the acoustic state of its USpatialAudioComponent. Effective
- * acoustic distance (straight while clear, diffraction path length while occluded) selects a
- * vocal-effort bucket with dwell hysteresis, and a scheduler plays bank lines at that effort
- * through the shared spatial bus. Occlusion never shifts the effort, since path length already
- * encodes it; it only decides whether the listener counts as hidden, which picks the content
- * half and drives the sight reactions on the tick it flips.
+ * Drives an NPC's voice from its USpatialAudioComponent: effective acoustic distance selects a
+ * vocal-effort bucket, and a scheduler plays bank lines at that effort through the spatial bus.
  *
- * Setup on the NPC actor: a USpatialAudioComponent, a UAudioComponent tagged with BOTH
- * "AudioComponentSource" and VoiceAudioComponentTag (bAutoActivate off, playing an
- * MS_Source-style MetaSound whose wave input matches WaveParameterName), and this component
- * with a VoiceBank DataTable of FNPCVoiceLineRow.
- *
- * A playing line is never modified mid-flight; bucket changes apply to the NEXT line. The one
- * exception is a barge-in, which cuts the line with a declick fade and replaces it. Three
- * moments qualify, ranked: sight lost, sight regained, and an effort jump of at least
- * TransitionBucketDelta buckets. With nothing playing there is no line to cut, so the next is
- * pulled forward instead, or the reaction would land after its window had closed.
+ * Setup: a USpatialAudioComponent, a UAudioComponent tagged BOTH "AudioComponentSource" and
+ * VoiceAudioComponentTag (bAutoActivate off, MS_Source-style MetaSound whose wave input matches
+ * WaveParameterName), and this component with a VoiceBank DataTable of FNPCVoiceLineRow.
  */
 UCLASS(ClassGroup=(Audio), meta=(BlueprintSpawnableComponent))
 class SPATIALAUDIORAY_API UNPCVoiceComponent : public UActorComponent {
