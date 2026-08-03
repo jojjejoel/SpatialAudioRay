@@ -29,22 +29,15 @@ public:
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType,
 	                           FActorComponentTickFunction* ThisTickFunction) override;
 	/**
-	 * Shared tunable settings for all spatial audio behaviour (ray counts, occlusion,
-	 * virtual source, etc.).
-	 * Assign the same USpatialAudioSettings data asset to every component in the project
-	 * so that all instances are tuned from one place, like a ScriptableObject in Unity.
-	 * If left null, the class defaults (CDO) are used automatically.
+	 * Shared tunables for every spatial audio behaviour. Assign the same asset to every component
+	 * so the whole project is tuned from one place. Null falls back to the class defaults (CDO).
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio")
 	TObjectPtr<USpatialAudioSettings> _Settings = nullptr;
 
-	/** True once the debug-visible occlusion (CurrentOcclusion, the "cur=" value in the on-screen
-	 *  HUD) has reached PreSweepOcclusionThreshold. Sweeps run to fill the edge cache before full
-	 *  occlusion hits; cache clearing and sweep-result discards are suspended so the warmed edges
-	 *  survive. The virtual crossfade gate is unaffected. Deliberately independent of
-	 *  bHasDirectLoS/NoLoSSampleStreak: fast occlusion transitions can drop bHasDirectLoS on a
-	 *  single blocked sample well before a full offset-ring rotation confirms no-LoS, and this
-	 *  band exists precisely to start pre-warm sweeps without waiting on that rotation gate. */
+	/** Sweeps run during the band to warm the cache before full occlusion hits, so cache clearing
+	 *  and sweep discards are suspended. Keyed to CurrentOcclusion rather than bHasDirectLoS,
+	 *  which a fast transition can drop a full ring rotation before no-LoS is confirmed. */
 	bool IsPreSweepActive() const {
 		const USpatialAudioSettings& S = GetSettings();
 		return S.PreSweepOcclusionThreshold < 1.f && CurrentOcclusion >= S.PreSweepOcclusionThreshold;
@@ -55,9 +48,8 @@ public:
 	}
 
 	/**
-	 * Optional sound wave to inject into the AudioComponent's Sound Cue at BeginPlay.
-	 * Requires the Sound Cue to contain a Wave Parameter node with the name set in WaveParameterName.
-	 * Leave empty to use whatever wave is already baked into the Sound Cue.
+	 * Injected into the Sound Cue at BeginPlay. Requires a Wave Parameter node named
+	 * WaveParameterName. Leave empty to keep whatever the cue already has.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Parameters")
 	USoundWave* SoundWaveOverride = nullptr;
@@ -71,29 +63,19 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Parameters")
 	FName AudioBusParameterName = TEXT("AudioBus");
 
-	/** Distance (cm) the sound effectively travels to reach ListenerPos: the straight line
-	 *  while clear, the shortest cached diffraction route (min over cached edges of the
-	 *  string-pulled source→edge path + edge→ListenerPos) while occluded, blended by
-	 *  smoothed occlusion. Falls back to the straight line until a diffraction path has
-	 *  ever been found. Selection and content input (e.g. NPC vocal effort): must never feed
-	 *  VirtualGain/PathAttenuation math.
-	 *
+	/** Distance (cm) the sound travels to reach ListenerPos: the straight line while clear, the
+	 *  shortest cached diffraction route while occluded, blended by smoothed occlusion. Returns
+	 *  the straight line when no route is cached. Selection and content input only, never gain.
 	 *  DetourOcclusionFloor holds the result at the straight line until occlusion passes it,
-	 *  then phases the route in across the remaining range. Cached routes exist well before the
-	 *  source is hidden (the pre-sweep band pre-warms the cache during partial LoS), and
-	 *  counting them while most of the sound still arrives straight overstates the distance.
-	 *  Pass the same threshold you use to decide the listener is hidden. */
+	 *  since the pre-sweep band caches routes around corners the listener can still see past. */
 	UFUNCTION(BlueprintPure, Category = "Spatial Audio")
 	float GetEffectiveAcousticDistance(const FVector& ListenerPos,
 	                                   float DetourOcclusionFloor = 0.f) const;
 
-	/** Scales the attenuation FalloffDistance of every cached source component AND the live
-	 *  virtual pool relative to their base (scale 1 = as authored/overridden). Lets a caller
-	 *  vary audible reach per content, e.g. NPC vocal effort: a whisper carries meters, a
-	 *  shout carries the map. Clamped to [Math::MinFalloffScale, 1]: author the base
-	 *  attenuation for the LONGEST reach and scale DOWN, because the ray/LoS ranges captured
-	 *  by ReadAttenuationSettings at BeginPlay stay at base and deliberately do not follow
-	 *  this scale, since a sound audible past them would have no diffraction paths to play through. */
+	/** Scales the FalloffDistance of every source and the virtual pool against their base (1 = as
+	 *  authored). Lets a caller vary audible reach per content, e.g. NPC vocal effort. Clamped to
+	 *  [MinFalloffScale, 1]: author for the LONGEST reach and scale DOWN, since the ray ranges are
+	 *  captured at base and a sound audible past them has no diffraction paths to play through. */
 	UFUNCTION(BlueprintCallable, Category = "Spatial Audio")
 	void SetAttenuationFalloffScale(float NewScale);
 
@@ -171,18 +153,15 @@ public:
 		meta = (EditCondition = "bDrawDebugRays"))
 	FKey ToggleGlobalDebugTextKey = EKeys::G;
 
-	/** Key that cycles bDrawDebugRays through the registered sources one at a time
-	 *  (OFF → source 1 → … → source N → OFF), so the debug view inspects one source without
-	 *  the others drawing over it. Polled by USpatialAudioDebugSubsystem (once, from the first
-	 *  registered source) and deliberately NOT gated on bDrawDebugRays, since it must keep working
-	 *  while every source is off, since it is the way back into the cycle. */
+	/** Cycles bDrawDebugRays through the registered sources one at a time (OFF, source 1 to N,
+	 *  OFF) so one source can be inspected without the others drawing over it. Deliberately NOT
+	 *  gated on bDrawDebugRays: it is the way back into the cycle when every source is off. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Debug")
 	FKey CycleDebugSourceKey = EKeys::N;
 
-	/** Key that toggles world-space name labels at every registered source's location (drawn
-	 *  by USpatialAudioDebugSubsystem via DrawDebugString: camera-facing text, not depth-tested
-	 *  against geometry, so it stays readable through walls). Polled independent of
-	 *  bDrawDebugRays / bAnyDebugRays, so labels work even with ray debugging fully off. */
+	/** World-space name labels at every registered source, drawn camera-facing and not
+	 *  depth-tested, so they stay readable through walls. Polled independent of bDrawDebugRays,
+	 *  so labels work with ray debugging fully off. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Debug")
 	FKey ToggleActorLabelsKey = EKeys::L;
 
