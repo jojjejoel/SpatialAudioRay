@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "NPCVoiceSettings.h"
-#include "NPCVoiceTypes.h"
+#include "NPCVoiceState.h"
 
 /** Every scheduling decision as pure functions over explicit state: no component, world, audio
  *  device or engine singleton, mirroring Audio/Math.h. Mutating functions take that state by

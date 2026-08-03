@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
-#include "NPCVoiceTypes.h"
+#include "NPCVoiceState.h"
 #include "NPCVoiceComponent.generated.h"
 
 class UAudioComponent;

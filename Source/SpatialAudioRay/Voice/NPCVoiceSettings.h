@@ -25,18 +25,18 @@ public:
 	/** Effective acoustic distance (cm) at or below which the NPC whispers. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice|Effort Buckets",
 		meta = (ClampMin = "0.0"))
-	float WhisperMaxDistance = 600.f;
+	float WhisperMaxDistance = 400.f;
 
 	/** Effective acoustic distance (cm) at or below which the NPC talks conversationally. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice|Effort Buckets",
 		meta = (ClampMin = "0.0"))
-	float ConversationalMaxDistance = 1500.f;
+	float ConversationalMaxDistance = 1100.f;
 
 	/** Effective acoustic distance (cm) at or below which the NPC projects (raised).
 	 *  Beyond it: shout. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice|Effort Buckets",
 		meta = (ClampMin = "0.0"))
-	float RaisedMaxDistance = 3000.f;
+	float RaisedMaxDistance = 1800.f;
 
 	/** At or above this occlusion the listener counts as hidden, so line selection switches to the
 	 *  occluded contexts. It also gates the detour: below it effort follows the straight line, since
@@ -45,13 +45,13 @@ public:
 	 *  content from disagreeing. Nothing jumps at the crossing; the route phases in above it. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice|Effort Buckets",
 		meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float OcclusionShiftThreshold = 0.75f;
+	float OcclusionShiftThreshold = 0.8f;
 
 	/** Seconds a differing candidate bucket must persist before the committed bucket follows.
 	 *  Keeps players dancing on a band edge from flip-flopping the NPC's delivery. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice|Effort Buckets",
 		meta = (ClampMin = "0.0"))
-	float BucketDwellTime = 1.0f;
+	float BucketDwellTime = 0.5f;
 
 	// ── Effort Reach ──────────────────────────────────────────────────────────
 	// Derived from the bands above rather than authored separately: an effort exists to be heard
@@ -68,7 +68,7 @@ public:
 	 *  most dramatic: walking out of earshot silences the line until a barge-in reacts). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice|Effort Reach",
 		meta = (ClampMin = "1.0"))
-	float EffortReachHeadroom = 1.25f;
+	float EffortReachHeadroom = 5.f;
 
 	/** Audible reach (cm) for Effort. Shout returns 0 = the attenuation asset's own range:
 	 *  the top band is unbounded, so it is the anchor every other effort scales down from
@@ -94,7 +94,7 @@ public:
 	 *  NPC narrates "nothing between us" at a listener standing behind a crate. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice|Content Contexts",
 		meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float PartialOcclusionThreshold = 0.15f;
+	float PartialOcclusionThreshold = 0.3f;
 
 	/** Hidden listeners within this straight-line distance (cm) AND past
 	 *  BehindWallMinDetourRatio select BehindWall content: physically close, acoustically far. */
@@ -112,7 +112,7 @@ public:
 	 *  select AroundCorner content: out of sight, but only just. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice|Content Contexts",
 		meta = (ClampMin = "1.0"))
-	float AroundCornerMaxDetourRatio = 1.35f;
+	float AroundCornerMaxDetourRatio = 1.1f;
 
 	/** Seconds after sight is lost or regained during which LostSight / SightRegained content
 	 *  outranks the spatial contexts, so the NPC reacts to the change before describing the
@@ -133,15 +133,15 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice|Effort Gain",
 		meta = (ClampMax = "0.0"))
-	float WhisperGainDb = -12.f;
+	float WhisperGainDb = -24.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice|Effort Gain",
 		meta = (ClampMax = "0.0"))
-	float ConversationalGainDb = -6.f;
+	float ConversationalGainDb = -16.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice|Effort Gain",
 		meta = (ClampMax = "0.0"))
-	float RaisedGainDb = -3.f;
+	float RaisedGainDb = -10.f;
 
 	/** The anchor: leave at 0 and tune the others down against it. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice|Effort Gain",
@@ -180,7 +180,7 @@ public:
 	 *  turn the NPC into a stutterer. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice|Transitions",
 		meta = (ClampMin = "0.0"))
-	float TransitionCooldownSeconds = 8.f;
+	float TransitionCooldownSeconds = 2.f;
 
 	/** Don't barge in when the playing line has less than this left, since it ends on its own
 	 *  before the interruption would read as intentional. */
@@ -193,24 +193,24 @@ public:
 	 *  follow-up at the new effort should come quickly. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice|Transitions",
 		meta = (ClampMin = "0.0"))
-	float PostTransitionLineDelay = 0.6f;
+	float PostTransitionLineDelay = 0.272f;
 
 	// ── Line Scheduling ───────────────────────────────────────────────────────
 
 	/** Minimum silence (seconds) between the end of one line and the start of the next. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice|Line Scheduling",
 		meta = (ClampMin = "0.0"))
-	float LineIntervalMin = 4.f;
+	float LineIntervalMin = 1.f;
 
 	/** Maximum silence (seconds) between lines. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice|Line Scheduling",
 		meta = (ClampMin = "0.0"))
-	float LineIntervalMax = 9.f;
+	float LineIntervalMax = 1.f;
 
 	/** Seconds a cooldown group stays blocked after one of its lines plays. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice|Line Scheduling",
 		meta = (ClampMin = "0.0"))
-	float CooldownGroupSeconds = 12.f;
+	float CooldownGroupSeconds = 1.f;
 
 	/** Grace added to a row's Duration before the scheduler declares the line finished,
 	 *  covers MetaSound generator tail so the next line can't clip the current one. */
