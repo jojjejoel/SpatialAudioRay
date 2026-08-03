@@ -1,7 +1,16 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
+// WorldCollision.h only forward-declares FHitResult, so FTraceDatum::OutHits cannot be
+// dereferenced without this.
+#include "Engine/HitResult.h"
 #include "WorldCollision.h"
+
+// An async trace that came back with no hits, or whose first hit is non-blocking, saw nothing in
+// the way. Shared by the sweep and the edge cache, which must agree on what "clear" means.
+inline bool IsTraceClear(const FTraceDatum& Datum) {
+	return Datum.OutHits.IsEmpty() || !Datum.OutHits[0].bBlockingHit;
+}
 
 struct FStoredLoSPath {
 	FVector LoSOrigin;

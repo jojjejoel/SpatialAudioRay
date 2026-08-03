@@ -63,12 +63,6 @@ namespace Math {
 		return Distance / FMath::Sqrt(Distance * Distance + Radius * Radius);
 	}
 
-	// An async trace that came back with no hits, or whose first hit is non-blocking, saw nothing
-	// in the way. Shared by the sweep and the edge cache, which must agree on what "clear" means.
-	inline bool IsTraceClear(const FTraceDatum& Datum) {
-		return Datum.OutHits.IsEmpty() || !Datum.OutHits[0].bBlockingHit;
-	}
-
 	// Every LoS probe is gated on this same sum, and it only grows as a ray travels further:
 	// moving a distance D can close the gap to the listener by at most D, so the total can never
 	// dip back under the budget once it has passed it. That makes the bound a lossless prune —

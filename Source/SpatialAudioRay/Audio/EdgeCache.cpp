@@ -1,6 +1,5 @@
 ﻿#include "Audio/EdgeCache.h"
 
-#include "Audio/Math.h"
 #include "Audio/SpatialAudioComponent.h"
 #include "Audio/Updater.h"
 
@@ -80,7 +79,7 @@ void FEdgeCache::TickPhase0Readback(USpatialAudioComponent& Component, FCachedEd
 
 	Edge.bPhase0Pending = false;
 
-	bool bBlocked = !Math::IsTraceClear(Phase0Data);
+	bool bBlocked = !IsTraceClear(Phase0Data);
 	if (bBlocked && !Edge.bRelayed
 		&& TryPromoteToInnerAnchor(Component, Edge, World, ListenerPos, /*bAllowSubSegmentRefine=*/false)) {
 		bBlocked = false;
@@ -288,7 +287,7 @@ bool FEdgeCache::ReadOffsetFanTraces(FCachedEdgePoint& Edge, UWorld* World, bool
 	}
 	Edge.bPhase0OffsetPending = false;
 	for (int32 i = 0; i < 4; ++i) {
-		OutFanClear[i] = Math::IsTraceClear(Data[i]);
+		OutFanClear[i] = IsTraceClear(Data[i]);
 	}
 	return true;
 }
@@ -364,7 +363,7 @@ void FEdgeCache::TickRelayRescueReadback(USpatialAudioComponent& Component, FCac
 	}
 
 	for (const FTraceDatum& Leg : Data) {
-		if (!Math::IsTraceClear(Leg)) {
+		if (!IsTraceClear(Leg)) {
 			StartEviction(Component, Edge, SourcePos);
 			return;
 		}
@@ -401,7 +400,7 @@ void FEdgeCache::TickRelayMaintenance(USpatialAudioComponent& Component, FCached
 		return;
 	}
 
-	if (Math::IsTraceClear(Data[0]) && Math::IsTraceClear(Data[1])) {
+	if (IsTraceClear(Data[0]) && IsTraceClear(Data[1])) {
 		Edge.ClearRelay();
 		Edge.LastLoSListenerPos = ListenerPos;
 		Edge.bHasLastLoSListenerPos = true;
@@ -411,7 +410,7 @@ void FEdgeCache::TickRelayMaintenance(USpatialAudioComponent& Component, FCached
 
 	// Relay dropped before evicting, or Phase 0's clear-restore would keep resurrecting a path
 	// that is already broken upstream.
-	if (!Math::IsTraceClear(Data[2]) || !Math::IsTraceClear(Data[3])) {
+	if (!IsTraceClear(Data[2]) || !IsTraceClear(Data[3])) {
 		Edge.ClearRelay();
 		StartEviction(Component, Edge, SourcePos);
 		return;
@@ -696,7 +695,7 @@ TArray<FVector> FEdgeCache::ResolveRecheckPath(const FCachedEdgePoint& Edge) {
 
 int32 FEdgeCache::FindFirstBlockedSegment(const TArray<FTraceDatum>& Data) {
 	for (int32 i = 0; i < Data.Num(); ++i) {
-		if (!Math::IsTraceClear(Data[i])) {
+		if (!IsTraceClear(Data[i])) {
 			return i / 2;
 		}
 	}

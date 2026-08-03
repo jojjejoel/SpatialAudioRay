@@ -545,7 +545,7 @@ void FAsyncCastManager::DrainPendingLoSProbes(const USpatialAudioComponent& Comp
 			continue;
 		}
 
-		if (!Ray.bLoSFound && Math::IsTraceClear(LoSData) && Probe.CumDist < BestCumDist) {
+		if (!Ray.bLoSFound && IsTraceClear(LoSData) && Probe.CumDist < BestCumDist) {
 			// A probe origin inside geometry exits silently forward, but the reverse trace hits the
 			// outer face and rejects it.
 			FHitResult SanityHit;
@@ -602,7 +602,7 @@ void FAsyncCastManager::TryConfirmLoSAtCrawlStep(const USpatialAudioComponent& C
 
 	FTraceDatum LoSData;
 	World->QueryTraceData(StepProbe.LoSHandle, LoSData);
-	if (!Math::IsTraceClear(LoSData)) {
+	if (!IsTraceClear(LoSData)) {
 		return;
 	}
 	// Reverse sanity trace, same reasoning as DrainPendingLoSProbes.
@@ -626,7 +626,7 @@ bool FAsyncCastManager::TryTakePerpWallExit(const FSpatialRayState& Ray, UWorld*
                                             const int32 StepIdx, FCrawlStepResult& OutResult) {
 	FTraceDatum PerpData;
 	World->QueryTraceData(StepProbe.PerpHandle, PerpData);
-	if (Math::IsTraceClear(PerpData)) {
+	if (IsTraceClear(PerpData)) {
 		return false;
 	}
 
@@ -649,7 +649,7 @@ bool FAsyncCastManager::TryTakeFreeEdgeExit(const USpatialAudioComponent& Compon
 	FTraceDatum BackData;
 	World->QueryTraceData(StepProbe.BackHandle, BackData);
 	// Clear means nothing is behind this step any more, so the crawl has walked off the edge.
-	if (!Math::IsTraceClear(BackData)) {
+	if (!IsTraceClear(BackData)) {
 		return false;
 	}
 
@@ -754,7 +754,7 @@ void FAsyncCastManager::ProcessCrawlBatch(const USpatialAudioComponent& Componen
 	// Anything past where the range trace hit is inside geometry, so those probes go unevaluated.
 	const int32 NumSteps = Ray.CrawlStepProbes.Num();
 	int32 EffMaxSteps = Ray.CrawlMaxSteps;
-	if (!Math::IsTraceClear(RangeData)) {
+	if (!IsTraceClear(RangeData)) {
 		const float HitDist = FVector::Dist(Ray.CrawlNudgedStart, RangeData.OutHits[0].Location);
 		EffMaxSteps = FMath::Min(
 			FMath::FloorToInt(HitDist / FMath::Max(Ray.CrawlStepSz, 1.f)),
