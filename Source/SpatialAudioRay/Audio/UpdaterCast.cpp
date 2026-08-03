@@ -205,7 +205,7 @@ void FUpdater::TickDirectLoSSampling(USpatialAudioComponent& Component, const fl
 	const FVector SourcePos = Context.SourcePos;
 	const FVector ListenerPos = Context.ListenerPos;
 
-	const int32 RotationSteps = FMath::Clamp(Settings.OffsetRingRotationSteps, 1, 8);
+	const int32 RotationSteps = Component.ResolveRingRotationSteps();
 
 	TrySampleOffsetLoS(Component, World, Settings, DeltaTime, SourcePos, ListenerPos, RotationSteps);
 	UpdateSmoothedOcclusionFromSamples(Component, Settings, DeltaTime, RotationSteps);

@@ -354,7 +354,7 @@ float USpatialAudioComponent::TimeToBlendSpeed(const float Seconds) {
 // expensive to fire on an occluder flicker. Any clear sample resets the streak.
 bool USpatialAudioComponent::HasConfirmedLoSLoss() const {
 	return !bHasDirectLoS
-		&& NoLoSSampleStreak >= FMath::Clamp(GetSettings().OffsetRingRotationSteps, 1, 8);
+		&& NoLoSSampleStreak >= ResolveRingRotationSteps();
 }
 
 void USpatialAudioComponent::TickAsyncPipeline(const USpatialAudioSettings& Settings) {

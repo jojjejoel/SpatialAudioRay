@@ -317,6 +317,14 @@ private:
 	// ── TickComponent phases ─────────────────────────────────────────────────
 	static float TimeToBlendSpeed(float Seconds);
 	bool HasConfirmedLoSLoss() const;
+
+	/** Upper bound on OffsetRingRotationSteps AND the size of LoSSlotFractions, which the sampler
+	 *  indexes modulo the clamped value. Raising one without the other overruns that array, so
+	 *  they share this constant. Keep the setting's ClampMax meta tag in step. */
+	static constexpr int32 MaxRingRotationSteps = 8;
+	int32 ResolveRingRotationSteps() const {
+		return FMath::Clamp(GetSettings().OffsetRingRotationSteps, 1, MaxRingRotationSteps);
+	}
 	void TickAsyncPipeline(const USpatialAudioSettings& Settings);
 	void TickNormalSweepDispatch(float DeltaTime, bool bInRange, float SubInterval);
 	/** Advances the LoS duration timers, clears the cache on a confirmed clear, and returns the
@@ -561,7 +569,7 @@ private:
 	/** Index = the check's position within the rotation. A stationary scene revisits the same
 	 *  angle and radius per slot every rotation, so a slot really is the value from the last time
 	 *  this exact ray was traced. Sized to the clamp; only the first RotationSteps are read. */
-	float LoSSlotFractions[8] = {};
+	float LoSSlotFractions[MaxRingRotationSteps] = {};
 	/** Circular index into LoSSlotFractions for the next check. */
 	int32 LoSSlotIndex = 0;
 	/** Average of all RotationSteps slots, recomputed as soon as one refreshes. A stationary ray

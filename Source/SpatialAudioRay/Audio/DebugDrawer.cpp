@@ -302,7 +302,7 @@ void USpatialAudioComponent::DrawSweepPacingDebugText(const uint64 Base, const U
 	if (bSweepSuspended && LastOffsetLoSFraction <= 0.f) {
 		SweepLine = FString::Printf(TEXT("  Sweep  SUSPENDED (confirming LoS loss %d/%d)  │  timer=%.2f/%.2fs"),
 		                            NoLoSSampleStreak,
-		                            FMath::Clamp(Settings.OffsetRingRotationSteps, 1, 8),
+		                            ResolveRingRotationSteps(),
 		                            TimeSinceFullCast, SubInterval);
 	}
 	else if (bSweepSuspended) {

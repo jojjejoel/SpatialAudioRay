@@ -25,7 +25,7 @@ float FUpdater::UpdateVirtualCrossfadeGate(USpatialAudioComponent& Component, co
 		                   DeltaTime, 1.f / Settings.VirtualCrossfadeSmoothingTime)
 		: RawRamp;
 	// Keyed to a completed blank ring cycle, not bHasDirectLoS: one flickery frame must not pump it.
-	const int32 RotationSteps = FMath::Clamp(Settings.OffsetRingRotationSteps, 1, 8);
+	const int32 RotationSteps = Component.ResolveRingRotationSteps();
 	const bool bGateHasLoS = Component.NoLoSSampleStreak < RotationSteps;
 	const bool bRampEnabled = Settings.VirtualCrossfadeStartOcclusion < 1.f;
 	const float CrossfadeTarget = Math::ComputeVirtualCrossfadeTarget(

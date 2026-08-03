@@ -30,7 +30,7 @@ bool FAsyncCastManager::TryDiscardStaleSweep(USpatialAudioComponent& Component, 
 		Component, World, Owner->GetActorLocation(), Pawn->GetActorLocation(),
 		Settings.DirectLoSSampleRadius,
 		SourceR, SourceR,
-		UE_HALF_PI / FMath::Clamp(Settings.OffsetRingRotationSteps, 1, 8));
+		UE_HALF_PI / Component.ResolveRingRotationSteps());
 	if (1.f - OffsetFraction >= Settings.PreSweepOcclusionThreshold) {
 		return false;
 	}
