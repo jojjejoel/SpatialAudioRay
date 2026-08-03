@@ -32,7 +32,7 @@ public:
 	 * Shared tunable settings for all spatial audio behaviour (ray counts, occlusion,
 	 * virtual source, etc.).
 	 * Assign the same USpatialAudioSettings data asset to every component in the project
-	 * so that all instances are tuned from one place — like a ScriptableObject in Unity.
+	 * so that all instances are tuned from one place, like a ScriptableObject in Unity.
 	 * If left null, the class defaults (CDO) are used automatically.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio")
@@ -75,7 +75,7 @@ public:
 	 *  while clear, the shortest cached diffraction route (min over cached edges of the
 	 *  string-pulled source→edge path + edge→ListenerPos) while occluded, blended by
 	 *  smoothed occlusion. Falls back to the straight line until a diffraction path has
-	 *  ever been found. Selection/content input (e.g. NPC vocal effort) — must never feed
+	 *  ever been found. Selection and content input (e.g. NPC vocal effort): must never feed
 	 *  VirtualGain/PathAttenuation math.
 	 *
 	 *  DetourOcclusionFloor holds the result at the straight line until occlusion passes it,
@@ -89,17 +89,17 @@ public:
 
 	/** Scales the attenuation FalloffDistance of every cached source component AND the live
 	 *  virtual pool relative to their base (scale 1 = as authored/overridden). Lets a caller
-	 *  vary audible reach per content — e.g. NPC vocal effort: a whisper carries meters, a
+	 *  vary audible reach per content, e.g. NPC vocal effort: a whisper carries meters, a
 	 *  shout carries the map. Clamped to [Math::MinFalloffScale, 1]: author the base
 	 *  attenuation for the LONGEST reach and scale DOWN, because the ray/LoS ranges captured
 	 *  by ReadAttenuationSettings at BeginPlay stay at base and deliberately do not follow
-	 *  this scale — a sound audible past them would have no diffraction paths to play through. */
+	 *  this scale, since a sound audible past them would have no diffraction paths to play through. */
 	UFUNCTION(BlueprintCallable, Category = "Spatial Audio")
 	void SetAttenuationFalloffScale(float NewScale);
 
 	/** Puts the audible edge at TargetOuterCm from the source (0 = restore the asset's own
 	 *  range). Same mechanism as SetAttenuationFalloffScale, addressed in absolute distance so
-	 *  callers can tie reach to a design distance they already own — e.g. the NPC voice bands.
+	 *  callers can tie reach to a design distance they already own, e.g. the NPC voice bands.
 	 *  The result is clamped, so ask GetAttenuationOuterRadius what you actually got. */
 	UFUNCTION(BlueprintCallable, Category = "Spatial Audio")
 	void SetAttenuationOuterRadius(float TargetOuterCm);
@@ -133,7 +133,7 @@ public:
 	bool bDrawDebugRays = false;
 
 	/** Show the virtual emitter spheres: magenta sphere at the source actor plus one colored
-	 *  sphere + line per audible virtual voice (pool slot). Emitters only — cached edges live
+	 *  sphere + line per audible virtual voice (pool slot). Emitters only: cached edges live
 	 *  under bShowEdgePoints and the steering-prediction spheres under bShowSteeringPrediction. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Debug",
 		meta = (EditCondition = "bDrawDebugRays"))
@@ -165,7 +165,7 @@ public:
 	FKey ToggleDebugTextKey = EKeys::Three;
 
 	/** Key that toggles the world-global debug line (all-source trace totals, drawn by
-	 *  USpatialAudioDebugSubsystem). Polled by the subsystem, not per component — independent
+	 *  USpatialAudioDebugSubsystem). Polled by the subsystem, not per component, and independent
 	 *  of bShowDebugText, so global-only and per-source-only displays are both possible. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Debug",
 		meta = (EditCondition = "bDrawDebugRays"))
@@ -174,13 +174,13 @@ public:
 	/** Key that cycles bDrawDebugRays through the registered sources one at a time
 	 *  (OFF → source 1 → … → source N → OFF), so the debug view inspects one source without
 	 *  the others drawing over it. Polled by USpatialAudioDebugSubsystem (once, from the first
-	 *  registered source) and deliberately NOT gated on bDrawDebugRays — it must keep working
+	 *  registered source) and deliberately NOT gated on bDrawDebugRays, since it must keep working
 	 *  while every source is off, since it is the way back into the cycle. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Debug")
 	FKey CycleDebugSourceKey = EKeys::N;
 
 	/** Key that toggles world-space name labels at every registered source's location (drawn
-	 *  by USpatialAudioDebugSubsystem via DrawDebugString — camera-facing text, not depth-tested
+	 *  by USpatialAudioDebugSubsystem via DrawDebugString: camera-facing text, not depth-tested
 	 *  against geometry, so it stays readable through walls). Polled independent of
 	 *  bDrawDebugRays / bAnyDebugRays, so labels work even with ray debugging fully off. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Debug")
@@ -232,7 +232,7 @@ public:
 
 	/** Show the offset-point LoS check rays (green = clear, red = blocked) used to find a
 	 *  partial line of sight around the direct path's occluder. Only drawn for a given check
-	 *  when at least one of that check's offset rays actually found a clear path — batches
+	 *  when at least one of that check's offset rays actually found a clear path. Batches
 	 *  where every ray is blocked are not drawn, to avoid cluttering the view with misses. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Debug",
 		meta = (EditCondition = "bDrawDebugRays"))
@@ -243,8 +243,8 @@ public:
 		meta = (EditCondition = "bDrawDebugRays"))
 	FKey ToggleOffsetLoSChecksKey = EKeys::Nine;
 
-	/** Show each cached edge's stored string-pulled shortest path (the polyline its PathDist —
-	 *  which feeds the voice clusters — was measured along): magenta chain of straight segments
+	/** Show each cached edge's stored string-pulled shortest path (the polyline its PathDist,
+	 *  which feeds the voice clusters, was measured along): magenta chain of straight segments
 	 *  source → anchors → edge, with a sphere at each intermediate anchor. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Debug",
 		meta = (EditCondition = "bDrawDebugRays"))
@@ -266,11 +266,11 @@ public:
 		meta = (EditCondition = "bDrawDebugRays"))
 	FKey ToggleSteeringPredictionKey = EKeys::P;
 
-	/** Force the source audio component to silence — use to confirm whether pops come from source vs virtual. */
+	/** Force the source audio component to silence, to confirm whether pops come from source or virtual. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Debug")
 	bool bDebugSilenceSource = false;
 
-	/** Force the virtual audio component to silence — use to confirm whether pops come from source vs virtual. */
+	/** Force the virtual audio component to silence, to confirm whether pops come from source or virtual. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Debug")
 	bool bDebugSilenceVirtual = false;
 
@@ -291,7 +291,7 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Spatial Audio|Virtual Source")
 	FVector CurrentVirtualSourceLocation = FVector::ZeroVector;
 
-	/** Slewed virtual crossfade gate [0-1] — chases ComputeVirtualCrossfadeTarget (1 on total
+	/** Slewed virtual crossfade gate [0-1], chasing ComputeVirtualCrossfadeTarget (1 on total
 	 *  LoS loss; with VirtualCrossfadeStartOcclusion < 1, also a partial occlusion-keyed ramp
 	 *  through the pre-sweep band) at VirtualCrossfadeFadeInTime/FadeOutTime. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Spatial Audio|Virtual Source")
@@ -303,27 +303,24 @@ private:
 	friend class FUpdater;
 	friend class USpatialAudioDebugSubsystem;
 
-	/** Compute the effective full-sweep interval for this tick: priority and velocity scaling,
-	 *  then either the post-movement cache-fill burst or stationary idle, whichever applies.
-	 *  Does NOT write StoredEffFullSweepInterval. */
+	/** Priority and velocity scaling, then either the post-movement cache-fill burst or stationary
+	 *  idle. Does NOT write StoredEffFullSweepInterval. */
 	float ComputeEffectiveSweepInterval() const;
-	/** Cached edges that count toward MovementCacheFillRequiredEdges: discovered since the
-	 *  latest movement trigger armed the burst (bNewSinceFillArm), not relayed, not evicting. */
+	/** Edges discovered since the latest movement trigger armed the burst, not relayed, not evicting. */
 	int32 CountCacheFillEdges() const;
-	/** Signed steering-prediction offset for one mover: +velocity×lead normally, −velocity×lead
-	 *  within SteeringPredictionLeadTime of losing direct LoS (the aperture just crossed sits on
-	 *  the past side — leading forward would aim deeper into the shadow). Zero at lead 0. */
+	/** Signed lead for one mover: forward normally, backward within SteeringPredictionLeadTime of
+	 *  losing LoS, since the aperture just crossed sits on the past side. Zero at lead 0. */
 	FVector ComputeSteeringLead(const FVector& SmoothedVelocity, const USpatialAudioSettings& Settings) const;
-	/** Advance the movement-triggered early-sweep cooldown and request a sweep when
-	 *  the listener has moved far enough since the last triggered position. */
+	/** Advances the early-sweep cooldown and requests a sweep once the listener has moved far enough. */
 	void TickMovementSweepTrigger(float DeltaTime, bool bInRange, const APawn* Pawn);
 
 	// ── TickComponent phases ─────────────────────────────────────────────────
 	static float TimeToBlendSpeed(float Seconds);
+	bool HasConfirmedLoSLoss() const;
 	void TickAsyncPipeline(const USpatialAudioSettings& Settings);
 	void TickNormalSweepDispatch(float DeltaTime, bool bInRange, float SubInterval);
-	/** Advances DirectLoSConfirmedDuration/TimeSinceHadDirectLoS, clears the edge cache on a
-	 *  confirmed clear, and returns the occlusion blend speed for this tick. */
+	/** Advances the LoS duration timers, clears the cache on a confirmed clear, and returns the
+	 *  occlusion blend speed for this tick. */
 	float UpdateDirectLoSConfirmationAndBlendSpeed(float DeltaTime);
 	void SmoothTowardTargets(float DeltaTime, float OccBlendSpeed, bool bConfirmedDirectLoS);
 	void UpdateTraceDiagnostics(float DeltaTime);
@@ -357,16 +354,12 @@ private:
 	void DrawTraceStatsDebugText(uint64 Base) const;
 	void DrawEdgeTimerDebugText(uint64 Base, const USpatialAudioSettings& Settings) const;
 
-	/** Volume multiplier [0-1] of the VIRTUAL template's attenuation curve evaluated at
-	 *  Distance — the exact curve the engine applies to the emitter→listener leg (inner-radius
-	 *  hold + the asset's falloff model), so the source→emitter leg attenuates coherently with
-	 *  it even when the virtual and source assets differ. Falls back to the widest source's
-	 *  curve, then to a linear ramp over MaxRayDistance. */
+	/** Volume multiplier [0-1] of the VIRTUAL template's curve at Distance, the same curve the
+	 *  engine applies to the emitter-listener leg, so both legs attenuate coherently even when the
+	 *  virtual and source assets differ. Falls back to the widest source, then a linear ramp. */
 	float EvaluateVirtualAttenuationVolumeAt(float Distance) const;
-	/** Curve-shaped path attenuation: 1 − curve volume at the GeomBlend-blended Leg1 distance,
-	 *  scaled by PathAttenuationStrength. Charging Leg1 against the same curve the engine
-	 *  applies to Leg2 is what stops a close emitter with a long path out-shouting a far one
-	 *  with a short path, which a flat linear ramp over MaxRayDistance allowed. */
+	/** Charging Leg1 against the same curve the engine applies to Leg2 is what stops a close emitter
+	 *  with a long path out-shouting a far one with a short path. */
 	float ComputePathAttenuationCurved(float AvgPathDist, float Leg1Geom, const USpatialAudioSettings& S) const;
 
 	void CacheAudioComponents();
@@ -374,9 +367,8 @@ private:
 	void ApplyAttenuationOverridesTo(UAudioComponent* AC) const;
 	static void ApplyFalloffScaleTo(UAudioComponent* AC, float Ratio);
 
-	/** Currently applied falloff scale — new scales are applied as a ratio against this, so
-	 *  every cached component must always sit at exactly this scale (one-shots get it applied
-	 *  at spawn). */
+	/** New scales are applied as a ratio against this, so every cached component must always sit at
+	 *  exactly this scale. */
 	float AttenuationFalloffScale = 1.f;
 	void CreateAndAssignAudioBus();
 	void CreateVirtualVoicePool();
@@ -388,19 +380,16 @@ private:
 	void UpdateStationaryIdleState(bool bInRange, const APawn* Pawn);
 
 	/** Every component tagged AudioComponentSource on the owner. Co-located sounds share ONE
-	 *  spatial pipeline (bus, occlusion, edge cache, virtual pool) — all of them write the bus
-	 *  and receive the same occlusion parameter. Entries whose component has been destroyed are
-	 *  pruned in the per-frame occlusion write. */
+	 *  pipeline (bus, occlusion, edge cache, virtual pool). Entries whose component has been
+	 *  destroyed are pruned in the per-frame occlusion write. */
 	TArray<TWeakObjectPtr<UAudioComponent>> CachedAudioComponentSources;
 	TWeakObjectPtr<UAudioComponent> CachedAudioComponentVirtual;
 
-	// UPROPERTY keeps the runtime-created bus alive: nothing else holds a UObject
-	// reference to it, and GC of a bus in use by the audio render thread is a crash.
+	// UPROPERTY keeps the runtime-created bus alive: GC of a bus in use by the render thread crashes.
 	UPROPERTY(Transient)
 	TObjectPtr<UAudioBus> DiffractionBus;
 
-	// Runtime pool of virtual audio components, all reading DiffractionBus. Indexed in
-	// parallel with VirtualSlots; the components need UPROPERTY for GC, the plain state doesn't.
+	// Indexed in parallel with VirtualSlots; the components need UPROPERTY for GC, the state does not.
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UAudioComponent>> VirtualSlotComponents;
 	TArray<FVirtualSlot> VirtualSlots;
@@ -415,10 +404,8 @@ private:
 	int32 AsyncMaxBounces = 4; 
 	FVector AsyncSourcePos = FVector::ZeroVector;
 	FVector AsyncListenerPos = FVector::ZeroVector;
-	/** Velocity-led positions for ray STEERING only (aiming axis, bounce/crawl/turn listener
-	 *  pulls). Never used by LoS probes, budget gates, or anything that validates/caches —
-	 *  those read the actual Async*Pos above. Equal to them at SteeringPredictionLeadTime 0
-	 *  or when stationary. */
+	/** Velocity-led positions for ray STEERING only. Never used by LoS probes, budget gates, or
+	 *  anything that validates or caches, which read the actual Async*Pos above. */
 	FVector AsyncSteeringSourcePos = FVector::ZeroVector;
 	FVector AsyncSteeringListenerPos = FVector::ZeroVector;
 	int32 AsyncTotalRays = 0;
@@ -440,9 +427,8 @@ private:
 	float TimeSinceFullCast = 0.f;
 	float StoredEffFullSweepInterval = 0.5f;
 
-	/** Captured at sweep start: this sweep is a pre-warm cast fired while partial LoS remains.
-	 *  Finalize/readback then ignore direct-hit rays (expected when partially visible) instead
-	 *  of treating them as "all clear" and wiping the cache the sweep just filled. */
+	/** A pre-warm cast fired while partial LoS remains. Readback then ignores direct-hit rays
+	 *  instead of treating them as all-clear and wiping the cache the sweep just filled. */
 	bool bPreSweepCast = false;
 
 	float TargetOcclusion = 0.f;
@@ -450,40 +436,31 @@ private:
 	float CurrentPathAttenuation = 0.f;
 	FVector TargetVirtualSourceLocation = FVector::ZeroVector;
 
-	/** True when either cast detected an unobstructed direct path to the listener.
-	 *  Drives OcclusionClearBlendSpeed so occlusion clears almost instantly. */
+	/** Drives OcclusionClearBlendSpeed, so occlusion clears almost instantly. */
 	bool bHasDirectLoS = false;
 
-	/** Accumulates how long bHasDirectLoS has been continuously true; resets to 0 on any LoS loss.
-	 *  Used to debounce snap/edge-clear effects so single-frame LoS flickers don't glitch the virtual source. */
+	/** Debounces snap and edge-clear effects so a single-frame flicker cannot glitch the source. */
 	float DirectLoSConfirmedDuration = 0.f;
 
-	/** Mirror of the above: seconds since bHasDirectLoS was last true (0 while it is). Drives the
-	 *  steering-prediction sign — sweeps within SteeringPredictionLeadTime of losing LoS aim at
-	 *  the PAST position instead of the predicted one. Starts large: "never had LoS" must not
-	 *  read as "just lost it". */
+	/** Mirror of the above. Drives the steering-prediction sign. Starts large, since "never had
+	 *  LoS" must not read as "just lost it". */
 	float TimeSinceHadDirectLoS = 1e9f;
 
-	/** Ray range in cm, derived at BeginPlay from the widest source attenuation times
-	 *  MaxRayDistanceScale. The initialiser only survives when no attenuation is found.
-	 *  Every range check reads this, never the settings asset, which has no range of its own. */
+	/** Derived at BeginPlay from the widest source attenuation times MaxRayDistanceScale. Every
+	 *  range check reads this, never the settings asset, which has no range of its own. */
 	float MaxRayDistance = 5000.f;
 
 
-	/** Inner radius of the attenuation shape in cm, read from the AudioComponent at BeginPlay.
-	 *  Ray count priority is clamped to 1.0 within 2x this distance, then scales to 0 at MaxRayDistance.
-	 *  0 means no attenuation asset found — falls back to scaling from distance 0. */
+	/** Read from the AudioComponent at BeginPlay. Ray priority holds at 1.0 within 2x this, then
+	 *  scales to 0 at MaxRayDistance. 0 means no attenuation asset was found. */
 	float AttenuationInnerRadius = 0.f;
 
-	/** The widest source's authored FalloffDistance, captured before any scaling — the base
-	 *  every AttenuationFalloffScale is relative to. */
+	/** Captured before any scaling: the base every AttenuationFalloffScale is relative to. */
 	float BaseAttenuationFalloffDistance = 0.f;
 
-	/** Copy of the virtual template's effective attenuation settings (falling back to the
-	 *  widest source's when the template has none), captured in ReadAttenuationSettings after
-	 *  ApplyAttenuationOverrides so overrides are included. Evaluated at Leg1 by
-	 *  ComputePathAttenuationCurved — must be the same curve the engine applies to the pooled
-	 *  emitters' own listener leg. */
+	/** The virtual template's effective attenuation, captured after ApplyAttenuationOverrides so
+	 *  overrides are included. Must be the same curve the engine applies to the pooled emitters'
+	 *  own listener leg. Falls back to the widest source when the template has none. */
 	FSoundAttenuationSettings VirtualAttenuationSettings;
 	bool bHasVirtualAttenuationSettings = false;
 
@@ -497,15 +474,13 @@ private:
 		float VirtualPathBend = 0.f;
 	} AudioDiag;
 
-	/** Which subsystem the traces being issued right now belong to. Set at the top of each tick
-	 *  phase; Other is the default so a phase nobody tagged shows up on the HUD as an unexplained
-	 *  bucket instead of silently inflating whichever one ran last. */
+	/** Set at the top of each tick phase. Other is the default so an untagged phase shows on the
+	 *  HUD as an unexplained bucket rather than inflating whichever one ran last. */
 	enum class ETraceBucket : uint8 { Sweep, Occlusion, Phase0, Relay, Bisect, PathCheck, Other, Count };
 	mutable ETraceBucket CurrentTraceBucket = ETraceBucket::Other;
 
-	/** Bills every trace in its lifetime to one bucket and restores the previous on exit, so a
-	 *  nested phase (a rescue inside a Phase 0 readback, a bisection inside a relay conversion)
-	 *  charges itself rather than its caller. */
+	/** Restores the previous bucket on exit, so a nested phase charges itself rather than its
+	 *  caller. */
 	struct FTraceBucketScope {
 		const USpatialAudioComponent& Comp;
 		const ETraceBucket Previous;
@@ -520,9 +495,8 @@ private:
 		mutable int32 FrameCount = 0;
 		float SmoothedFrameTraces = 0.f;
 
-		/** Per-subsystem split of FrameCount, smoothed and snapshotted exactly like the total so
-		 *  the parts stay comparable with it. Answers "why was this frame expensive" directly,
-		 *  which the single total could only ever answer by inference. */
+		/** Smoothed and snapshotted exactly like the total, so the parts stay comparable with it
+		 *  and answer "why was this frame expensive" directly. */
 		static constexpr int32 BucketCount = static_cast<int32>(ETraceBucket::Count);
 		mutable int32 BucketFrameCounts[BucketCount] = {};
 		float SmoothedBucketTraces[BucketCount] = {};
@@ -532,15 +506,12 @@ private:
 		int32 AccumBucket = 0;
 		float SnapshotFrameTraces = 0.f;
 		float SnapshotTracesPerSec = 0.f;
-		/** Highest one-second figure this source has reached. Never sum these across sources for
-		 *  a global peak; the subsystem peaks the summed figure instead. */
+		/** Never sum these across sources for a global peak; the subsystem peaks the summed figure. */
 		float PeakTracesPerSec = 0.f;
 
-		/** Traces and seconds banked separately for moving and stationary play, split on the same
-		 *  IsStationary() the sweep pacing itself uses, so the pair measures what velocity scaling
-		 *  and stationary idle actually buy. Cumulative rather than windowed: the level-load sweep
-		 *  lands in the rest bucket and washes out as play continues. Time out of range counts as
-		 *  elapsed with no traces, so read these from a controlled run. */
+		/** Split on the same IsStationary() the sweep pacing uses, so the pair measures what velocity
+		 *  scaling and stationary idle actually buy. Cumulative, so the level-load sweep washes out.
+		 *  Time out of range counts as elapsed with no traces, so read these from a controlled run. */
 		int32 MovingTraceAccum = 0;
 		float MovingSeconds = 0.f;
 		int32 RestTraceAccum = 0;
@@ -565,61 +536,45 @@ private:
 		int32 SweepAsyncRayAccum = 0;
 	} TraceDiag;
 
-	/** String-pulled LoS paths handed from the sweep readback to the cache merge. Filled by
-	 *  AccumulateRefineProbesIntoCycle and consumed by MergeStoredPathsIntoCache within the same
-	 *  ReadbackFinalizeBatch call, so it is empty by the time anything else in the tick runs. */
+	/** Filled by AccumulateRefineProbesIntoCycle and consumed by MergeStoredPathsIntoCache within
+	 *  the same readback, so it is empty by the time anything else in the tick runs. */
 	TArray<FStoredLoSPath> StoredLoSPaths;
 
-	/** Confirmed diffraction edges that survive across multiple sweeps. Revalidated one entry per
-	 *  Phase 0 slice; a full cache scales the sweep's ray budget down through FullCacheRayScale
-	 *  and stabilises the virtual source. */
+	/** Revalidated one entry per Phase 0 slice. A full cache scales the sweep's ray budget down
+	 *  through FullCacheRayScale and stabilises the virtual source. */
 	TArray<FCachedEdgePoint> CachedEdgePoints;
 
-	/** Copy of the edge cache taken when a sweep starts, so the sweep finalises against the cache
-	 *  as it stood at capture rather than as the intervening ticks have since changed it.
-	 *  Accumulated alongside the fresh ray probes in SubmitFinalizeBatch. */
+	/** Taken when a sweep starts, so it finalises against the cache as it stood at capture rather
+	 *  than as intervening ticks have changed it. */
 	TArray<FCachedEdgePoint> PendingValidCachedPoints;
 
-	/**
-	 * One [source, virtual source, listener] polyline per completed sweep that published a
-	 * virtual source. Appended in ReadbackFinalizeBatch, cleared when a sweep starts or direct
-	 * LoS returns; drawn every tick when bShowDiffractionPaths.
-	 */
+	/** One [source, virtual source, listener] polyline per sweep that published a virtual source.
+	 *  Cleared when a sweep starts or direct LoS returns; drawn when bShowDiffractionPaths. */
 	TArray<TArray<FVector>> LoSDiffractionPaths;
 
-	/** Raw clear fraction from the last 5-point LoS sample (center + rotating ring). Drives
-	 *  gating (bHasDirectLoS); occlusion uses the smoothed LastDirectLoSFraction instead. */
+	/** Drives gating (bHasDirectLoS); occlusion uses the smoothed LastDirectLoSFraction instead. */
 	float LastOffsetLoSFraction = 0.f;
 	float OffsetLoSCheckTimer = 0.f;
-	/** Ring basis rotation (radians, wraps at 90°), advanced 90°/OffsetRingRotationSteps per
-	 *  sample so one pattern covers 4×Steps evenly spaced directions, then repeats exactly. */
+	/** Wraps at 90 degrees, advanced 90/OffsetRingRotationSteps per sample, so one pattern covers
+	 *  4xSteps evenly spaced directions and then repeats exactly. */
 	float OffsetRingAngle = 0.f;
-	/** Per-slot cache of the last sampled fraction at each position in the rotation pattern
-	 *  (index = check's position within the OffsetRingRotationSteps cycle). A stationary scene
-	 *  revisits the exact same angle/radius per slot every rotation (see OffsetRingAngle /
-	 *  RadiusScale periodicity in TickDirectLoSSampling), so a slot really is "the value from
-	 *  the last time this exact ray was traced". Sized to the RotationSteps clamp (max 8); only
-	 *  the first RotationSteps entries are read. */
+	/** Index = the check's position within the rotation. A stationary scene revisits the same
+	 *  angle and radius per slot every rotation, so a slot really is the value from the last time
+	 *  this exact ray was traced. Sized to the clamp; only the first RotationSteps are read. */
 	float LoSSlotFractions[8] = {};
 	/** Circular index into LoSSlotFractions for the next check. */
 	int32 LoSSlotIndex = 0;
-	/** Average of all RotationSteps slots' most recent values — the smoothing target that
-	 *  occlusion chases (debug HUD). Recomputed every check as soon as one slot refreshes
-	 *  (2026-07-21: was batched once per completed rotation; a stationary ray retraces the
-	 *  identical point each cycle so this only moves on genuine change, aside from rare
-	 *  floating-point flicker on grazing traces, which is accepted). */
+	/** Average of all RotationSteps slots, recomputed as soon as one refreshes. A stationary ray
+	 *  retraces the identical point each cycle, so this only moves on genuine change. */
 	float WindowedLoSFraction = 0.f;
-	/** Consecutive LoS samples with zero clear points. While stationary, LoS is only declared
-	 *  lost once this spans a full rotation pattern — see the hold logic in the update cast. */
+	/** While stationary, LoS is only declared lost once this spans a full rotation pattern. */
 	int32 NoLoSSampleStreak = 0;
 	bool bLoSFractionSeeded = false;
-	/** Low-passed ComputeVirtualCrossfadeRamp output (VirtualCrossfadeSmoothingTime) — the
-	 *  ramp amplifies occlusion-sampling wobble by 1/(1-Start), so the raw value is too
-	 *  jittery to drive the gate directly. */
+	/** The ramp amplifies occlusion wobble by 1/(1-Start), so the raw value is too jittery to
+	 *  drive the gate directly. */
 	float SmoothedCrossfadeRamp = 0.f;
 	float Phase0Timer = 0.f;
-	/** Which entry the next Phase 0 slice submits for. Phase 0 fires one edge per slice rather
-	 *  than the whole cache at once, so its cost spreads across the interval. */
+	/** Phase 0 fires one edge per slice rather than the whole cache, spreading its cost. */
 	int32 Phase0Cursor = 0;
 
 	struct FVelocityScalingState {
@@ -629,10 +584,8 @@ private:
 		float SmoothedCombinedSpeed = 0.f;
 		float SmoothedSourceSpeed = 0.f;
 		float SmoothedListenerSpeed = 0.f;
-		/** Smoothed velocity VECTORS (speeds above are scalars) — feed the steering-prediction
-		 *  lead. Smoothing matters twice: raw per-frame velocity jitters, and the decay to zero
-		 *  after stopping returns steering to the actual positions (and to seeded-bias
-		 *  determinism) without a discontinuity. */
+		/** Feed the steering-prediction lead. Smoothing matters twice: raw velocity jitters, and the
+		 *  decay to zero after stopping returns steering to the actual positions without a jump. */
 		FVector SmoothedSourceVelocity = FVector::ZeroVector;
 		FVector SmoothedListenerVelocity = FVector::ZeroVector;
 		float SweepMultiplier = 1.f;
@@ -651,43 +604,34 @@ private:
 		float MovementCooldownTimer = 0.f;
 		bool bMovementRequested = false;
 
-		/** Post-movement cache-fill budget: while > 0 and fewer than
-		 *  MovementCacheFillRequiredEdges NEW edges (bNewSinceFillArm) are cached, sweeps run
-		 *  at burst speed. Re-armed to MovementCacheFillMaxSweeps by every movement-triggered
-		 *  sweep, which also clears all bNewSinceFillArm flags (rebasing "new"). */
+		/** While > 0 and fewer than MovementCacheFillRequiredEdges new edges are cached, sweeps run at
+		 *  burst speed. Re-armed by every movement-triggered sweep, which also rebases "new". */
 		int32 CacheFillSweepsRemaining = 0;
 	} SweepScheduling;
 
 	bool bPhase0HandlesStale = false;
 
-	/** Round-robin state for the source-side ShortestPath re-verification (one edge per
-	 *  ShortestPathRecheckInterval). */
+	/** Round-robin state for the source-side ShortestPath re-verification, one edge per interval. */
 	float ShortestPathCheckTimer = 0.f;
 	int32 ShortestPathCheckCursor = 0;
 
-	/** In-flight async re-trace of one cached edge's stored ShortestPath polyline (the
-	 *  round-robin source-side validation). All segment traces are submitted up front on the
-	 *  interval and read back the following tick(s). The entry is re-found by exact EdgePoint
-	 *  match at readback, so a sweep rewrite, promotion, or eviction in between simply drops
-	 *  the stale result instead of evicting the wrong entry. */
+	/** All segment traces are submitted up front and read back the following tick(s). The entry is
+	 *  re-found by exact EdgePoint match, so a rewrite, promotion or eviction in between drops the
+	 *  stale result instead of evicting the wrong entry. */
 	struct FPathRecheckState {
 		bool bPending = false;
 		FVector EdgePoint = FVector::ZeroVector;
 		TArray<FTraceHandle> Handles;
-		/** Pulled-in endpoints per traced segment (Handles holds forward + reverse per entry),
-		 *  kept for the blocked-segment debug draw at readback. */
+		/** Kept for the blocked-segment debug draw at readback. */
 		TArray<FVector> SegStarts;
 		TArray<FVector> SegEnds;
-		/** The live source position the first leg was traced from. On a clear result the entry
-		 *  re-anchors to it, which is how source movement is caught by measurement rather than by
-		 *  a distance threshold. False when that leg was unverified and could not be re-traced. */
+		/** The live source position the first leg was traced from. A clear result re-anchors the entry
+		 *  to it, catching source movement by measurement rather than by a distance threshold. */
 		bool bReanchored = false;
 		FVector ReanchorSource = FVector::ZeroVector;
 	} PathRecheck;
 
-	/** Round-robin state for opportunistic inner-anchor promotion (one edge per
-	 *  ShortestPathPromotionInterval). Separate from ShortestPathCheckCursor above so the two
-	 *  intervals can be tuned independently. */
+	/** Separate from ShortestPathCheckCursor so the two intervals can be tuned independently. */
 	float ShortestPathPromotionTimer = 0.f;
 	int32 ShortestPathPromotionCursor = 0;
 
@@ -703,7 +647,6 @@ private:
 		bool bDirectLoSFound = false;
 	};
 
-	/** Trace-free results handed from SubmitFinalizeBatch to ReadbackFinalizeBatch. Pending for
-	 *  exactly one frame, the gap the refinement probes need to come back. */
+	/** Handed from SubmitFinalizeBatch to ReadbackFinalizeBatch, pending exactly one frame. */
 	FFinalizeBatch Finalize;
 };

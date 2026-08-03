@@ -11,30 +11,23 @@ class UNPCVoiceSettings;
 class USpatialAudioComponent;
 
 /**
- * Drives an NPC's voice from the acoustic state of its USpatialAudioComponent:
- * the effective acoustic distance to the listener (straight line while clear, diffraction
- * path length while occluded — GetEffectiveAcousticDistance) selects a vocal-effort bucket
- * (with dwell hysteresis), and a scheduler plays bank lines at that effort through the
- * shared spatial bus. Occlusion itself never shifts the effort — path length already encodes
- * how hard the NPC is to hear — it only decides whether the listener counts as hidden, which
- * picks the content half (Clear vs Occluded lines) and, on the tick it flips, drives the
- * sight reactions.
+ * Drives an NPC's voice from the acoustic state of its USpatialAudioComponent. Effective
+ * acoustic distance (straight while clear, diffraction path length while occluded) selects a
+ * vocal-effort bucket with dwell hysteresis, and a scheduler plays bank lines at that effort
+ * through the shared spatial bus. Occlusion never shifts the effort, since path length already
+ * encodes it; it only decides whether the listener counts as hidden, which picks the content
+ * half and drives the sight reactions on the tick it flips.
  *
- * Setup on the NPC actor:
- *  - a USpatialAudioComponent (the acoustic state source),
- *  - a UAudioComponent tagged with BOTH "AudioComponentSource" (joins the spatial
- *    pipeline: bus, attenuation, per-frame occlusion) and VoiceAudioComponentTag
- *    (marks it as this component's mouth), bAutoActivate off, playing an MS_Source-style
- *    MetaSound whose wave input matches WaveParameterName,
- *  - this component, with a VoiceBank DataTable of FNPCVoiceLineRow.
+ * Setup on the NPC actor: a USpatialAudioComponent, a UAudioComponent tagged with BOTH
+ * "AudioComponentSource" and VoiceAudioComponentTag (bAutoActivate off, playing an
+ * MS_Source-style MetaSound whose wave input matches WaveParameterName), and this component
+ * with a VoiceBank DataTable of FNPCVoiceLineRow.
  *
- * A playing line is never modified mid-flight — bucket changes apply to the NEXT line —
- * with one exception: a barge-in cuts the line short with a declick fade and replaces it,
- * then resumes normal scheduling at the new effort. Three moments qualify, ranked: sight
- * lost, sight regained, and an effort jump of ≥ TransitionBucketDelta buckets from the
- * playing line's effort. When a sight change finds nothing playing there is no line to cut,
- * so the next one is pulled forward instead — otherwise the reaction would arrive after the
- * window its content is gated on had already closed.
+ * A playing line is never modified mid-flight; bucket changes apply to the NEXT line. The one
+ * exception is a barge-in, which cuts the line with a declick fade and replaces it. Three
+ * moments qualify, ranked: sight lost, sight regained, and an effort jump of at least
+ * TransitionBucketDelta buckets. With nothing playing there is no line to cut, so the next is
+ * pulled forward instead, or the reaction would land after its window had closed.
  */
 UCLASS(ClassGroup=(Audio), meta=(BlueprintSpawnableComponent))
 class SPATIALAUDIORAY_API UNPCVoiceComponent : public UActorComponent {
@@ -67,7 +60,7 @@ public:
 	FName WaveParameterName = TEXT("SoundWave");
 
 	/** Float input on the voice MetaSound carrying the effort's source gain in dB. Must be
-	 *  applied INSIDE the graph, ahead of the Audio Bus Writer — a component volume multiplier
+ *  applied INSIDE the graph, ahead of the Audio Bus Writer: a component volume multiplier
 	 *  would only affect direct playback, leaving occluded playback (which replays the bus
 	 *  through the virtual emitters) at the wrong level. Graphs without the input ignore it. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice")
@@ -93,7 +86,7 @@ private:
 	TWeakObjectPtr<UAudioComponent> VoiceAudio;
 	TWeakObjectPtr<USpatialAudioComponent> SpatialAudio;
 
-	// Scheduler state — see NPCVoiceTypes.h. Held as structs so the pure decisions in
+	// Scheduler state, see NPCVoiceTypes.h. Held as structs so the pure decisions in
 	// NPCVoiceLogic.h can take them by reference.
 	FNPCVoiceBucketHysteresis BucketState;
 	FNPCVoicePlaybackState Playback;

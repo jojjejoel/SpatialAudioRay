@@ -16,17 +16,15 @@ void FUpdater::UpdateAudioParameters(USpatialAudioComponent& Component, const fl
 }
 
 float FUpdater::UpdateVirtualCrossfadeGate(USpatialAudioComponent& Component, const float DeltaTime, const USpatialAudioSettings& Settings) {
-	// Source volume is not crossfaded here at all. Its MetaSound graph shapes volume and filtering
-	// from CurvedOcclusion directly. Keying this gate to the same smoothed occlusion keeps both
-	// sides of the crossfade moving together.
+	// Source volume is not crossfaded here; its MetaSound shapes volume from CurvedOcclusion.
+	// Keying this gate to the same smoothed occlusion keeps both sides moving together.
 	const float RawRamp = Math::ComputeVirtualCrossfadeRamp(
 		Component.CurrentOcclusion, Settings.VirtualCrossfadeStartOcclusion);
 	Component.SmoothedCrossfadeRamp = Settings.VirtualCrossfadeSmoothingTime > 0.f
 		? FMath::FInterpTo(Component.SmoothedCrossfadeRamp, RawRamp,
 		                   DeltaTime, 1.f / Settings.VirtualCrossfadeSmoothingTime)
 		: RawRamp;
-	// Keyed to a completed blank ring cycle rather than bHasDirectLoS, which drops on a single
-	// blocked sample while moving. One flickery frame must not pump the gate.
+	// Keyed to a completed blank ring cycle, not bHasDirectLoS: one flickery frame must not pump it.
 	const int32 RotationSteps = FMath::Clamp(Settings.OffsetRingRotationSteps, 1, 8);
 	const bool bGateHasLoS = Component.NoLoSSampleStreak < RotationSteps;
 	const bool bRampEnabled = Settings.VirtualCrossfadeStartOcclusion < 1.f;
@@ -46,8 +44,7 @@ void FUpdater::ApplySourceOcclusionParams(USpatialAudioComponent& Component, con
 			Ac->SetVolumeMultiplier(Component.bDebugSilenceSource ? 0.f : 1.f);
 		}
 		else {
-			// A destroyed source component leaves its weak pointer behind; walking backward is
-			// what makes dropping it mid-loop safe.
+			// A destroyed component leaves its weak pointer behind; the backward walk makes this safe.
 			Component.CachedAudioComponentSources.RemoveAt(i);
 		}
 	}
@@ -86,8 +83,7 @@ void FUpdater::MoveSlotToVoice(FVirtualSlot& Slot, UAudioComponent* VC, const FV
                                const FVector& ActorPos, const float DeltaTime, const float MoveSpeed) {
 	const FVector TargetOffset = Voice.SmoothedPosition - ActorPos;
 	if (!Slot.bOffsetInit) {
-		// A fresh slot snaps. The fade-in envelope is the transition, and gliding in from the actor
-		// would sweep audibly through space.
+		// A fresh slot snaps: the fade-in is the transition, and gliding in would sweep through space.
 		Slot.WorldOffset = TargetOffset;
 		Slot.bOffsetInit = true;
 	}
@@ -107,12 +103,10 @@ void FUpdater::ApplyVoiceAudioParams(const USpatialAudioComponent& Component, co
 	                                                Voice.TargetPathAttenuation,
 	                                                DeltaTime, ParamBlendSpeed);
 
-	// No listener-distance term here. The slot's own SoundAttenuation asset handles proximity
-	// loudness natively, since the component sits at its voice's location.
+	// No listener-distance term: the slot's own attenuation handles proximity at its location.
 	const float Leg1Geom = FVector::Dist(ActorPos, ActorPos + Slot.WorldOffset);
 
-	// Crossfade passed as 1 so FrozenGainScale stays gate-free and keeps gating correctly after
-	// the voice releases the slot. The gate multiplies in below.
+	// Crossfade passed as 1 so FrozenGainScale stays gate-free and still gates after release.
 	const Math::FVirtualAudioParams VAP = Math::ComputeVirtualAudioParams(
 		1.f, Voice.CurrentPathAttenuation, Leg1Geom, Voice.PathDist, Component.MaxRayDistance, Settings);
 

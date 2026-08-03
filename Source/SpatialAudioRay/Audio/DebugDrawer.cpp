@@ -9,8 +9,7 @@
 #include "GameFramework/Pawn.h"
 
 namespace {
-	// Shared between the per-slot debug spheres and the VRT text line so the color words in
-	// the text always name the sphere you're looking at.
+	// Shared with the VRT text line so the colour words always name the sphere you are looking at.
 	constexpr int32 NumVirtualVoiceDebugColors = 4;
 	const FColor VirtualVoiceDebugColors[NumVirtualVoiceDebugColors] = {
 		FColor::Cyan, FColor::Purple, FColor::Emerald, FColor::Silver
@@ -72,10 +71,8 @@ void USpatialAudioComponent::DrawSteeringPredictionDebug(const USpatialAudioSett
 	if (!bShowSteeringPrediction || Settings.SteeringPredictionLeadTime <= 0.f) {
 		return;
 	}
-	// Live steering-prediction targets (sweeps capture their own snapshot of these at start).
-	// Only drawn while the lead is meaningful, so stationary scenes stay clean. One sphere
-	// per mover, at the signed aim point sweeps actually use — blue when leading forward,
-	// orange in the retro window after LoS loss (same condition as ComputeSteeringLead).
+	// Only drawn while the lead is meaningful, so stationary scenes stay clean. One sphere per
+	// mover at the signed aim point, blue leading forward and orange in the retro window.
 	const bool bRetroSteer = TimeSinceHadDirectLoS <= Settings.SteeringPredictionLeadTime;
 	const FColor SteerColor = bRetroSteer ? FColor(255, 140, 0) : FColor(0, 128, 255);
 	const APlayerController* PredPC = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr;
@@ -129,9 +126,7 @@ void USpatialAudioComponent::DrawEdgePointsDebug() {
 	}
 	for (const FCachedEdgePoint& EP : CachedEdgePoints) {
 		DrawDebugSphere(GetWorld(), EP.EdgePoint, 18.f, 8, FColor::Yellow, false, -1.f, SDPG_Foreground, 2.f);
-		// Settings-duration rather than per-frame: since the relay→edge conversion, a relay is
-		// a ~one-Phase-0-interval transitional state — a one-frame draw would flash for a tick
-		// or two, so let it linger long enough to actually see where the relay sat.
+		// Settings-duration: a relay is transitional now, so a one-frame draw would flash and vanish.
 		if (EP.bRelayed) {
 			DrawDebugSphere(GetWorld(), EP.RelayPoint, 14.f, 8, FColor::Yellow, false,
 			                GetSettings().DebugLineDuration, SDPG_Foreground, 1.f);
@@ -147,8 +142,7 @@ void USpatialAudioComponent::DrawShortestPathsDebug() {
 	}
 	for (const FCachedEdgePoint& EP : CachedEdgePoints) {
 		for (int32 i = 0; i + 1 < EP.ShortestPath.Num(); ++i) {
-			// Dim = unverified traveled hop (string pull couldn't shortcut past it); the
-			// recheck skips those segments too. Verified/unverified segments can interleave.
+			// Dim marks an unverified traveled hop, which the recheck skips too. They can interleave.
 			const bool bVerified = EP.ShortestPathSegmentVerified.IsValidIndex(i)
 				                       && EP.ShortestPathSegmentVerified[i];
 			DrawDebugLine(GetWorld(), EP.ShortestPath[i], EP.ShortestPath[i + 1],
@@ -162,10 +156,8 @@ void USpatialAudioComponent::DrawShortestPathsDebug() {
 			                bVerifiedPoint ? FColor::Magenta : FColor(120, 0, 120),
 			                false, -1.f, SDPG_Foreground, 1.5f);
 		}
-		// Relay leg extends the stored path: the RelayDist added to this edge's PathDist
-		// is exactly this segment's length. Settings-duration like the key-6 relay draw —
-		// the relay state is transitional since the relay→edge conversion, and a one-frame
-		// draw would vanish before it registers.
+		// The relay leg extends the stored path by exactly RelayDist. Settings-duration for the
+		// same reason as the key-6 draw.
 		if (EP.bRelayed && !EP.ShortestPath.IsEmpty()) {
 			DrawDebugLine(GetWorld(), EP.ShortestPath.Last(), EP.RelayPoint, FColor::Magenta,
 			              false, GetSettings().DebugLineDuration, 0, 2.f);
@@ -192,9 +184,8 @@ void USpatialAudioComponent::DrawDiffractionPathsDebug() {
 
 void USpatialAudioComponent::DrawSourceAudioDebugText(const uint64 Base) const {
 	// ── Slot 1: Source audio output ──────────────────────────────────────
-	// occ_param = CurvedOcclusion, the 0–1 the MetaSound receives as OcclusionParam and shapes its
-	// own volume and filtering from. There is deliberately no source gain reading beside it: that
-	// shaping happens inside the graph, so no value on this side would describe what you hear.
+	// occ_param is what the MetaSound shapes its own volume and filtering from. No gain reading
+	// beside it: that shaping happens in the graph, so no value here would describe what you hear.
 	const FColor SrcColor = SelectThresholdColor(1.f - AudioDiag.CurvedOcclusion, 0.7f, 0.3f);
 	GEngine->AddOnScreenDebugMessage(Base + 1, 0.f, SrcColor,
 	                                 FString::Printf(TEXT("  SRC  occ_param=%3.0f%%"),
@@ -203,10 +194,8 @@ void USpatialAudioComponent::DrawSourceAudioDebugText(const uint64 Base) const {
 
 void USpatialAudioComponent::DrawVirtualAudioDebugText(const uint64 Base) const {
 	// ── Slot 2: Virtual audio output ─────────────────────────────────────
-	// gain = Σ slot gains; each slot's gain = (1−atn) × shr × fade × xfade(slewed gate)
-	// bend = the loudest voice's VirtualPathBend (drives HPF/reverb inside the MetaSound)
-	// voices = active emitters (+N fading out); per slot: [color state g= shr= atn=],
-	//          color names the slot's debug sphere; "out" slots show only their fading gain
+	// gain = sum of slot gains, each (1-atn) x shr x fade x xfade. bend = loudest VirtualPathBend.
+	// voices = active (+N fading out); per slot [color state g= shr= atn=], colour naming its sphere.
 	FString VoiceStr;
 	int32 NumActive = 0;
 	int32 NumFadingOut = 0;
@@ -306,8 +295,7 @@ void USpatialAudioComponent::DrawSweepPacingDebugText(const uint64 Base, const U
 		SweepStatus = TEXT("idle");
 	}
 
-	// Mirrors the timer pin in TickComponent term for term. Dropping the pre-sweep term reported
-	// SUSPENDED throughout the band, which is the one state where LoS still exists AND sweeps run.
+	// Mirrors TickComponent's timer pin. Without the pre-sweep term it read SUSPENDED in the band.
 	const bool bPreSweepBand = IsPreSweepActive();
 	const bool bSweepSuspended = bHasDirectLoS && !bPreSweepBand && !bAsyncCastActive;
 	FString SweepLine;
@@ -322,8 +310,7 @@ void USpatialAudioComponent::DrawSweepPacingDebugText(const uint64 Base, const U
 		                            TimeSinceFullCast, SubInterval);
 	}
 	else {
-		// Naming the band explains why sweeps run while LoS still exists, which otherwise reads
-		// as the pacing state contradicting itself.
+		// Naming the band explains why sweeps run while LoS still exists.
 		SweepLine = FString::Printf(TEXT("  Sweep  %s%s  │  timer=%.2f/%.2fs  [%s]"),
 		                            bPreSweepBand ? TEXT("PRE-SWEEP ") : TEXT(""),
 		                            *PacingLabel, TimeSinceFullCast, SubInterval, *SweepStatus);
@@ -343,8 +330,7 @@ void USpatialAudioComponent::DrawTraceStatsDebugText(const uint64 Base) const {
 		                                 TraceDiag.LastSweepDuration > TraceDiag.LastSweepInterval ? TEXT("  OVER") : TEXT("")));
 
 	// ── Slot 9: what those per-frame traces were spent on ─────────────────
-	// Decomposes the ~/fr figure above. Smoothed and snapshotted identically, so the parts sum
-	// to the total rather than drifting against it.
+	// Smoothed and snapshotted like the total above, so the parts sum to it.
 	const float* Buckets = TraceDiag.SnapshotBucketTraces;
 	GEngine->AddOnScreenDebugMessage(Base + 9, 0.f, FColor::Cyan,
 	                                 FString::Printf(

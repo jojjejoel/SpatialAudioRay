@@ -1,13 +1,12 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
-// WorldCollision.h only forward-declares FHitResult, so FTraceDatum::OutHits cannot be
-// dereferenced without this.
+// WorldCollision.h only forward-declares FHitResult, so OutHits cannot be dereferenced without it.
 #include "Engine/HitResult.h"
 #include "WorldCollision.h"
 
-// An async trace that came back with no hits, or whose first hit is non-blocking, saw nothing in
-// the way. Shared by the sweep and the edge cache, which must agree on what "clear" means.
+// No hits, or a first hit that is non-blocking. Shared by the sweep and the edge cache, which
+// must agree on what "clear" means.
 inline bool IsTraceClear(const FTraceDatum& Datum) {
 	return Datum.OutHits.IsEmpty() || !Datum.OutHits[0].bBlockingHit;
 }
@@ -18,8 +17,7 @@ struct FStoredLoSPath {
 	float LoSCumulativeDistance = 0.f;
 	float PathDist = 0.f;
 	TArray<FVector> ShortestPath;
-	/** ShortestPathSegmentVerified[i]: is the segment ShortestPath[i]->ShortestPath[i+1] a
-	 *  HasClearShortcut-verified straight line? Verified and unverified segments can interleave. */
+	/** Is ShortestPath[i] to ShortestPath[i+1] a verified straight line? They can interleave. */
 	TArray<bool> ShortestPathSegmentVerified;
 };
 
@@ -27,16 +25,12 @@ struct FCachedEdgePoint {
 	FVector EdgePoint = FVector::ZeroVector;
 	float GeomDist = 0.f;
 	float PathDist = 0.f;
-	/** String-pulled source→edge polyline captured at discovery ([source, ...anchors..., edge]) —
-	 *  the path PathDist was measured along. Drawn under bShowShortestPaths and re-traced by the
-	 *  round-robin ShortestPathRecheckInterval validation; never enters gain/position math. */
+	/** String-pulled source-to-edge polyline captured at discovery, the path PathDist was measured
+	 *  along. Drawn and re-traced by the recheck; never enters gain or position math. */
 	TArray<FVector> ShortestPath;
-	/** ShortestPathSegmentVerified[i]: was ShortestPath[i]->ShortestPath[i+1] a straight
-	 *  HasClearShortcut trace at discovery? false means unverified traveled route (a raw
-	 *  crawl/bounce hop the string pull couldn't shortcut past) and must not be re-traced —
-	 *  it was blocked at discovery already, so failing on it says nothing about geometry
-	 *  change. Verified and unverified segments can interleave (e.g. two separate corners
-	 *  each contributing one unverified hop, with a verified stretch on either side). */
+	/** As FStoredLoSPath: was this segment a straight HasClearShortcut trace at discovery? false
+	 *  means a raw crawl or bounce hop that was blocked by design, so re-tracing it says nothing
+	 *  about geometry change. Verified and unverified can interleave. */
 	TArray<bool> ShortestPathSegmentVerified;
 	int32 LoSBounces = 0;
 	FVector CapturedSourcePos = FVector::ZeroVector;
@@ -50,54 +44,37 @@ struct FCachedEdgePoint {
 	bool bPhase0OffsetPending = false;
 
 	bool bEvicting = false;
-	/** Source-side evictions (source moved, shortest-path recheck found the source→edge leg
-	 *  blocked) can't be revalidated from the listener side — listener→edge LoS is typically
-	 *  still clear in both cases, so Phase 0's clear-restore must not resurrect them (and
-	 *  Phase 0 stops submitting for them). Only a sweep rewrite (WriteEntry) rehabilitates. */
+	/** Source-side evictions cannot be revalidated from the listener side, since listener-to-edge
+	 *  LoS is typically still clear. Only a sweep rewrite rehabilitates them. */
 	bool bSourceSideEviction = false;
 	float EvictionAlpha = 1.f;
 
-	/** Set when this entry lands at a genuinely new position (fresh cache slot or worst-rank
-	 *  displacement); cleared each time a movement trigger arms the cache-fill burst. A sweep
-	 *  merely re-confirming a pre-existing edge (merge-radius match) does NOT set it — the
-	 *  burst's exit condition counts only edges discovered since the latest trigger, so stale
-	 *  carry-overs can't satisfy the post-movement re-survey. */
+	/** Set when the entry lands at a genuinely new position; cleared each time a movement trigger
+	 *  arms the cache-fill burst. A merge-radius re-confirmation does NOT set it, so stale
+	 *  carry-overs cannot satisfy the post-movement re-survey. */
 	bool bNewSinceFillArm = false;
 
-	/** Most recent listener position whose Phase 0 confirmed LoS to this edge — the anchor
-	 *  for the relay rescue below. Not updated while relayed (it must keep pointing at a spot
-	 *  that saw the EDGE, not the relay). */
+	/** Most recent listener position whose Phase 0 confirmed LoS to this edge, and the anchor for
+	 *  the rescue below. Not updated while relayed: it must keep pointing at a spot that saw the EDGE. */
 	FVector LastLoSListenerPos = FVector::ZeroVector;
 	bool bHasLastLoSListenerPos = false;
 
-	/** Relay hop: when listener→edge LoS is lost but the captured LastLoSListenerPos still
-	 *  sees both the edge and the current listener, the edge survives routed via that point.
-	 *  RelayPoint/RelayDist are frozen at rescue time — subsequent listener movement changes
-	 *  neither, so the extended path stays gain-safe (listener-independence rule). The
-	 *  edge→relay leg is re-verified each Phase 0 interval (dynamic geometry can sever it);
-	 *  a severed leg drops the relay and evicts. Single level: a relayed edge that loses
-	 *  relay LoS evicts normally. Rescue depends only on this edge's own geometry (fan all
-	 *  blocked, both legs verify) — never on sibling edges' state, so N edges going dark at
-	 *  once produce N relays regardless of processing order. A relay is transitional — the
-	 *  first valid maintenance readback converts it in place to a real edge at the LoS
-	 *  transition corner on the edge→relay leg, each relayed edge independently (deliberately
-	 *  no yield-to-direct-edge eviction and no direct-edge rescue gate: both killed sibling
-	 *  relays/rescues the moment the first conversion landed). */
+	/** When listener-to-edge LoS is lost but LastLoSListenerPos still sees both the edge and the
+	 *  listener, the edge survives routed via that point. RelayPoint/RelayDist freeze at rescue, so
+	 *  later listener movement cannot change the path (listener-independence rule). Single level:
+	 *  losing relay LoS evicts normally. Rescue reads only this edge's own geometry, so N edges
+	 *  going dark at once produce N relays whatever the order. Transitional, converted on readback. */
 	bool bRelayed = false;
 	FVector RelayPoint = FVector::ZeroVector;
 	float RelayDist = 0.f;
 
-	/** In-flight relay-maintenance traces (listener↔edge return check + edge↔relay leg,
-	 *  forward and reverse each), submitted on the Phase 0 interval while relayed and read
-	 *  back the following tick(s). Cleared with the relay itself so a sweep rewrite can't
-	 *  leave the flag pointing at dead handles. */
+	/** Listener-edge return check plus the edge-relay leg, forward and reverse each. Cleared with
+	 *  the relay so a sweep rewrite cannot leave the flag pointing at dead handles. */
 	FTraceHandle RelayCheckHandles[4];
 	bool bRelayCheckPending = false;
 
-	/** In-flight relay-rescue traces (edge↔relay candidate and candidate↔listener, forward and
-	 *  reverse each), submitted the tick Phase 0 gives up on this edge and read back the next.
-	 *  The edge is left alone while they fly rather than fading pre-emptively: a doomed edge
-	 *  loses one frame off a fade it was about to start anyway, and a rescued one never dims. */
+	/** Submitted the tick Phase 0 gives up on this edge, read back the next. The edge is left alone
+	 *  while they fly: a doomed edge loses one frame off a fade it was starting anyway. */
 	FTraceHandle RescueHandles[4];
 	bool bRescuePending = false;
 
@@ -108,21 +85,15 @@ struct FCachedEdgePoint {
 		bRelayCheckPending = false;
 	}
 
-	/** Where this edge presents itself to positioning/clustering, and the path distance that
-	 *  goes with it. Gain formulas consume these — both are captured geometry, never live
-	 *  listener state. */
+	/** Where this edge presents itself to positioning and clustering, with the matching path
+	 *  distance. Both are captured geometry, never live listener state. */
 	FVector EffectivePoint() const { return bRelayed ? RelayPoint : EdgePoint; }
 	float EffectivePathDist() const { return PathDist + RelayDist; }
 
-	/** Emitter position: EffectivePoint() walked back PullbackDist cm along the arrival path
-	 *  (relay leg first, then the string-pulled polyline toward the source). Stays on traced
-	 *  free-space segments only — the walk stops at the first unverified segment it meets
-	 *  (working backward from the edge) because unverified segments hug geometry and a point
-	 *  partway along one can sit inside a wall; it does not resume past that gap even if a
-	 *  later stretch is verified again. An absolute cm
-	 *  pullback keeps "how far behind the opening the sound sits" independent of source→edge
-	 *  distance, and lies on the acoustic path — unlike a source→edge lerp, which cuts straight
-	 *  through the very geometry the path bends around. */
+	/** EffectivePoint() walked back PullbackDist cm along the arrival path. Stops at the first
+	 *  unverified segment working backward, since those hug geometry and a point partway along one
+	 *  can sit inside a wall, and does not resume past the gap. An absolute cm pullback keeps the
+	 *  depth independent of source-to-edge distance and stays on the traced acoustic path. */
 	FVector EmitterPoint(float PullbackDist) const {
 		FVector Current = EffectivePoint();
 		if (PullbackDist <= 0.f) {
@@ -181,11 +152,9 @@ struct FVirtualSlot {
 	FVector WorldOffset = FVector::ZeroVector;
 	bool bOffsetInit = false;
 
-	/** Refreshed every frame while a voice drives the slot, so when the slot is released to
-	 *  FadingOut it keeps its last audible gain without needing the (gone) voice. The live
-	 *  crossfade gate is deliberately NOT baked in — a fading-out slot must still gate off
-	 *  instantly when direct LoS is regained. (PathBend needs no freeze: the MetaSound simply
-	 *  keeps the last value it was sent.) */
+	/** Refreshed while a voice drives the slot, so a released slot keeps its last audible gain
+	 *  without the (gone) voice. The live crossfade gate is deliberately NOT baked in: a fading
+	 *  slot must still gate off instantly when direct LoS returns. */
 	float FrozenGainScale = 0.f;
 };
 
@@ -203,15 +172,13 @@ struct FSpatialRayState {
 	FTraceHandle SegHandle;
 
 	/** Length the current SegHandle trace was submitted with. On a miss this is the distance
-	 *  actually flown — the terminal point / mid-air turn point must not be recomputed from
-	 *  budget formulas, which don't know about the MaxStraightFlightDistance clamp. */
+	 *  actually flown, which budget formulas cannot recompute since they miss the flight clamp. */
 	float SegSubmitLen = 0.f;
 
 	float CumulativeDistance = 0.f;
 
-	/** Direction-change points along the traveled path, in path order. Pos holds the nudged
-	 *  free-space origin (not the raw surface hit) so finalize shortening probes traced from
-	 *  these points don't start inside geometry. */
+	/** Direction-change points in path order. Pos is the nudged free-space origin, not the raw
+	 *  surface hit, so probes traced from it do not start inside geometry. */
 	struct FBounceWaypoint {
 		FVector Pos = FVector::ZeroVector;
 		float CumDist = 0.f;

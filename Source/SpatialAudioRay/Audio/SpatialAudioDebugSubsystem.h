@@ -1,4 +1,4 @@
-// World-wide registry of active USpatialAudioComponents — aggregates their trace diagnostics
+// World-wide registry of active USpatialAudioComponents, aggregating their trace diagnostics
 // into one global debug HUD line.
 #pragma once
 
@@ -50,7 +50,7 @@ private:
 	/** Weak so a component destroyed without unregistering is dropped harmlessly next tick. */
 	TArray<TWeakObjectPtr<USpatialAudioComponent>> Sources;
 
-	/** Snapshot of each Sources[i]'s bDrawDebugRays at registration time — the editor/designer's
+	/** Snapshot of each Sources[i]'s bDrawDebugRays at registration: the designer's original
 	 *  original intent, independent of later runtime suppression by the proximity limit (which
 	 *  would otherwise be indistinguishable from the user genuinely disabling a source). Parallel
 	 *  to Sources. */

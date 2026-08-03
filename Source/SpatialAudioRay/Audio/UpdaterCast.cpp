@@ -46,8 +46,7 @@ bool FUpdater::TryResolveCastContext(const USpatialAudioComponent& Component, FC
 	return true;
 }
 
-// Lets the sample point hug the wall as the player closes in on it, rather than always being
-// excluded once the fixed-radius point ends up embedded.
+// Clamped so the point hugs the wall as the player closes in, instead of being excluded.
 FVector FUpdater::ResolveOffsetPoint(const USpatialAudioComponent& Component, const UWorld* World,
                                      const FVector& ListenerPos, const FVector& CandidatePoint) {
 	FHitResult H;
@@ -58,13 +57,10 @@ FVector FUpdater::ResolveOffsetPoint(const USpatialAudioComponent& Component, co
 	return CandidatePoint;
 }
 
-// The source plays at full volume anywhere inside its inner radius, so seeing any of that
-// sphere's surface counts as seeing the source. The centre is deliberately one vote of five, so
-// LoS through a small hole reads as mostly occluded rather than clear.
-// The denominator is fixed at 5 rather than the count of valid points: a ring point whose own
-// path from the listener is blocked cannot see the source either, so it counts as not clear
-// instead of being excluded. That keeps the fraction a function of visibility, not of where the
-// player happens to stand.
+// The source plays at full volume inside its inner radius, so seeing any of that sphere counts
+// as seeing it. The centre is one vote of five, so a pinhole reads as mostly occluded. The
+// denominator stays 5 rather than the valid-point count: a blocked ring point cannot see the
+// source either, which keeps the fraction about visibility, not about where the player stands.
 float FUpdater::SyncOffsetLoSFraction(USpatialAudioComponent& Component, UWorld* World,
                                       const FVector& SourcePos, const FVector& ListenerPos,
                                       float OffsetR, float SourceR, float SourceRingR,
@@ -113,8 +109,7 @@ float FUpdater::SyncOffsetLoSFraction(USpatialAudioComponent& Component, UWorld*
 		Pts[i] = OffsetR > 0.f
 			         ? ResolveOffsetPoint(Component, World, ListenerPos, ListenerPos + RingDir * OffsetR)
 			         : ListenerPos;
-		// Offsets in the same world direction as its listener point, so head-on the rays stay
-		// parallel and sample the joint aperture.
+		// Same world direction as its listener point, so head-on the rays stay parallel.
 		SrcPts[i] = SphereCapPoint(RingDir, LateralR);
 		bClearArr[i] = SampleClear(Pts[i], SrcPts[i]);
 		if (bClearArr[i]) {
@@ -142,10 +137,9 @@ void FUpdater::TrySampleOffsetLoS(USpatialAudioComponent& Component, UWorld* Wor
 	}
 	Component.OffsetLoSCheckTimer = 0.f;
 
-	// Each check samples one annulus of the listener disc, innermost first, rather than always the
-	// rim. Rim-only sampling pinned the fraction at 1/5 with a large radius and a small opening.
-	// OffsetRingRadiusExponent shapes the ladder: 0.5 gives equal-area annuli, higher pulls them
-	// inward so the centre view weighs more. The sphere radius itself never ladders.
+	// Each check samples one annulus, innermost first, rather than always the rim: rim-only
+	// pinned the fraction at 1/5 with a large radius and a small opening. OffsetRingRadiusExponent
+	// shapes the ladder (0.5 gives equal-area annuli). The sphere radius itself never ladders.
 	const float RadiusScale = FMath::Pow((Component.LoSSlotIndex + 1.f) / RotationSteps,
 	                                     FMath::Max(Settings.OffsetRingRadiusExponent, 0.f));
 	const float OffsetR = Settings.DirectLoSSampleRadius * RadiusScale;
@@ -179,22 +173,19 @@ void FUpdater::TrySampleOffsetLoS(USpatialAudioComponent& Component, UWorld* Wor
 
 void FUpdater::UpdateSmoothedOcclusionFromSamples(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings,
                                                    float DeltaTime, int32 RotationSteps) {
-	// Recomputed as soon as any one slot refreshes rather than on a completed rotation, so
-	// occlusion can move mid-rotation instead of freezing for a full cycle.
+	// Recomputed as soon as one slot refreshes, so occlusion moves mid-rotation instead of freezing.
 	const float PatternLoSFraction = Component.WindowedLoSFraction;
 
-	// Scaled by the same multiplier as the check interval, so smoothing stays proportional to how
-	// often the fraction actually steps. Gating stays on the raw sample further down: a smoothed
-	// decay must not keep sweeps suppressed after LoS is really gone.
+	// Scaled by the same multiplier as the check interval, so smoothing stays proportional. Gating
+	// stays on the raw sample below: a smoothed decay must not suppress sweeps after real loss.
 	const float EffSmoothingTime = Settings.LoSFractionSmoothingTime * Component.VelocityScaling.OffsetLoSMultiplier;
 	const float DirectLoSFraction = EffSmoothingTime > 0.f
 		? FMath::FInterpTo(Component.LastDirectLoSFraction, PatternLoSFraction,
 		                   DeltaTime, 1.f / EffSmoothingTime)
 		: PatternLoSFraction;
 
-	// At the boundary the rotating ring alternates between patterns that do and do not contain the
-	// one marginal clear direction, which flip-flopped playback. Gaining LoS stays instant, and
-	// movement still drops it immediately.
+	// At the boundary the ring alternates between patterns that do and do not contain the one
+	// marginal clear direction, which flip-flopped playback. Gaining LoS and movement stay instant.
 	const bool bHoldLoSThroughRotation = Component.bHasDirectLoS && Component.VelocityScaling.IsStationary()
 		&& Component.NoLoSSampleStreak < RotationSteps;
 	Component.bHasDirectLoS = Component.LastOffsetLoSFraction > 0.f || bHoldLoSThroughRotation;
@@ -238,9 +229,8 @@ FUpdater::FEdgeWeightAccum FUpdater::AccumulateCachedEdgeWeights(USpatialAudioCo
 	for (int32 i = 0; i < Component.CachedEdgePoints.Num(); ++i) {
 		const FCachedEdgePoint& Ep = Component.CachedEdgePoints[i];
 
-		// The source-side weight drives the path-distance average and must stay listener
-		// independent. The position weight adds listener falloff on top, since listener proximity
-		// may steer where the virtual source sits but never how loud or muffled it is.
+		// The source-side weight must stay listener independent. The position weight adds listener
+		// falloff, since proximity may steer where the emitter sits but never how loud it is.
 		const float SrcW = Ep.EvictionAlpha / (1.f + Settings.CandidateDistanceFalloff
 			* Ep.GeomDist / FMath::Max(Component.MaxRayDistance, 1.f));
 		const float PosW = SrcW / (1.f + Settings.ListenerDistanceFalloff
@@ -288,8 +278,7 @@ void FUpdater::UpdatePathAttenuationTarget(USpatialAudioComponent& Component, co
 		return;
 	}
 
-	// Tracks the cache every frame rather than only on sweep completion, since EvictionAlpha decays
-	// every frame. An empty cache keeps the last sweep-derived distance.
+	// Every frame, since EvictionAlpha decays every frame; an empty cache keeps the last value.
 	if (Accum.SrcWeightTotal > 0.f) {
 		Component.CurrentSourceToVirtualDistance = Accum.WeightedDistSum / Accum.SrcWeightTotal;
 	}
@@ -309,9 +298,8 @@ void FUpdater::PerformUpdateRayCast(USpatialAudioComponent& Component, const USp
 
 	ClearCacheOnConfirmedDirectLoS(Component, Settings);
 
-	// Active through the pre-sweep band as well as full occlusion: the crossfade gate starts
-	// opening before LoS fully drops, so the voices must already be weighted and clustered by then
-	// or the gate opens onto an empty voice list.
+	// Active through the pre-sweep band too: the crossfade gate starts opening before LoS fully
+	// drops, so voices must already be clustered or the gate opens onto an empty list.
 	const bool bVirtualPathActive = !Component.bHasDirectLoS || Component.IsPreSweepActive();
 
 	FEdgeWeightAccum Accum;
@@ -338,8 +326,7 @@ TArray<FUpdater::FDesired> FUpdater::BuildDesiredVoices(const USpatialAudioCompo
                                                          const USpatialAudioSettings& Settings) {
 	TArray<FDesired> Desired;
 
-	// No fallback voice when the cluster list is empty: every audible virtual path must be
-	// backed by a verified edge, so an empty cache means silence rather than a guessed position.
+	// No fallback voice: an empty cache means silence rather than a guessed position.
 	const FVector ActorPos = Component.GetOwner()->GetActorLocation();
 	float TotalWeight = 0.f;
 	for (const FEdgeCluster& Cluster : Clusters) {
@@ -369,8 +356,7 @@ void FUpdater::MatchVoicesToDesired(const TArray<FVirtualVoice>& Voices, TArray<
 			if (!Voices[V].bActive) {
 				continue;
 			}
-			// Compare against where the voice is heading, or a cluster drifting faster than the
-			// position smoothing reads as a jump.
+			// Compare against where the voice is heading, or fast cluster drift reads as a jump.
 			const float DistSq = FVector::DistSquared(Voices[V].TargetPosition, Desired[D].Position);
 			if (DistSq <= GlideMaxSq) {
 				Pairs.Add({DistSq, D, V});

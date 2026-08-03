@@ -48,8 +48,7 @@ void USpatialAudioComponent::BeginPlay() {
 	Super::BeginPlay();
 
 	CacheAudioComponents();
-	// Before CreateVirtualVoicePool (the pool clones the template's attenuation fields) and
-	// before the owning actor's Play() call (the active sound captures attenuation at start).
+	// Before CreateVirtualVoicePool clones the template, and before the actor calls Play().
 	ApplyAttenuationOverrides();
 	CreateAndAssignAudioBus();
 	CreateVirtualVoicePool();
@@ -83,8 +82,7 @@ void USpatialAudioComponent::EndPlay(const EEndPlayReason::Type EndPlayReason) {
 void USpatialAudioComponent::CacheAudioComponents() {
 	CachedAudioComponentSources.Reset();
 	if (AActor* Owner = GetOwner()) {
-		// ALL tagged components, not just the first: co-located sounds share one spatial
-		// pipeline, so an object plays its whole sound set through this one component.
+		// ALL tagged components, not just the first: co-located sounds share one pipeline.
 		for (UActorComponent* C : Owner->GetComponentsByTag(UAudioComponent::StaticClass(),
 		                                                    TEXT("AudioComponentSource"))) {
 			CachedAudioComponentSources.Add(CastChecked<UAudioComponent>(C));
@@ -94,9 +92,8 @@ void USpatialAudioComponent::CacheAudioComponents() {
 }
 
 void USpatialAudioComponent::CreateAndAssignAudioBus() {
-	// A unique transient bus per instance lets one MetaSound pair serve every source;
-	// object parameters must be set before the owning actor calls Play() to be picked
-	// up at MetaSound initialization, which BeginPlay ordering guarantees here.
+	// A unique transient bus per instance lets one MetaSound pair serve every source. Object
+	// parameters must be set before Play() to be picked up at MetaSound initialization.
 	DiffractionBus = NewObject<UAudioBus>(this);
 	DiffractionBus->AudioBusChannels = EAudioBusChannels::Mono;
 
@@ -105,7 +102,7 @@ void USpatialAudioComponent::CreateAndAssignAudioBus() {
 			AC->SetObjectParameter(AudioBusParameterName, DiffractionBus);
 		}
 	}
-	// The virtual template never plays — only the pool components created from it read the bus.
+	// The virtual template never plays; only the pool components created from it read the bus.
 }
 
 void USpatialAudioComponent::CreateVirtualVoicePool() {
@@ -115,9 +112,8 @@ void USpatialAudioComponent::CreateVirtualVoicePool() {
 		return;
 	}
 
-	// The tagged virtual component is only a config carrier (MetaSound + attenuation) — it
-	// never plays. Pool is 2x MaxVirtualVoices so every audible voice can hand off to a new
-	// position while its old slot fades out.
+	// The tagged virtual component is only a config carrier and never plays. Pool is 2x
+	// MaxVirtualVoices so a voice can hand off to a new position while its old slot fades out.
 	const int32 VoiceCount = FMath::Max(1, GetSettings().MaxVirtualVoices);
 	const int32 PoolSize = 2 * VoiceCount;
 	VirtualVoices.SetNum(VoiceCount);
@@ -138,8 +134,7 @@ void USpatialAudioComponent::CreateVirtualVoicePool() {
 		if (DiffractionBus) {
 			Comp->SetObjectParameter(AudioBusParameterName, DiffractionBus);
 		}
-		// Slots play silently from the start so a handoff never pays MetaSound generator
-		// startup latency — fading a voice in only raises VirtualGain.
+		// Playing silently from the start means a handoff never pays generator startup latency.
 		Comp->SetFloatParameter(FName("VirtualGain"), 0.f);
 		Comp->Play();
 		VirtualSlotComponents.Add(Comp);
@@ -161,8 +156,7 @@ void USpatialAudioComponent::ApplyAttenuationOverridesTo(UAudioComponent* AC) co
 	if (!AC || (OverrideAttenuationInnerRadius <= 0.f && OverrideAttenuationFalloffDistance <= 0.f)) {
 		return;
 	}
-	// Start from the component's current effective settings so every other attenuation
-	// property keeps the assigned asset's (or pre-existing override's) value.
+	// Start from the current effective settings so every other attenuation property is kept.
 	FSoundAttenuationSettings Effective;
 	if (AC->bOverrideAttenuation) {
 		Effective = AC->AttenuationOverrides;
@@ -185,8 +179,7 @@ void USpatialAudioComponent::ApplyFalloffScaleTo(UAudioComponent* AC, float Rati
 		return;
 	}
 	if (!AC->bOverrideAttenuation) {
-		// Promote the asset settings to a per-component override copy first — scaling the
-		// shared attenuation asset would change every sound in the project using it.
+		// Promote to a per-component copy first; scaling the shared asset would hit every user.
 		if (!AC->AttenuationSettings) {
 			return;
 		}
@@ -219,9 +212,8 @@ void USpatialAudioComponent::SetAttenuationFalloffScale(float NewScale) {
 }
 
 void USpatialAudioComponent::ApplyAttenuationOverrides() {
-	// Sources and the virtual template get the same range: the virtual voices stand in for the
-	// source at the diffraction edges, so an audible-range override that only touched the
-	// sources would make occluded playback reach farther/shorter than direct playback.
+	// Sources and the virtual template share a range: the virtual voices stand in for the source
+	// at the edges, so overriding only the sources would give occluded playback a different reach.
 	for (const TWeakObjectPtr<UAudioComponent>& Src : CachedAudioComponentSources) {
 		ApplyAttenuationOverridesTo(Src.Get());
 	}
@@ -229,9 +221,8 @@ void USpatialAudioComponent::ApplyAttenuationOverrides() {
 }
 
 void USpatialAudioComponent::ReadAttenuationSettings() {
-	// With several co-located sounds, the widest-range one defines the acoustic identity: rays
-	// and the LoS sphere must cover the longest-range sound; shorter-range sounds just fall
-	// silent earlier through their own engine attenuation.
+	// The widest-range source defines the acoustic identity: rays and the LoS sphere must cover
+	// it, and shorter sounds fall silent earlier through their own engine attenuation.
 	const FSoundAttenuationSettings* Widest = nullptr;
 	float WidestRange = 0.f;
 	for (const TWeakObjectPtr<UAudioComponent>& Src : CachedAudioComponentSources) {
@@ -256,9 +247,8 @@ void USpatialAudioComponent::ReadAttenuationSettings() {
 		}
 	}
 
-	// The path-attenuation curve comes from the VIRTUAL template — the pooled emitters play
-	// through its attenuation, so charging Leg1 on the same curve keeps the two legs coherent
-	// when the virtual and source assets differ. Widest source only as fallback.
+	// The curve comes from the VIRTUAL template, since the pooled emitters play through its
+	// attenuation and Leg1 must be charged on the same one. Widest source only as fallback.
 	const FSoundAttenuationSettings* CurveSource = nullptr;
 	if (const UAudioComponent* VirtualTemplate = CachedAudioComponentVirtual.Get()) {
 		if (VirtualTemplate->bOverrideAttenuation) {
@@ -295,8 +285,7 @@ float USpatialAudioComponent::EvaluateVirtualAttenuationVolumeAt(const float Dis
 	if (!bHasVirtualAttenuationSettings || !VirtualAttenuationSettings.bAttenuate) {
 		return 1.f - FMath::Clamp(Distance / FMath::Max(MaxRayDistance, 1.f), 0.f, 1.f);
 	}
-	// Evaluate the real curve (shape inner extent + the asset's falloff model, incl. dB and
-	// custom-curve modes) at a synthetic point Distance along one axis from an identity origin.
+	// Evaluates the real curve, including dB and custom-curve modes, at a synthetic point.
 	return VirtualAttenuationSettings.Evaluate(FTransform::Identity, FVector(Distance, 0.f, 0.f));
 }
 
@@ -313,11 +302,9 @@ float USpatialAudioComponent::GetEffectiveAcousticDistance(const FVector& Listen
 	const FVector SourcePos = Owner ? Owner->GetActorLocation() : FVector::ZeroVector;
 	const float DirectDist = static_cast<float>(FVector::Dist(SourcePos, ListenerPos));
 
-	// Shortest total route through the cache — sound takes the most favorable path, so the
-	// per-edge minimum, never the averaged fields (the Leg1 average is dominated by
-	// short-path edges and the position centroid can sit far from the edge actually being
-	// heard through; both drag the sum toward the straight line). Evicting entries are
-	// skipped: a source-side eviction means that path no longer exists.
+	// Sound takes the most favorable route, so this is the per-edge minimum and never the
+	// averaged fields: the Leg1 average is dominated by short-path edges and the centroid can
+	// sit far from the edge actually heard through. A source-side eviction means the path is gone.
 	float MinPathDist = TNumericLimits<float>::Max();
 	for (const FCachedEdgePoint& Edge : CachedEdgePoints) {
 		if (Edge.bEvicting) {
@@ -328,9 +315,8 @@ float USpatialAudioComponent::GetEffectiveAcousticDistance(const FVector& Listen
 		MinPathDist = FMath::Min(MinPathDist, Total);
 	}
 	if (MinPathDist == TNumericLimits<float>::Max()) {
-		// No non-evicting edge means there is no diffraction route to describe, so the straight
-		// line is the honest answer. Synthesising one from the averaged fields would pair a stale
-		// Leg1 with a live listener leg, overstating the distance in the one window it covers.
+		// No non-evicting edge means there is no route to describe. Synthesising one would pair
+		// a stale Leg1 with a live listener leg and overstate the distance.
 		return DirectDist;
 	}
 	return Math::ComputeEffectiveAcousticDistance(DirectDist, MinPathDist, CurrentOcclusion,
@@ -364,6 +350,13 @@ float USpatialAudioComponent::TimeToBlendSpeed(const float Seconds) {
 	return Seconds > 0.f ? 1.f / Seconds : 1000.f;
 }
 
+// A single blocked sample drops bHasDirectLoS while moving, and the sweep pipeline is too
+// expensive to fire on an occluder flicker. Any clear sample resets the streak.
+bool USpatialAudioComponent::HasConfirmedLoSLoss() const {
+	return !bHasDirectLoS
+		&& NoLoSSampleStreak >= FMath::Clamp(GetSettings().OffsetRingRotationSteps, 1, 8);
+}
+
 void USpatialAudioComponent::TickAsyncPipeline(const USpatialAudioSettings& Settings) {
 	CurrentTraceBucket = ETraceBucket::Sweep;
 	if (Finalize.bPending) {
@@ -389,18 +382,11 @@ void USpatialAudioComponent::TickNormalSweepDispatch(const float DeltaTime, cons
 	FUpdater::TickDirectLoSSampling(*this, DeltaTime, GetSettings());
 	CurrentTraceBucket = ETraceBucket::Sweep;
 
-	// Full sweeps may not start until one complete ring rotation has confirmed no-LoS
-	// (NoLoSSampleStreak resets on any clear sample). While moving, bHasDirectLoS drops on
-	// the first blocked sample, which would otherwise fire the expensive sweep pipeline for
-	// what may be a brief occluder flicker. The pre-sweep band bypasses the
-	// rotation gate entirely (IsPreSweepActive reads CurrentOcclusion, not bHasDirectLoS):
-	// a fast occlusion jump that drops bHasDirectLoS in a single sample still starts sweeping
-	// the moment the debug-visible occlusion crosses the threshold, without waiting on the
-	// rotation to confirm total loss of LoS.
-	const int32 RingSteps = FMath::Clamp(GetSettings().OffsetRingRotationSteps, 1, 8);
+	// The pre-sweep band deliberately bypasses the rotation gate: it reads CurrentOcclusion
+	// rather than bHasDirectLoS, so a fast occlusion jump starts sweeping without waiting.
 	const bool bPreSweep = IsPreSweepActive();
 	if (!bAsyncCastActive && !Finalize.bPending && bInRange &&
-		(bPreSweep || (!bHasDirectLoS && NoLoSSampleStreak >= RingSteps)) &&
+		(bPreSweep || HasConfirmedLoSLoss()) &&
 		(TimeSinceFullCast >= SubInterval || SweepScheduling.bMovementRequested)) {
 		FUpdater::PerformUpdateRayCast(*this, GetSettings());
 		if (!bHasDirectLoS || bPreSweep) {
@@ -411,8 +397,7 @@ void USpatialAudioComponent::TickNormalSweepDispatch(const float DeltaTime, cons
 			if (bMovementTriggered) {
 				StaggeredCycleIndex = 0;
 				SweepScheduling.CacheFillSweepsRemaining = GetSettings().MovementCacheFillMaxSweeps;
-				// Rebase "new": only edges discovered after this trigger satisfy the burst —
-				// entries surviving from the previous position must not end the re-survey.
+				// Only edges found after this trigger satisfy the burst; carry-overs must not.
 				for (FCachedEdgePoint& EP : CachedEdgePoints) {
 					EP.bNewSinceFillArm = false;
 				}
@@ -436,13 +421,11 @@ float USpatialAudioComponent::UpdateDirectLoSConfirmationAndBlendSpeed(const flo
 	float OccBlendSpeed;
 	if (bHasDirectLoS) {
 		OccBlendSpeed = TimeToBlendSpeed(GetSettings().OcclusionClearTime);
-		// Not in the pre-sweep band: pre-warm sweeps are filling the cache while partial LoS
-		// remains, so confirmed-LoS clearing must wait until occlusion drops back below the
-		// threshold (source comfortably visible again).
+		// Not in the pre-sweep band: pre-warm sweeps fill the cache while partial LoS remains,
+		// so clearing waits until occlusion drops back below the threshold.
 		if (bConfirmedDirectLoS && !IsPreSweepActive()) {
 			CachedEdgePoints.Empty();
-			// The occlusion episode is over; the next one re-arms via its own movement trigger
-			// (LoS break sets bMovementRequested), so don't let a half-spent budget leak into it.
+			// The episode is over and the next re-arms itself, so no half-spent budget leaks in.
 			SweepScheduling.CacheFillSweepsRemaining = 0;
 		}
 	}
@@ -518,8 +501,7 @@ void USpatialAudioComponent::UpdateTraceDiagnostics(const float DeltaTime) {
 	if (TraceDiag.HistoryCount < TraceDiag.HistoryLen) {
 		++TraceDiag.HistoryCount;
 	}
-	// Walk backward from the newest entry: the 10s window is the most recent Avg10Len
-	// snapshots of the shared 60-entry ring, not the whole buffer.
+	// Walk backward from the newest entry: the 10s window is the most recent Avg10Len snapshots.
 	float Sum10 = 0.f;
 	float Sum60 = 0.f;
 	for (int32 k = 0; k < TraceDiag.HistoryCount; ++k) {
@@ -560,10 +542,8 @@ void USpatialAudioComponent::TickComponent(const float DeltaTime, const ELevelTi
 	const float EffFullSweepInterval = ComputeEffectiveSweepInterval();
 	StoredEffFullSweepInterval = EffFullSweepInterval;
 
-	// Held at zero while direct/offset LoS exists and occlusion is low (sweeps are LoS-gated):
-	// losing LoS then starts a fresh interval instead of firing instantly off an accumulated
-	// timer — the bMovementRequested set below handles the immediate response to a break. In
-	// the pre-sweep band the timer runs so pre-warm sweeps can pace normally.
+	// Held at zero while LoS exists, so losing it starts a fresh interval instead of firing off
+	// an accumulated timer. The pre-sweep band lets the timer run so pre-warm sweeps pace normally.
 	TimeSinceFullCast = bHasDirectLoS && !IsPreSweepActive() ? 0.f : TimeSinceFullCast + DeltaTime;
 
 	TickMovementSweepTrigger(DeltaTime, bInRange, TickPawn);
@@ -573,8 +553,8 @@ void USpatialAudioComponent::TickComponent(const float DeltaTime, const ELevelTi
 	const float SubInterval = EffFullSweepInterval / CycleCount;
 	TickNormalSweepDispatch(DeltaTime, bInRange, SubInterval);
 
-	// Losing LoS starts the async sweep on this frame instead of waiting out the interval timer,
-	// so the edge cache refills while the crossfade is still opening.
+	// Losing LoS sweeps this frame rather than waiting out the timer, so the cache refills while
+	// the crossfade is still opening.
 	if (bPrevHadDirectLoS && !bHasDirectLoS) {
 		SweepScheduling.bMovementRequested = true;
 	}
@@ -600,11 +580,8 @@ float USpatialAudioComponent::ComputeEffectiveSweepInterval() const {
 			GetSettings().MaxFullSweepInterval, GetSettings().FullSweepInterval, CurrentPriority)
 		* FMath::Min(VelocityScaling.SweepMultiplier, VelocityScaling.EdgeMultiplier);
 
-	// Post-movement cache fill: velocity scaling stops accelerating the moment movement
-	// stops, but the sweeps it triggered may not have found anything yet — keep burst pace
-	// until enough NEW edges (found since the trigger; carried-over entries don't satisfy
-	// the re-survey) exist or the sweep budget runs out. Sits above idle mode so an
-	// unfilled burst can never idle-crawl.
+	// Velocity scaling stops accelerating the moment movement stops, but the sweeps it triggered
+	// may not have found anything yet. Sits above idle mode so an unfilled burst cannot idle-crawl.
 	if (bBothStationary && SweepScheduling.CacheFillSweepsRemaining > 0
 		&& CountCacheFillEdges() < GetSettings().MovementCacheFillRequiredEdges) {
 		Interval *= GetSettings().MovementCacheFillMultiplier;
@@ -618,10 +595,8 @@ float USpatialAudioComponent::ComputeEffectiveSweepInterval() const {
 FVector USpatialAudioComponent::ComputeSteeringLead(const FVector& SmoothedVelocity,
                                                     const USpatialAudioSettings& Settings) const {
 	const float Lead = Settings.SteeringPredictionLeadTime;
-	// Freshly-occluded sweeps (pre-sweep band, first sweeps after loss) aim at the
-	// PAST position: the corner just crossed sits between there and the source, and forward
-	// prediction would aim deeper into the shadow, away from the edge carrying the sound.
-	// "Fresh" = the position Lead seconds ago still fell inside the LoS era.
+	// Freshly-occluded sweeps aim at the PAST position: the corner just crossed sits between it
+	// and the source, so forward prediction would aim deeper into the shadow.
 	const bool bRetro = TimeSinceHadDirectLoS <= Lead;
 	return SmoothedVelocity * (bRetro ? -Lead : Lead);
 }

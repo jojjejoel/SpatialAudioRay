@@ -19,8 +19,8 @@ enum class ENPCVoiceEffort : uint8 {
  *
  *  Values split into a VISIBLE half and an OCCLUDED half, and selection never crosses
  *  between them (see VoiceLogic::ResolveCategoryPreference): each line asserts something
- *  about the world, so playing an occluded line to a listener standing in the open — or a
- *  "nothing between us" line to one behind a wall — contradicts what they can see.
+ *  about the world, so playing an occluded line to a listener standing in the open, or a
+ *  "nothing between us" line to one behind a wall, contradicts what they can see.
  *  Appended in order; existing DataTable rows keep their meaning. */
 UENUM(BlueprintType)
 enum class ENPCVoiceCategory : uint8 {
@@ -33,16 +33,16 @@ enum class ENPCVoiceCategory : uint8 {
 	/** Occluded, but the path is barely longer than the straight line: one corner away. */
 	AroundCorner,
 	/** Occluded, physically close, yet the sound has to travel far to arrive. The signature
-	 *  diffraction state — and the one where effort and proximity openly disagree, since
+	 *  diffraction state, and the one where effort and proximity openly disagree, since
 	 *  effort follows the path length while the listener is near enough to touch. */
 	BehindWall,
-	/** The moment direct line of sight broke. Temporal, not spatial — outranks the spatial
+	/** The moment direct line of sight broke. Temporal, not spatial: outranks the spatial
 	 *  contexts briefly so the NPC can react to the change before describing the new state. */
 	LostSight,
 	/** The mirror of LostSight: direct line of sight just came back. */
 	SightRegained,
-	/** Visible, but something is genuinely in the way — a pillar, a railing, a crate clipping
-	 *  the centre line — while enough of the source stays exposed that the sound arrives nearly
+	/** Visible, but something is genuinely in the way (a pillar, a railing, a crate clipping
+	 *  the centre line) while enough of the source stays exposed that the sound arrives nearly
 	 *  intact. The state Clear lies about: it asserts an unobstructed straight path, which
 	 *  stops being true the moment any of the offset samples blocks, long before occlusion is
 	 *  high enough to count as hidden. */
@@ -74,14 +74,14 @@ enum class ENPCVoiceSightChange : uint8 {
 UENUM(BlueprintType)
 enum class ENPCVoiceTransitionDir : uint8 {
 	None,
-	/** Effort dropped — the listener closed in ("oh, you're right here"). */
+	/** Effort dropped: the listener closed in ("oh, you're right here"). */
 	Closer,
-	/** Effort rose — the listener is getting away ("hey, where are you going!"). */
+	/** Effort rose: the listener is getting away ("hey, where are you going!"). */
 	Farther
 };
 
 /** One take of one line at one effort level. Rows are produced by
- *  Tools/VoiceGen/export_to_unreal.py — import its CSV with this row type. */
+ *  Tools/VoiceGen/export_to_unreal.py. Import its CSV with this row type. */
 USTRUCT(BlueprintType)
 struct FNPCVoiceLineRow : public FTableRowBase {
 	GENERATED_BODY()
@@ -103,7 +103,7 @@ struct FNPCVoiceLineRow : public FTableRowBase {
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice")
 	FName CooldownGroup;
 
-	/** Render length in seconds (from the generation manifest) — the scheduler's only
+	/** Render length in seconds (from the generation manifest), the scheduler's only
 	 *  end-of-line signal, so it must match the actual asset. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice")
 	float Duration = 0.f;
@@ -111,12 +111,12 @@ struct FNPCVoiceLineRow : public FTableRowBase {
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice")
 	TSoftObjectPtr<USoundWave> Sound;
 
-	/** Transcript — debug HUD / future subtitles. */
+	/** Transcript for the debug HUD and future subtitles. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice")
 	FString Text;
 };
 
-/** A bank row with its wave resolved — UPROPERTY so loaded waves stay GC-rooted
+/** A bank row with its wave resolved. UPROPERTY so loaded waves stay GC-rooted
  *  (the DataTable itself only holds soft references). */
 USTRUCT()
 struct FNPCVoiceRuntimeLine {
@@ -133,7 +133,7 @@ struct FNPCVoiceRuntimeLine {
  *
  *  Per-reason rather than one "has barge-in content" flag because the triggers are ranked and
  *  the first that fires wins: a bank carrying Transition lines but no SightRegained lines would
- *  otherwise let a sight-gained tick claim the barge-in, find nothing to play, and abort —
+ *  otherwise let a sight-gained tick claim the barge-in, find nothing to play, and abort,
  *  swallowing the effort drift that fired on the same tick and did have content. Since a sight
  *  change is a one-tick edge and the playing line's bucket stays put, that barge-in is simply
  *  lost. */
@@ -153,7 +153,7 @@ struct FNPCVoiceBargeInAvailability {
 };
 
 /** The acoustic situation, sampled once per tick and fed to content selection. Everything
- *  here is a listener-relative measurement — legitimate for choosing WHAT to say and how
+ *  here is a listener-relative measurement, legitimate for choosing WHAT to say and how
  *  loudly, never for the virtual path's own gain (see the listener-independence rule in
  *  Audio/). */
 struct FNPCVoiceAcousticState {
@@ -163,7 +163,7 @@ struct FNPCVoiceAcousticState {
 	/** How far the sound actually travels: the straight line while clear, the diffraction
 	 *  route while occluded. Drives the effort bucket. */
 	float EffectiveDistanceCm = 0.f;
-	/** Whether the NPC still owes a reaction to the last visibility crossing — recent enough to
+	/** Whether the NPC still owes a reaction to the last visibility crossing: recent enough to
 	 *  be worth remarking on AND not already remarked on (VoiceLogic::IsSightReactionPending).
 	 *  Which of LostSight / SightRegained it opens is decided by the half the listener is in
 	 *  now, so one flag serves both. */
@@ -177,18 +177,18 @@ struct FNPCVoiceAcousticState {
 };
 
 // The four structs below are the voice scheduler's entire mutable state. They are plain
-// C++ (no reflection needed — no GC pointers, nothing designer-facing) and live here rather
+// C++ (no reflection needed: no GC pointers, nothing designer-facing) and live here rather
 // than as loose component members so the pure decision functions in NPCVoiceLogic.h can take
 // them as explicit parameters, which is what makes those decisions unit-testable without a
 // component, world, or audio device.
 
 /** Edge detector for the listener crossing between visible and hidden. The voice layer's
- *  SOLE sight signal — both the content ladder's reaction window and the sight barge-in
+ *  SOLE sight signal: both the content ladder's reaction window and the sight barge-in
  *  triggers read it, so the two cannot disagree about whether a break happened. */
 struct FNPCVoiceSightState {
 	/** Whether the listener counted as hidden at the last sample. */
 	bool bHidden = false;
-	/** False until the first sample, which seeds bHidden without reporting a change — the
+	/** False until the first sample, which seeds bHidden without reporting a change. The
 	 *  listener's starting side is not something the NPC just watched happen. */
 	bool bInitialized = false;
 	/** When the state last flipped. Far in the past so an unchanged scene offers no reaction
@@ -196,7 +196,7 @@ struct FNPCVoiceSightState {
 	float LastChangeTime = -1e9f;
 	/** Whether a line reacting to that crossing has already been spoken. Cleared by the next
 	 *  crossing. Without it the window is purely temporal, so the line following a reaction
-	 *  re-announces the same event — and since a bucket change is what usually schedules that
+	 *  re-announces the same event, and since a bucket change is what usually schedules that
 	 *  next line, it re-announces it at a different vocal effort, which is the tell. */
 	bool bReactionDelivered = false;
 };
@@ -204,12 +204,12 @@ struct FNPCVoiceSightState {
 /** Dwell-time hysteresis for the effort bucket: a mapped bucket must persist before it
  *  commits, so a player walking a band edge can't flip-flop the NPC's delivery. */
 struct FNPCVoiceBucketHysteresis {
-	/** Post-hysteresis effort — what the next line plays at. */
+	/** Post-hysteresis effort: what the next line plays at. */
 	ENPCVoiceEffort Committed = ENPCVoiceEffort::Conversational;
 	/** Effort the distance currently maps to, waiting out the dwell time. */
 	ENPCVoiceEffort Candidate = ENPCVoiceEffort::Conversational;
 	float CandidateSince = 0.f;
-	/** False until the first sample, which commits instantly — there is nothing to smooth
+	/** False until the first sample, which commits instantly: there is nothing to smooth
 	 *  against, and starting from a default bucket would mis-deliver the opening line. */
 	bool bInitialized = false;
 };
@@ -225,7 +225,7 @@ struct FNPCVoicePlaybackState {
 	FString ActiveText;
 	/** Blocks an immediate repeat of the same line. */
 	FName LastLineId;
-	/** Effort the playing line was rendered at — the barge-in trigger compares the committed
+	/** Effort the playing line was rendered at. The barge-in trigger compares the committed
 	 *  bucket against this, not against the previous frame's bucket, so drift accumulated over
 	 *  a long line still trips it. */
 	ENPCVoiceEffort ActiveBucket = ENPCVoiceEffort::Conversational;
@@ -238,7 +238,7 @@ struct FNPCVoicePlaybackState {
 struct FNPCVoiceTransitionState {
 	bool bPending = false;
 	int32 PendingLine = INDEX_NONE;
-	/** When the pending line starts — after the interrupted line's fade has finished. */
+	/** When the pending line starts, after the interrupted line's fade has finished. */
 	float PlayTime = 0.f;
 	/** Stamped when a barge-in triggers. Starts far in the past so the first one is free. */
 	float LastTime = -1e9f;

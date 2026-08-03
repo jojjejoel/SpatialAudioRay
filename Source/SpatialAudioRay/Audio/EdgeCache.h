@@ -13,14 +13,13 @@ public:
 	static void TickCachedEdgeEviction(USpatialAudioComponent& Component, float DeltaTime, const USpatialAudioSettings& Settings);
 
 private:
-	// INDEX_NONE if every entry is skipped.
-	// Interval divided by cache size, so a setting means the period per edge rather than per cache.
+	// Divided by cache size, so a setting means the period per edge rather than per cache.
 	static float PerEdgeInterval(const USpatialAudioComponent& Component, float Interval);
+	// INDEX_NONE if every entry is skipped.
 	static int32 SelectRoundRobinEdge(const TArray<FCachedEdgePoint>& Points, int32& Cursor,
 	                                  const TFunctionRef<bool(const FCachedEdgePoint&)>& ShouldSkip);
-	// Segments shorter than 2*EndInset+1 are skipped.
-	// Unverified segments are skipped: they were blocked at discovery by design, so tracing them
-	// would evict every multi-corner edge.
+	// Unverified segments are skipped: they were blocked at discovery, so tracing them would evict
+	// every multi-corner edge. Segments shorter than 2*EndInset+1 are skipped too.
 	static void SubmitPolylineRecheckTraces(USpatialAudioComponent& Component, UWorld* World,
 	                                        const TArray<FVector>& Path, const TArray<bool>& SegmentVerified,
 	                                        float EndInset);
@@ -47,8 +46,7 @@ private:
 	                                  const FVector& ListenerPos, float OffsetRadius);
 	static void TickPhase0OffsetReadback(USpatialAudioComponent& Component, FCachedEdgePoint& Edge, UWorld* World,
 	                                     const FVector& SourcePos, const FVector& ListenerPos);
-	// False while any of the four fan traces is still in flight. World stays non-const because
-	// UWorld::QueryTraceData is not a const method.
+	// False while any fan trace is in flight. World stays non-const: QueryTraceData is not const.
 	static bool ReadOffsetFanTraces(FCachedEdgePoint& Edge, UWorld* World, bool (&OutFanClear)[4]);
 	static void DrawOffsetFan(const USpatialAudioComponent& Component, const FCachedEdgePoint& Edge, const UWorld* World,
 	                          const bool (&FanClear)[4]);
@@ -61,8 +59,7 @@ private:
 	                                 const FVector& ListenerPos, bool bIntervalFired);
 	static void StartEviction(USpatialAudioComponent& Component, FCachedEdgePoint& Edge, const FVector& SourcePos,
 	                          bool bSourceSide = false);
-	// False when no rescue is possible at all, which is the caller's cue to evict now. True means
-	// traces are in flight and the verdict lands in TickRelayRescueReadback next tick.
+	// False when no rescue is possible, the caller's cue to evict now. True means traces are flying.
 	static bool SubmitRelayRescueTraces(const USpatialAudioComponent& Component, FCachedEdgePoint& Edge,
 	                                    UWorld* World, const FVector& ListenerPos);
 	static void TickRelayRescueReadback(USpatialAudioComponent& Component, FCachedEdgePoint& Edge, UWorld* World,
@@ -72,17 +69,14 @@ private:
 	static void DrawProbeResult(const USpatialAudioComponent& Component, const UWorld* World,
 	                            const FVector& Point, bool bClear);
 	static int32 ResolveStepsForMergeRadius(const USpatialAudioComponent& Component, float Span);
-	// Returns ClearEnd when no midpoint cleared (bOutFoundClear false). ExplicitSteps 0 derives the
-	// count from the bracket; only the promotion refinement pins it, to bound its trace cost.
+	// Returns ClearEnd when no midpoint cleared. ExplicitSteps 0 derives the count from the bracket.
 	static FVector BisectListenerLoS(const USpatialAudioComponent& Component, const UWorld* World, const FVector& ListenerPos,
 	                                 const FVector& BlockedEnd, const FVector& ClearEnd, bool& bOutFoundClear,
 	                                 int32 ExplicitSteps = 0);
-	// Only the slow round-robin passes bAllowSubSegmentRefine. The Phase 0 rescue site re-fires
-	// every interval while blocked and must not pay the bisection traces each time.
+	// Only the slow round-robin passes bAllowSubSegmentRefine; the Phase 0 site must not pay it.
 	static bool TryPromoteToInnerAnchor(const USpatialAudioComponent& Component, FCachedEdgePoint& Edge, const UWorld* World,
 	                                    const FVector& ListenerPos, bool bAllowSubSegmentRefine);
-	// Converges the emitter onto the real corner instead of the step size discovery quantized it
-	// to, so it slides along the wall as the listener moves.
+	// Converges the emitter onto the real corner, so it slides along the wall as the listener moves.
 	static bool TryJumpToPreviousVertex(const USpatialAudioComponent& Component, FCachedEdgePoint& Edge,
 	                                    const UWorld* World, const FVector& ListenerPos,
 	                                    const FVector& InnerAnchor);
@@ -97,8 +91,7 @@ private:
 	// Leaves bRelayed a transitional state rather than somewhere an entry rests.
 	static void ConvertRelayToEdge(const USpatialAudioComponent& Component, FCachedEdgePoint& Edge, const UWorld* World,
 	                               const FVector& ListenerPos);
-	// Promotion pops a vertex per jump, so an entry can be left without a usable polyline. Its
-	// straight source-to-edge line stands in, the same fallback ConvertRelayToEdge seeds.
+	// Promotion pops a vertex per jump, so an entry can be left without a usable polyline.
 	static TArray<FVector> ResolveRecheckPath(const FCachedEdgePoint& Edge);
 	static int32 FindFirstBlockedSegment(const TArray<FTraceDatum>& Data);
 	// Null when the entry was rewritten or removed since its recheck was submitted.
@@ -116,7 +109,7 @@ private:
 public:
 	// A relay is a stopgap and an evicting entry is already leaving, so neither may be merged into.
 	static bool IsMergeCandidate(const FCachedEdgePoint& Edge);
-	// Bounce count deliberately stays out of it, unlike the sweep's admission test: a 3-bounce 8m
-	// route beats a 1-bounce 40m one to the same corner. Ties keep the incumbent.
+	// Bounce count deliberately stays out, unlike the sweep's admission test: a 3-bounce 8m route
+	// beats a 1-bounce 40m one. Ties keep the incumbent.
 	static bool TravelledFurther(const FCachedEdgePoint& Edge, const FCachedEdgePoint& Other);
 };

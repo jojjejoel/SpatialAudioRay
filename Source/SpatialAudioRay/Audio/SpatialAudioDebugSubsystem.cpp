@@ -9,14 +9,12 @@
 #include "GameFramework/PlayerController.h"
 
 void USpatialAudioDebugSubsystem::Register(USpatialAudioComponent* Component) {
-	// Kept in lockstep with Sources (not AddUnique) so bEligibleForDebugRays's index always
-	// lines up — a duplicate registration must add to neither array.
+	// Lockstep with Sources, not AddUnique: a duplicate registration must add to neither array.
 	if (!Sources.Contains(Component)) {
 		Sources.Add(Component);
 		bEligibleForDebugRays.Add(Component->bDrawDebugRays);
 	}
-	// Two registrations naming the same owner = the orphaned-Blueprint-component duplicate
-	// (stale inherited copy still instantiates alongside the C++ one); fix by reparenting the
+	// Two registrations on one owner means an orphaned Blueprint component. Reparent the
 	// Blueprint to AActor and back.
 	UE_LOG(LogTemp, Log, TEXT("SpatialAudioDebugSubsystem: +%s on %s (%d registered)"),
 	       *Component->GetName(), *GetNameSafe(Component->GetOwner()), Sources.Num());
@@ -66,8 +64,8 @@ bool USpatialAudioDebugSubsystem::ComputeAnyDebugRaysActive() const {
 }
 
 void USpatialAudioDebugSubsystem::HandleCycleKey(const USpatialAudioComponent& First, const APlayerController* PC) {
-	// The cycle key is polled BEFORE the bAnyDebugRays gate — cycling back in from the
-	// all-off stop is exactly the state where that gate rejects everything else.
+	// Polled before the bAnyDebugRays gate, since cycling back in from the all-off stop is
+	// exactly the state that gate rejects.
 	if (!PC) {
 		return;
 	}
@@ -79,10 +77,7 @@ void USpatialAudioDebugSubsystem::HandleCycleKey(const USpatialAudioComponent& F
 }
 
 void USpatialAudioDebugSubsystem::HandleActorLabelsToggleAndDraw(const USpatialAudioComponent& First, const APlayerController* PC) {
-	// The toggle key itself stays independent of bAnyDebugRays (works even with ray debugging
-	// fully off), but which sources actually get a label (below) is restricted to whichever
-	// ones bDrawDebugRays is already true for — the cycle-selected source, or the proximity-
-	// limited in-range set — so labels only ever appear on sources that are also drawing.
+	// The key works with ray debugging fully off, but only sources already drawing get a label.
 	if (PC) {
 		const bool bDown = First.ToggleActorLabelsKey.IsValid()
 			&& PC->IsInputKeyDown(First.ToggleActorLabelsKey);
@@ -98,8 +93,7 @@ void USpatialAudioDebugSubsystem::HandleActorLabelsToggleAndDraw(const USpatialA
 	for (const TWeakObjectPtr<USpatialAudioComponent>& Src : Sources) {
 		if (const USpatialAudioComponent* C = Src.Get(); C && C->bDrawDebugRays) {
 			if (AActor* Owner = C->GetOwner()) {
-				// DrawDebugString renders as screen-space text at the point's projected
-				// position — camera-facing and not depth-tested against geometry for free.
+				// Screen-space text, so it is camera-facing and not depth-tested for free.
 				DrawDebugString(GetWorld(), Owner->GetActorLocation(), Owner->GetActorNameOrLabel(),
 				                 nullptr, FColor::White, 0.f, true);
 			}
@@ -108,11 +102,8 @@ void USpatialAudioDebugSubsystem::HandleActorLabelsToggleAndDraw(const USpatialA
 }
 
 void USpatialAudioDebugSubsystem::HandleSubModeKeyToggles(const USpatialAudioComponent& First, const APlayerController* PC) {
-	// Polled here rather than per component: with the source cycle at most one component draws
-	// (and the old per-component poll only ran while drawing), so hidden sources would stop
-	// seeing presses and their flags would desync from the visible one. One edge-detector
-	// assigning !First to every source keeps all flags identical, so the cycled-to source
-	// always shows the same sub-mode set just toggled on the previous one.
+	// Polled here, not per component: the cycle leaves at most one source drawing, and a
+	// per-component poll would stop hidden sources seeing presses and desync their flags.
 	if (!PC) {
 		return;
 	}
@@ -149,8 +140,7 @@ void USpatialAudioDebugSubsystem::HandleSubModeKeyToggles(const USpatialAudioCom
 }
 
 void USpatialAudioDebugSubsystem::DrawGlobalDebugHUD(const FAggregateTraceStats& Stats) {
-	// Fixed keys 1..N+1 — the per-component slots key off GetUniqueID() * 10, which never
-	// lands this low.
+	// Fixed keys 1..N+1. Per-component slots key off GetUniqueID() * 10 and never land this low.
 	GEngine->AddOnScreenDebugMessage(1, 0.f, FColor::Yellow,
 	                                 FString::Printf(
 		                                 TEXT("GLOBAL  %d source%s  │  traces 1s=%.0f/s  10s=%.0f/s  60s=%.0f/s  peak=%.0f/s"),
@@ -184,8 +174,7 @@ void USpatialAudioDebugSubsystem::Tick(float DeltaTime) {
 
 	const FAggregateTraceStats Stats = AggregateSourceTraceStats();
 
-	// All key config is read from the first registered source, like the G key always was —
-	// per-source rebinding is not supported.
+	// Key config comes from the first registered source. Per-source rebinding is not supported.
 	USpatialAudioComponent* First = Sources.Num() > 0 ? Sources[0].Get() : nullptr;
 	if (!First) {
 		return;
@@ -196,9 +185,8 @@ void USpatialAudioDebugSubsystem::Tick(float DeltaTime) {
 
 	HandleCycleKey(*First, PC);
 
-	// Not single-source-cycled (never pressed N, or cycled back around to OFF): cap how many
-	// originally-enabled sources actually draw to the closest N, so a level with several
-	// debug-enabled sources doesn't draw all of them at once before one is picked via N.
+	// Before any N press, or after cycling back to OFF: cap drawing to the closest N so a level
+	// of debug-enabled sources does not draw all of them at once.
 	if (!bCycleModeActive) {
 		ApplyProximityDebugLimit(*First, PC);
 	}
@@ -207,8 +195,8 @@ void USpatialAudioDebugSubsystem::Tick(float DeltaTime) {
 
 	HandleActorLabelsToggleAndDraw(*First, PC);
 
-	// Gated on the master debug switch only, NOT on per-source bShowDebugText — key 3 hides
-	// the per-source blocks without taking the global line with them.
+	// Master switch only, not per-source bShowDebugText, so key 3 hides the per-source blocks
+	// without taking the global line with them.
 	if (!bAnyDebugRays) {
 		return;
 	}
@@ -223,8 +211,8 @@ void USpatialAudioDebugSubsystem::Tick(float DeltaTime) {
 }
 
 bool USpatialAudioDebugSubsystem::CycleDebugRaySource() {
-	// "Selected" = the first drawing source. Editor setups can start with several enabled;
-	// the first press collapses that to single-selection and the cycle proceeds from there.
+	// "Selected" is the first drawing source, so a multi-enabled editor setup collapses to
+	// single-selection on the first press.
 	int32 Selected = INDEX_NONE;
 	for (int32 i = 0; i < Sources.Num(); ++i) {
 		const USpatialAudioComponent* C = Sources[i].Get();
@@ -245,8 +233,7 @@ bool USpatialAudioDebugSubsystem::CycleDebugRaySource() {
 	if (Sources.IsValidIndex(Next)) {
 		if (USpatialAudioComponent* C = Sources[Next].Get()) {
 			C->bDrawDebugRays = true;
-			// Message key 0 sits below the fixed global-HUD keys (1..N+1), so repeated
-			// presses replace the announcement instead of stacking.
+			// Key 0 sits below the fixed HUD keys, so repeated presses replace rather than stack.
 			GEngine->AddOnScreenDebugMessage(0, 2.f, FColor::Cyan,
 			                                 FString::Printf(TEXT("Debug rays: %s (%d/%d)"),
 			                                                 *GetNameSafe(C->GetOwner()),
@@ -267,9 +254,8 @@ void USpatialAudioDebugSubsystem::ApplyProximityDebugLimit(const USpatialAudioCo
 	}
 	const FVector ListenerPos = PC->GetPawn()->GetActorLocation();
 
-	// Rank only the originally-enabled sources (bEligibleForDebugRays, snapshotted at
-	// registration) — ineligible ones are never touched here, so a source the user genuinely
-	// left off in the editor stays off rather than being pulled in by proximity.
+	// Only originally-enabled sources are ranked, so one the user left off in the editor is
+	// never pulled in by proximity.
 	TArray<int32> EligibleIndices;
 	for (int32 i = 0; i < Sources.Num(); ++i) {
 		if (bEligibleForDebugRays.IsValidIndex(i) && bEligibleForDebugRays[i] && Sources[i].IsValid()) {
@@ -287,8 +273,7 @@ void USpatialAudioDebugSubsystem::ApplyProximityDebugLimit(const USpatialAudioCo
 		return DistA < DistB;
 	});
 
-	// Re-derived every tick from live distances, so a suppressed source comes back on as the
-	// player approaches and a drawing one turns off as they move away.
+	// Re-derived every tick, so sources fade in and out as the player moves.
 	for (int32 Rank = 0; Rank < EligibleIndices.Num(); ++Rank) {
 		if (USpatialAudioComponent* C = Sources[EligibleIndices[Rank]].Get()) {
 			C->bDrawDebugRays = Rank < MaxSources;

@@ -11,9 +11,8 @@
 
 
 // A sweep spans several frames against frozen positions, so the listener may have regained sight
-// while it was in flight. Publishing then registers edges that get cleared a frame later, which
-// pumps the virtual voice audibly. Results inside the pre-sweep band are deliberately kept, since
-// warming the cache during partial LoS is what pre-sweeps are for.
+// mid-flight. Publishing then registers edges that clear a frame later, which pumps the virtual
+// voice audibly. Pre-sweep results are kept: warming the cache during partial LoS is the point.
 bool FAsyncCastManager::TryDiscardStaleSweep(USpatialAudioComponent& Component, UWorld* World, const USpatialAudioSettings& Settings) {
 	if (Component.Finalize.bDirectLoSFound) {
 		return false;
@@ -101,9 +100,8 @@ float FAsyncCastManager::RankScore(const USpatialAudioComponent& Component, cons
 
 bool FAsyncCastManager::OutranksIncumbent(const USpatialAudioComponent& Component, const USpatialAudioSettings& Settings,
                                           const FStoredLoSPath& Found, const FCachedEdgePoint& Incumbent) {
-	// A relay is a stopgap detour through an old listener position, so it is not evidence about
-	// any path to the current one. Ranking it normally would let its low bounce count lock a full
-	// cache against every new find, leaving no direct edge to trigger the relay yield.
+	// A relay is a stopgap through an old listener position, so its low bounce count must not
+	// lock a full cache against every new find.
 	if (Incumbent.bRelayed) {
 		return true;
 	}
@@ -129,8 +127,7 @@ void FAsyncCastManager::WriteEntry(const USpatialAudioComponent& Component, FCac
 	Edge.bEvicting = false;
 	Edge.bSourceSideEviction = false;
 	Edge.EvictionAlpha = 1.f;
-	// A sweep re-confirming the edge proves a fresh listener-visible path, so any relay detour
-	// is obsolete.
+	// A sweep re-confirming the edge proves a fresh listener-visible path, so any relay is obsolete.
 	Edge.ClearRelay();
 	Edge.LastLoSListenerPos = Component.AsyncListenerPos;
 	Edge.bHasLastLoSListenerPos = true;
@@ -152,11 +149,9 @@ int32 FAsyncCastManager::FindMergeCandidate(const USpatialAudioComponent& Compon
 
 void FAsyncCastManager::MergeIntoSameCorner(const USpatialAudioComponent& Component, FCachedEdgePoint& Edge,
                                             const FStoredLoSPath& Found) {
-	// One corner means one shared listener leg, so the rank score's listener term cancels and
-	// only travelled distance separates the two routes. Bounce count is deliberately NOT the
-	// primary key here, unlike OutranksIncumbent: a 3-bounce short route to this corner beats a
-	// 1-bounce long one to it. The 1% margin stops two near-equal routes rewriting the entry
-	// every sweep, since each rewrite drops an in-flight Phase 0 probe and resets the fade.
+	// One corner means one shared listener leg, so only travelled distance separates the routes.
+	// Bounce count is deliberately not the primary key here, unlike OutranksIncumbent. The 1%
+	// margin stops near-equal routes rewriting the entry, which drops an in-flight probe each time.
 	if (Edge.bRelayed || Found.PathDist < Edge.EffectivePathDist() * 0.99f) {
 		WriteEntry(Component, Edge, Found);
 		return;
@@ -167,8 +162,7 @@ void FAsyncCastManager::MergeIntoSameCorner(const USpatialAudioComponent& Compon
 
 bool FAsyncCastManager::IsWorseIncumbent(const USpatialAudioComponent& Component, const USpatialAudioSettings& Settings,
                                          const FCachedEdgePoint& Candidate, const FCachedEdgePoint& Worst) {
-	// Relays are categorically the worst incumbents, so bounce and rank only separate entries
-	// within one relay class.
+	// Relays are categorically worst, so bounce and rank only separate entries within one class.
 	if (Candidate.bRelayed != Worst.bRelayed) {
 		return Candidate.bRelayed;
 	}
@@ -200,8 +194,7 @@ bool FAsyncCastManager::TryDisplaceWorstIncumbent(USpatialAudioComponent& Compon
 		return false;
 	}
 	WriteEntry(Component, Component.CachedEdgePoints[WorstIdx], Found);
-	// A displacement lands at a different corner, so it counts as a discovery. The merge-matched
-	// re-confirmation leaves the flag alone because it is the same corner as before.
+	// A displacement lands at a different corner, so it counts as a discovery; a merge does not.
 	Component.CachedEdgePoints[WorstIdx].bNewSinceFillArm = true;
 	bMatchedThisCycle[WorstIdx] = true;
 	return true;
@@ -222,8 +215,8 @@ void FAsyncCastManager::MergeStoredPathsIntoCache(USpatialAudioComponent& Compon
 			continue;
 		}
 
-		// No admission clustering: the cache deliberately holds points from ALL openings, and
-		// per-frame voice clustering is what groups them into emitters and drops small groups.
+		// The cache deliberately holds points from ALL openings. Voice clustering is what groups
+		// them into emitters and drops the small groups.
 		if (Component.CachedEdgePoints.Num() < Settings.CachedEdgeMaxCount) {
 			FCachedEdgePoint NewEdge;
 			WriteEntry(Component, NewEdge, Found);
@@ -233,8 +226,7 @@ void FAsyncCastManager::MergeStoredPathsIntoCache(USpatialAudioComponent& Compon
 			continue;
 		}
 
-		// An entry is only displaced by a candidate that outranks it, never because a sweep from
-		// new positions happened not to re-find it. One displacement per cycle at most.
+		// Displaced only by a candidate that outranks it, never for not being re-found. One per cycle.
 		if (!bWorstReplacedThisCycle) {
 			bWorstReplacedThisCycle = TryDisplaceWorstIncumbent(Component, Settings, Found, bMatchedThisCycle);
 		}
@@ -247,14 +239,12 @@ void FAsyncCastManager::AdvanceSweepCycleAndIdleState(USpatialAudioComponent& Co
 	Component.StaggeredCycleIndex = (Component.StaggeredCycleIndex + 1) % CycleCount;
 	Component.CycleAccum.Index = 0;
 
-	// Only arm idle mode when the sub-cycle that just finished wrapped the sequence — after
-	// movement breaks idle, all remaining cycles must complete at normal pace first, otherwise
-	// the rest of the sphere coverage would crawl at StationaryIdleMultiplier speed.
+	// Only arm idle when the finished sub-cycle wrapped the sequence, or the remaining sphere
+	// coverage would crawl at StationaryIdleMultiplier speed after movement breaks idle.
 	const bool bSweepSequenceComplete = Component.StaggeredCycleIndex == 0;
 
-	// Spend a unit of the post-movement cache-fill budget only when the completed sweep still
-	// left the new-edge target short — a sweep that filled it is free, so the remaining budget
-	// stays available if the new edges are evicted moments later.
+	// Spend cache-fill budget only when the sweep still left the target short. A sweep that
+	// filled it is free, so the budget survives if those edges are evicted moments later.
 	if (bSweepSequenceComplete && Component.SweepScheduling.CacheFillSweepsRemaining > 0
 		&& Component.CountCacheFillEdges() < Settings.MovementCacheFillRequiredEdges) {
 		--Component.SweepScheduling.CacheFillSweepsRemaining;
@@ -276,10 +266,8 @@ void FAsyncCastManager::PublishSweepAudioTargets(USpatialAudioComponent& Compone
 	AccumIn.bDirectLoSFound = Component.CycleAccum.bDirectLoSFound;
 	const FRayAccumulatorOutput AccumOut = ComputeAudioFromRayAccumulator(AccumIn);
 
-	// TargetOcclusion is deliberately not written here: occlusion is owned by the per-frame
-	// offset-LoS sampler. A sweep-derived path-ratio occlusion reads lower than the
-	// fraction-derived one whenever a good diffraction path exists, which kept knocking the
-	// target off 100% on every completed cycle while fully occluded.
+	// TargetOcclusion is owned by the per-frame sampler. A sweep-derived path-ratio value reads
+	// lower whenever a good diffraction path exists, and kept knocking the target off 100%.
 	const float Leg1Geom = AccumOut.bHasVirtualSource
 		? FVector::Dist(Component.AsyncSourcePos, AccumOut.VirtualSourcePos)
 		: AccumOut.MinLoSDist;
@@ -320,8 +308,7 @@ void FAsyncCastManager::ReadbackFinalizeBatch(USpatialAudioComponent& Component,
 		Path.Add(Component.AsyncListenerPos);
 	}
 
-	// Pre-warm casts must not stomp bHasDirectLoS: partial LoS legitimately persists and the
-	// per-frame sampler owns the flag.
+	// Pre-warm casts must not stomp bHasDirectLoS: the per-frame sampler owns it.
 	if (!Component.bPreSweepCast) {
 		Component.bHasDirectLoS = Component.CycleAccum.bDirectLoSFound;
 	}

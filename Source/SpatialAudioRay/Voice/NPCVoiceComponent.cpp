@@ -50,8 +50,7 @@ void UNPCVoiceComponent::LoadBank() {
 	if (!VoiceBank) {
 		return;
 	}
-	// Sync load is fine at this scale (a small VO bank); rows without a resolvable wave are
-	// dropped here so the scheduler never has to null-check mid-selection.
+	// Rows without a wave are dropped here so the scheduler never null-checks mid-selection.
 	for (const TPair<FName, uint8*>& Pair : VoiceBank->GetRowMap()) {
 		const FNPCVoiceLineRow* Row = reinterpret_cast<const FNPCVoiceLineRow*>(Pair.Value);
 		if (!Row) {
@@ -67,9 +66,8 @@ void UNPCVoiceComponent::LoadBank() {
 		Line.Row = *Row;
 		Line.Wave = Wave;
 
-		// The wave overrules the manifest: Row.Duration is the scheduler's only end-of-line
-		// signal, so a re-render that never made it back into the CSV would silently truncate
-		// every following line or leave dead air — invisible until it ruins a take.
+		// Duration is the only end-of-line signal the scheduler has, so a stale CSV would
+		// silently truncate every following line or leave dead air.
 		Line.Row.Duration = VoiceLogic::ResolveLineDuration(Row->Duration, Wave->Duration);
 		if (!FMath::IsNearlyEqual(Line.Row.Duration, Row->Duration,
 		                          VoiceLogic::DurationMismatchTolerance)) {
@@ -106,19 +104,17 @@ void UNPCVoiceComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 	Acoustic.Occlusion = Spatial->CurrentOcclusion;
 	Acoustic.DirectDistanceCm =
 		static_cast<float>(FVector::Dist(Owner->GetActorLocation(), ListenerPos));
-	// Same threshold that decides the listener is hidden, so effort and content agree about
-	// whether the detour is real: while the NPC is still saying "I can see you" lines, its
-	// effort must not be driven by a route around a corner the listener can see past.
+	// Same threshold that calls the listener hidden, so effort and content never disagree
+	// about whether the detour is real.
 	Acoustic.EffectiveDistanceCm =
 		Spatial->GetEffectiveAcousticDistance(ListenerPos, S.OcclusionShiftThreshold);
 
 	VoiceLogic::AdvanceBucketHysteresis(
 		BucketState, VoiceLogic::MapToBucket(Acoustic.EffectiveDistanceCm, S), Now, S.BucketDwellTime);
 
-	// Crossings fire instantly rather than dwelled: the occlusion behind them is already
-	// smoothed and threshold-gated, and a delayed reaction misses the moment it is reacting to.
-	// The barge-in rate limit absorbs any residual chatter. Stamped before the acoustic state
-	// reads the timer, so a crossing this tick opens its own reaction window immediately.
+	// Not dwelled: a delayed reaction misses the moment it reacts to, and the occlusion
+	// behind it is already smoothed. Stamped before the state below reads the timer, so a
+	// crossing this tick opens its own window.
 	const ENPCVoiceSightChange SightChange = VoiceLogic::AdvanceSightState(
 		SightState, VoiceLogic::IsListenerHidden(Acoustic, S), Now);
 	Acoustic.bSightReactionPending = VoiceLogic::IsSightReactionPending(SightState, Now, S);
@@ -136,16 +132,14 @@ void UNPCVoiceComponent::TickSightReaction(float Now, ENPCVoiceSightChange Sight
 	const VoiceLogic::FBargeInDecision Decision = VoiceLogic::EvaluateBargeIn(
 		Playback, Transition, BucketState.Committed, SightChange, BargeInAvailability, Now, S);
 	if (!Decision.ShouldBargeIn()) {
-		// Nothing was interrupted. If sight just changed and the NPC happens to be between
-		// lines, the reaction has to come from scheduling one sooner — the normal silence
-		// outlasts the window the LostSight / SightRegained content is gated on.
+		// Nothing to interrupt. Normal silence outlasts the reaction window, so a crossing
+		// between lines has to pull the next one forward instead.
 		if (SightChange != ENPCVoiceSightChange::None && !Playback.bPlaying && !Transition.bPending) {
 			VoiceLogic::PullInNextLine(Playback, Now, S);
 		}
 		return;
 	}
-	// Nothing usable for that reason (all on cooldown, or the bank lacks it) — leave the line
-	// running rather than cutting to silence.
+	// No usable line for that reason, so leave the current one running rather than cut out.
 	const int32 LineIdx = VoiceLogic::FindBargeInLine(
 		Lines, VoiceLogic::BargeInCategory(Decision.Reason), Decision.Dir, BucketState.Committed,
 		Now, CooldownUntil);
@@ -193,23 +187,19 @@ void UNPCVoiceComponent::PlayLine(const FNPCVoiceRuntimeLine& Line, float Now, b
 		return;
 	}
 	const UNPCVoiceSettings& S = GetSettings();
-	// Effort sets audible reach, derived from its own distance band (whisper carries meters,
-	// shout carries the map) — applied before Play so the new line never starts a frame at
-	// the previous line's range.
+	// Before Play, or the line starts a frame at the previous effort's reach.
 	if (USpatialAudioComponent* Spatial = SpatialAudio.Get()) {
 		Spatial->SetAttenuationOuterRadius(S.GetEffortReachDistance(Line.Row.Bucket));
 	}
-	// Both params must land before Play so MetaSound initialization picks them up (same
-	// contract as the spatial component's wave override). Gain is set once per line rather
-	// than per frame — a line's effort never changes mid-flight.
+	// Both must land before Play for MetaSound initialization to see them. Once per line,
+	// not per frame: a line's effort never changes mid-flight.
 	Audio->SetWaveParameter(WaveParameterName, Line.Wave);
 	Audio->SetFloatParameter(EffortGainParameterName, S.GetEffortGainDb(Line.Row.Bucket));
 	Audio->Play();
 
 	VoiceLogic::BeginLine(Playback, Line.Row, Now, S.LineEndPadding, bAsBargeIn);
 	VoiceLogic::StampCooldown(CooldownUntil, Line.Row.CooldownGroup, Now, S.CooldownGroupSeconds);
-	// Both scheduling paths land here, so a reaction settles its crossing whether it arrived as
-	// a barge-in or as an ordinary line — the NPC remarks on losing or regaining sight once.
+	// Both scheduling paths land here, so the NPC remarks on a crossing exactly once.
 	VoiceLogic::MarkSightReactionDelivered(SightState, Line.Row.Category);
 }
 
@@ -224,10 +214,8 @@ void UNPCVoiceComponent::DrawDebugText(const FNPCVoiceAcousticState& Acoustic, f
 	                                 /*bNewerOnTop=*/true, TextScale);
 	GEngine->AddOnScreenDebugMessage(Key + 1, 0.f, FColor::Cyan, BuildDebugStateLine(Now),
 	                                 /*bNewerOnTop=*/true, TextScale);
-	// The spoken words get their own row: it is by far the longest field, and inlining it
-	// pushed the numbers off the right edge at any text scale worth reading on video. Added
-	// only while a line is actually playing — these messages last a single frame unless
-	// re-added, so it clears itself the moment the NPC goes quiet.
+	// Own row: inlining the longest field pushed the numbers off screen at video-readable
+	// scales. Single-frame messages, so it clears itself when the NPC goes quiet.
 	if (Playback.bPlaying && !Playback.ActiveText.IsEmpty()) {
 		GEngine->AddOnScreenDebugMessage(Key + 2, 0.f, FColor::White,
 		                                 FString::Printf(TEXT("  \"%s\""), *Playback.ActiveText),
@@ -254,9 +242,8 @@ FString UNPCVoiceComponent::BuildDebugInputsLine(const FNPCVoiceAcousticState& A
 			*EffortEnum->GetNameStringByValue(static_cast<int64>(BucketState.Candidate)),
 			Now - BucketState.CandidateSince, GetSettings().BucketDwellTime);
 	}
-	// Only while it is actually gating content. Once the reaction has been spoken the flag is
-	// what the ladder reads, so showing the raw age would explain the wrong thing — spent says
-	// "the window is open but the NPC has already remarked on it".
+	// "spent" marks a window the NPC has already remarked on, which is what the ladder
+	// reads. Raw age alone would explain the wrong thing.
 	const float SinceChange = Now - SightState.LastChangeTime;
 	if (SinceChange <= GetSettings().SightChangeReactionWindow) {
 		Line += FString::Printf(TEXT(" (%s %.1fs ago%s)"),
@@ -275,11 +262,9 @@ FString UNPCVoiceComponent::BuildDebugStateLine(float Now) const {
 		                       FMath::Max(0.f, Playback.NextLineTime - Now));
 	}
 	const UEnum* EffortEnum = StaticEnum<ENPCVoiceEffort>();
-	// Reach comes from the spatial component, not from the settings: it is the post-clamp
-	// distance the sound actually dies at (the inner radius floors it, the asset's own range
-	// caps it), which is what a mis-tuned band needs to show.
+	// Post-clamp reach from the component, not the settings band: a mis-tuned band needs
+	// the distance the sound actually dies at.
 	const USpatialAudioComponent* Spatial = SpatialAudio.Get();
-	// The spoken words are deliberately not here — DrawDebugText gives them their own row.
 	return FString::Printf(
 		TEXT("  playing %s @%s%s reach %.1fm %+.0fdB (%.1fs left)"),
 		*Playback.ActiveLineId.ToString(),

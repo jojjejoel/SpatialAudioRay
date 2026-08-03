@@ -48,7 +48,7 @@ public:
 	/**
 	 * Distance (cm) relaunched ray origins, crawl paths and edge points are lifted off the
 	 * surface they interact with. Must stay small: it exists only to stop floating-point
-	 * self-hits at the launch point — larger values bury points inside neighboring geometry
+	 * self-hits at the launch point. Larger values bury points inside neighboring geometry
 	 * at corners and thin walls, which reads as LoS through walls.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Ray Casting",
@@ -122,7 +122,7 @@ public:
 	 * How strongly each ray's bounce direction is nudged toward the listener after roughness
 	 * scatter is applied.
 	 * 0 = no bias (pure reflection + roughness). 1 = fully toward the listener.
-	 * 0.15–0.3 gives a gentle lean — keeps momentum from the reflected direction while
+	 * 0.15-0.3 gives a gentle lean, keeping momentum from the reflected direction while
 	 * steering rays toward the listener side, helping them find diffraction edges sooner
 	 * without collapsing all rays to the same path.
 	 * Applied after the lateral-band bias on the launch direction, so both shape the same ray.
@@ -139,8 +139,8 @@ public:
 	 * will be after this long at their current smoothed velocity, so sweep results are less
 	 * stale by the time they are consumed (they serve until the next sweep). Exception: for
 	 * this long after direct LoS is lost (including pre-sweep-band casts and the first
-	 * sweeps after a break), steering aims at the position this long in the PAST instead — the corner just
-	 * crossed sits behind, and leading forward would aim into the shadow. Steering only —
+	 * sweeps after a break), steering aims at the position this long in the PAST instead: the corner just
+	 * crossed sits behind, and leading forward would aim into the shadow. Steering only,
 	 * LoS probes, budget gates, occlusion sampling, and the edge cache always verify against
 	 * the real positions, so a wrong prediction can never cache anything incorrect, it only
 	 * aims some rays less well. Decays to no effect as movement stops. 0 = off.
@@ -220,8 +220,8 @@ public:
 
 	/** After a movement-triggered sweep, keep sweeping at MovementCacheFillMultiplier speed for
 	 *  up to this many completed full sweeps or until MovementCacheFillRequiredEdges NEW edges
-	 *  (discovered since the trigger — carried-over entries don't count) are cached, whichever
-	 *  comes first. Velocity scaling stops accelerating sweeps the moment movement stops —
+	 *  (discovered since the trigger; carried-over entries don't count) are cached, whichever
+	 *  comes first. Velocity scaling stops accelerating sweeps the moment movement stops,
 	 *  without this, arriving occluded in a new spot can wait out the slow steady-state interval
 	 *  without re-surveying. The sweep cap bounds the cost when nothing new exists to find. 0 = off. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Performance",
@@ -230,7 +230,7 @@ public:
 
 	/** Newly-discovered (since the movement trigger; non-relayed, non-evicting) cached edge
 	 *  points that end the cache-fill fast sweeping early. Pre-existing edges re-confirmed at
-	 *  the same spot don't count, and neither do relays — the point of the burst is discovering
+	 *  the same spot don't count, and neither do relays: the point of the burst is discovering
 	 *  edges for the NEW position. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Performance",
 		meta = (ClampMin = "1", ClampMax = "16"))
@@ -250,7 +250,7 @@ public:
 	/**
 	 * Shape of the distance priority falloff curve.
 	 * 1.0 = linear. >1 = priority holds higher for longer then drops steeply near max distance
-	 * (recommended — saves cost for truly distant sources without penalising medium-range ones).
+	 * (recommended, since it saves cost for truly distant sources without penalising medium ones).
 	 * 2.0 = quadratic, 3.0 = cubic.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Performance",
@@ -314,7 +314,7 @@ public:
 	 * How strongly the crawl direction is pulled toward the listener.
 	 * 0 = crawl purely in the ray's slide direction (along wall, momentum-only).
 	 * 1 = crawl directly toward the listener (projected onto the wall plane).
-	 * 0.5 = equal blend of both — biased toward the listener but following momentum.
+	 * 0.5 = equal blend of both: biased toward the listener but following momentum.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Surface Crawl",
 		meta = (ClampMin = "0.0", ClampMax = "1.0"))
@@ -419,7 +419,7 @@ public:
 	 * source is still partially visible, so the virtual voices start from a populated cache the
 	 * moment occlusion reaches 100% instead of a cold cache. The 5-sample ring quantizes steady
 	 * occlusion to 0% / 80% / 100%, so keep this at or below 0.8 to catch the pinhole-LoS state.
-	 * Virtual audibility is unaffected — the crossfade gate still opens only at full occlusion.
+	 * Virtual audibility is unaffected: the crossfade gate still opens only at full occlusion.
 	 * 1.0 = disabled (sweeps require full LoS loss, original behavior).
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Occlusion",
@@ -446,10 +446,10 @@ public:
 	int32 OffsetRingRotationSteps = 4;
 
 	/** Exponent shaping the annulus radius ladder: check k of a rotation cycle samples its ring
-	 *  at (k/RotationSteps)^this × full radius. 0.5 = equal-area annuli — the cycle average
+	 *  at (k/RotationSteps)^this x full radius. 0.5 = equal-area annuli, so the cycle average
 	 *  estimates visible disc AREA, but the radii crowd toward the rim (4 steps sample at
 	 *  50/71/87/100%). 1 = evenly spaced radii (25/50/75/100%), weighting the centre view more;
-	 *  higher biases further inward; 0 = rim-only (pre-annulus behavior). Costs nothing — the
+	 *  higher biases further inward; 0 = rim-only (pre-annulus behavior). Costs nothing, since the
 	 *  trace count and cycle length are unchanged, only the sample radii move. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Occlusion",
 		meta = (ClampMin = "0.0", ClampMax = "4.0"))
@@ -465,7 +465,7 @@ public:
 
 
 	// ── Path Attenuation ──────────────────────────────────────────────────────
-	// Reduces VirtualGain based on total diffracted path distance — close sounds attenuate
+	// Reduces VirtualGain based on total diffracted path distance, so close sounds attenuate
 	// very little regardless of corner geometry; far sounds attenuate more.
 
 	/**
@@ -557,7 +557,7 @@ public:
 
 	/**
 	 * Smoothed-occlusion level at which the virtual voices begin fading in, reaching full level
-	 * at total occlusion — instead of gating open only when every offset point has lost
+	 * at total occlusion, instead of gating open only when every offset point has lost
 	 * line-of-sight. Lets the diffracted sound bleed in through pinhole/corner-grazing states.
 	 * Set at or above PreSweepOcclusionThreshold so the edge cache is already pre-warmed (and
 	 * the voices positioned) before anything becomes audible. 1 = disabled (hard gate at total
@@ -570,7 +570,7 @@ public:
 	/**
 	 * Seconds of exponential smoothing on the occlusion-keyed fade-in ramp. The ramp maps the
 	 * [VirtualCrossfadeStartOcclusion, 1] band onto [0, 1], which amplifies any residual
-	 * occlusion-sampling wobble by 1/(1-Start) — this low-pass keeps that out of the audible
+	 * occlusion-sampling wobble by 1/(1-Start), so this low-pass keeps that out of the audible
 	 * virtual gain without slowing the source's own occlusion response. 0 = off.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Virtual Source",
@@ -581,7 +581,7 @@ public:
 	 * Path excess ratio (traveled/straight-line − 1) at which VirtualPathBend saturates at 1.
 	 * 1 = full bend when the diffraction path is twice the straight-line distance; 0.5 = full
 	 * bend already at 1.5x. The single saturation point for everything the MetaSound derives
-	 * from VirtualPathBend (LPF, HPF, reverb) — keep the graph's bend input mapped 0→1.
+	 * from VirtualPathBend (LPF, HPF, reverb). Keep the graph's bend input mapped 0 to 1.
 	 * Large values (10+) effectively mute the detour-ratio term, leaving
 	 * VirtualPathBendDistanceStrength as the sole bend driver (distance-only muffling).
 	 */
@@ -592,7 +592,7 @@ public:
 	/**
 	 * Adds a source→cluster distance term to VirtualPathBend so far-away diffraction points
 	 * sound duller even on straight single-corner paths (air-absorption analog; uses the
-	 * traveled source→edge path, same basis as PathAttenuation — listener-independent).
+	 * traveled source-to-edge path, same basis as PathAttenuation, so listener-independent).
 	 * Contribution = this × traveled distance / MaxRayDistance, added before the clamp:
 	 * 1 = a path as long as MaxRayDistance alone reaches full bend. 0 = off (detour ratio only).
 	 */
@@ -611,7 +611,7 @@ public:
 
 	/**
 	 * How strongly listener→edge distance reduces a cached edge's priority when placing the
-	 * virtual source and choosing which clusters win the voice slots. Position/selection only —
+	 * virtual source and choosing which clusters win the voice slots. Position and selection only:
 	 * deliberately kept out of every gain/muffling formula (PathDist averages, WeightShare),
 	 * so walking around cannot change loudness; listener-proximity loudness comes from the
 	 * engine's native attenuation on the moved emitters. 0 = source-side weighting only.
@@ -633,7 +633,7 @@ public:
 	/**
 	 * Distance (cm) within which cached edge points group into a single cluster/voice. Clusters
 	 * whose centroids end up closer than this are merged, so two voices never play near-co-located
-	 * (which would just be duplicate DSP — summed loudness is already weight-normalized).
+	 * (which would just be duplicate DSP, since summed loudness is already weight-normalized).
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Virtual Source",
 		meta = (ClampMin = "10.0", ClampMax = "5000.0"))
@@ -740,14 +740,14 @@ public:
 	 * Seconds between source-side path re-verifications. Each check re-traces every segment of
 	 * ONE cached edge's stored string-pulled source→edge polyline (round-robin; traces are
 	 * submitted async and evaluated the following tick), including
-	 * unverified segments, to detect geometry that has closed the path since discovery — Phase 0
+	 * unverified segments, to detect geometry that has closed the path since discovery. Phase 0
 	 * only guards the listener side, source movement only guards source position, and rank
 	 * hysteresis rejects the longer re-finds a closed path produces, so nothing else catches e.g.
 	 * a door closing between a static source and its edge. A single blocked segment starts the
 	 * normal eviction fade and requests a sweep immediately. Because unverified segments (a raw
 	 * crawl/bounce hop the string pull couldn't shortcut past) were already blocked at discovery,
 	 * this also evicts ordinary multi-corner diffraction paths the moment they're rechecked, not
-	 * just genuine geometry changes — a deliberate trade-off of enabling this.
+	 * just genuine geometry changes, a deliberate trade-off of enabling this.
 	 * PER CACHED EDGE: the interval is divided by the cache size, so each edge's polyline is
 	 * rechecked this often no matter how many entries share the rotation. 0 = off.
 	 */
@@ -757,12 +757,12 @@ public:
 
 	/**
 	 * Seconds between attempts to shrink a cached edge back toward the source even while it
-	 * already has direct listener LoS — unlike TickPhase0Readback's promotion (which only fires
+	 * already has direct listener LoS, unlike TickPhase0Readback's promotion (which only fires
 	 * as a rescue when the edge itself just went blocked), this runs opportunistically so an
 	 * edge keeps migrating toward the true minimal diffraction point as the listener moves,
 	 * rather than sitting wherever it was first discovered. Each check (round-robin, one edge)
 	 * tries only the single point immediately before the edge on its own polyline; if that point
-	 * has direct listener LoS too, the edge moves there — one step per interval, not a jump all
+	 * has direct listener LoS too, the edge moves there, one step per interval rather than a jump all
 	 * the way to the source.
 	 * PER CACHED EDGE: the interval is divided by the cache size, so each edge takes a promotion
 	 * step this often regardless of how many entries share the rotation. 0 = off.
@@ -778,7 +778,7 @@ public:
 	 * segmentLength / 2^steps of its true position.
 	 *
 	 * 0 = derive the count from the segment, stopping once the bracket is inside half
-	 * CachedEdgeMergeRadius (clamped to 5..10 steps) — the corner is then located finely enough
+	 * CachedEdgeMergeRadius (clamped to 5..10 steps), so the corner is located finely enough
 	 * that two entries refining onto the same corner land close enough to be merged, which is
 	 * what "same corner" means everywhere else. Set a fixed count only to pin the cost: a low
 	 * value on a long segment leaves the edge visibly short of the real corner and can strand
@@ -786,7 +786,7 @@ public:
 	 *
 	 * Only the opportunistic promotion path reads this. Relay→edge conversion always derives its
 	 * own count, because its bracket is the entire edge→relay leg and a fixed count there scales
-	 * the error with leg length — the reason simultaneous relay conversions used to leave
+	 * the error with leg length, the reason simultaneous relay conversions used to leave
 	 * permanently unmergeable duplicates.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Edge Cache",
@@ -798,7 +798,7 @@ public:
 
 	/**
 	 * Caps how many sources draw at once BEFORE the N key (CycleDebugSourceKey) has collapsed
-	 * the set to a single selection — while more than this many registered sources have
+	 * the set to a single selection. While more than this many registered sources have
 	 * bDrawDebugRays enabled, only the closest ones to the listener actually draw; the rest are
 	 * suppressed until back in range or the N key takes over entirely. 0 = off (unlimited,
 	 * every enabled source draws).

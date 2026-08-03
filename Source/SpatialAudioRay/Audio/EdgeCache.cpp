@@ -5,9 +5,8 @@
 
 #include "DrawDebugHelpers.h"
 
-// The per-edge validation intervals are periods per entry, not per cache. Dividing by the entry
-// count holds an edge's check rate steady whether the cache carries one or six, and turns what
-// used to be a burst of N submissions on one tick into one submission per slice.
+// Periods per entry, not per cache: dividing by the entry count holds an edge's check rate
+// steady whether the cache carries one or six, and spreads submissions across the interval.
 float FEdgeCache::PerEdgeInterval(const USpatialAudioComponent& Component, const float Interval) {
 	return Interval / FMath::Max(1, Component.CachedEdgePoints.Num());
 }
@@ -121,11 +120,9 @@ bool FEdgeCache::ProbeListenerLoSPoint(const USpatialAudioComponent& Component, 
 	return bClear;
 }
 
-// Only ever returns a point that traced clear, so a non-monotone segment can cost an improvement
-// but never move the edge into geometry.
+// Only returns points that traced clear, so it can miss an improvement but never enter geometry.
 int32 FEdgeCache::ResolveStepsForMergeRadius(const USpatialAudioComponent& Component, const float Span) {
-	// Converging to the merge radius keeps two relays bisecting toward one corner close enough for
-	// MergeCoincidentEdges to collapse them. A fixed count resolves a long leg too coarsely.
+	// Converging to the merge radius keeps two relays close enough for MergeCoincidentEdges.
 	const float Tolerance = FMath::Max(Component.GetSettings().CachedEdgeMergeRadius * 0.5f, 1.f);
 	return FMath::Clamp(FMath::CeilToInt(FMath::Log2(FMath::Max(Span / Tolerance, 1.f))), 5, 10);
 }
@@ -216,8 +213,7 @@ bool FEdgeCache::TryRefineAlongFinalSegment(const USpatialAudioComponent& Compon
 	return true;
 }
 
-// Candidates must go through ResolveOffsetPoint: a point embedded in a wall traces outward with a
-// silent false-clear.
+// Must go through ResolveOffsetPoint: a point in a wall traces outward with a silent false-clear.
 void FEdgeCache::SubmitPhase0OffsetFan(const USpatialAudioComponent& Component, FCachedEdgePoint& Edge, UWorld* World,
                                        const FVector& ListenerPos, float OffsetRadius) {
 	if (Edge.bPhase0OffsetPending) {
@@ -356,8 +352,7 @@ void FEdgeCache::TickRelayRescueReadback(USpatialAudioComponent& Component, FCac
 	}
 	Edge.bRescuePending = false;
 
-	// The source moved while the traces flew. A relay only re-verifies the listener legs, so it
-	// cannot speak for a stale source side.
+	// A relay only re-verifies the listener legs, so it cannot speak for a source side that moved.
 	if (Edge.bEvicting && Edge.bSourceSideEviction) {
 		return;
 	}
@@ -385,8 +380,8 @@ void FEdgeCache::TickRelayMaintenance(USpatialAudioComponent& Component, FCached
 		return;
 	}
 	const USpatialAudioComponent::FTraceBucketScope Bucket(Component, USpatialAudioComponent::ETraceBucket::Relay);
-	// No yield-to-direct-edge check here. Every relay converts on its first readback, so the yield
-	// only ever killed siblings mid-conversion.
+	// No yield-to-direct-edge check: every relay converts on its first readback, so it only ever
+	// killed siblings mid-conversion.
 
 	if (!Edge.bRelayCheckPending) {
 		if (bIntervalFired) {
@@ -408,8 +403,7 @@ void FEdgeCache::TickRelayMaintenance(USpatialAudioComponent& Component, FCached
 		return;
 	}
 
-	// Relay dropped before evicting, or Phase 0's clear-restore would keep resurrecting a path
-	// that is already broken upstream.
+	// Relay dropped before evicting, or Phase 0's clear-restore would resurrect a broken path.
 	if (!IsTraceClear(Data[2]) || !IsTraceClear(Data[3])) {
 		Edge.ClearRelay();
 		StartEviction(Component, Edge, SourcePos);
@@ -438,8 +432,7 @@ void FEdgeCache::SubmitRelayCheckTraces(const USpatialAudioComponent& Component,
 	Edge.bRelayCheckPending = true;
 }
 
-// The LoS transition along the edge to relay leg is the second corner the relay bends around.
-// Converting leaves the entry backed by verified geometry, so it counts as a real edge again.
+// The LoS transition along the edge-to-relay leg is the second corner the relay bends around.
 void FEdgeCache::ConvertRelayToEdge(const USpatialAudioComponent& Component, FCachedEdgePoint& Edge, const UWorld* World,
                                     const FVector& ListenerPos) {
 	if (Edge.ShortestPath.Num() < 2) {
@@ -545,10 +538,8 @@ void FEdgeCache::TickCachedEdgeEviction(USpatialAudioComponent& Component, const
 
 	ClearStalePendingChecks(Component);
 
-	// One entry per slice rather than the whole cache at once. The timer is already divided by
-	// the entry count, so each edge still comes round every Phase0CheckInterval.
-	// Passing over source-side evictions matches TickPhase0Submission's own guard, so a slice is
-	// never spent on an entry that would decline to submit.
+	// One entry per slice rather than the whole cache. Source-side evictions are passed over to
+	// match TickPhase0Submission's own guard, so a slice is never spent on an entry that declines.
 	const int32 SubmitIdx = AdvancePhase0Timer(Component, DeltaTime, Settings)
 		                        ? SelectRoundRobinEdge(Component.CachedEdgePoints, Component.Phase0Cursor,
 		                                               [](const FCachedEdgePoint& Edge) {
@@ -556,8 +547,7 @@ void FEdgeCache::TickCachedEdgeEviction(USpatialAudioComponent& Component, const
 		                                               })
 		                        : INDEX_NONE;
 
-	// Backwards so a removal cannot disturb the indices still to come, which also keeps SubmitIdx
-	// pointing at the entry it was chosen for.
+	// Backwards so a removal cannot disturb later indices, which also keeps SubmitIdx valid.
 	for (int32 i = Component.CachedEdgePoints.Num() - 1; i >= 0; --i) {
 		if (TickSingleEdge(Component, Component.CachedEdgePoints[i], World, SourcePos, ListenerPos,
 		                   DeltaTime, i == SubmitIdx, Settings)) {
@@ -573,12 +563,10 @@ void FEdgeCache::TickCachedEdgeEviction(USpatialAudioComponent& Component, const
 	MergeCoincidentEdges(Component, Settings);
 }
 
-// Cached entries drift onto each other as relay conversion and promotion move them, and the
-// sweep's merge radius only gates incoming finds. Duplicates on one corner each cost a cache slot
-// and, since Math::ClusterEdgePoints sums member weights into Cluster.TotalWeight, a larger share
-// of the voice mix than a genuinely distinct opening earns.
-// Keyed on EdgePoint rather than EffectivePoint(): relays rescued through the same fan point
-// share a RelayPoint while their real corners differ.
+// Relay conversion and promotion move entries onto each other, and the sweep's merge radius only
+// gates incoming finds. A duplicate costs a cache slot and, since ClusterEdgePoints sums member
+// weights, a larger share of the voice mix than a distinct opening earns. Keyed on EdgePoint, not
+// EffectivePoint(): relays rescued through one fan point share a RelayPoint but differ at the corner.
 void FEdgeCache::MergeCoincidentEdges(USpatialAudioComponent& Component,
                                       const USpatialAudioSettings& Settings) {
 	const float MergeRadiusSq = FMath::Square(Settings.CachedEdgeMergeRadius);
@@ -604,8 +592,7 @@ void FEdgeCache::MergeCoincidentEdges(USpatialAudioComponent& Component,
 			if (TravelledFurther(Earlier, Later)) {
 				Later.bNewSinceFillArm = bEitherIsNew;
 				Component.CachedEdgePoints.RemoveAt(j);
-				// i slid down with the removal; keep scanning the remaining lower entries so a
-				// three-way pile collapses in one pass rather than one merge per tick.
+				// i slid down with the removal; keep scanning so a three-way pile collapses in one pass.
 				--i;
 				continue;
 			}
@@ -624,9 +611,8 @@ bool FEdgeCache::TravelledFurther(const FCachedEdgePoint& Edge, const FCachedEdg
 	return Edge.EffectivePathDist() > Other.EffectivePathDist();
 }
 
-// Nothing else watches the source side of a cached path: Phase 0 only covers the listener leg.
-// Only the verified segments are re-traced (see SubmitPolylineRecheckTraces), so a failure here
-// means geometry has actually closed rather than that the path was always a multi-corner detour.
+// Nothing else watches the source side: Phase 0 only covers the listener leg. Only verified
+// segments are re-traced, so a failure here means geometry actually closed.
 void FEdgeCache::TickShortestPathRecheck(USpatialAudioComponent& Component, UWorld* World,
                                          const FVector& SourcePos, const float DeltaTime,
                                          const USpatialAudioSettings& Settings) {
@@ -660,16 +646,14 @@ void FEdgeCache::TickShortestPathRecheck(USpatialAudioComponent& Component, UWor
 	const TArray<bool>& SegmentVerified = bHasStoredPath ? Edge.ShortestPathSegmentVerified
 	                                                     : FallbackVerified;
 
-	// Only the first leg depends on where the source is; every later vertex is corner-to-corner
-	// geometry. Re-tracing that leg from the live position is what makes a distance threshold
-	// unnecessary, but it is only meaningful when the leg was a verified straight line.
+	// Only the first leg depends on the source position; later vertices are corner-to-corner. That
+	// is what makes a distance threshold unnecessary, but only when the leg was a verified line.
 	const bool bSourceLegVerified = SegmentVerified.IsValidIndex(0) && SegmentVerified[0];
 	if (bSourceLegVerified) {
 		Path[0] = SourcePos;
 	}
 	else if (FVector::DistSquared(SourcePos, Path[0]) > 1.f) {
-		// An unverified source leg hugs geometry, so nothing can re-derive it once the source has
-		// left the anchor it was measured from.
+		// An unverified source leg hugs geometry and cannot be re-derived once the source moves.
 		StartEviction(Component, Edge, SourcePos, /*bSourceSide=*/true);
 		return;
 	}
@@ -712,10 +696,8 @@ FCachedEdgePoint* FEdgeCache::FindEntryByExactEdgePoint(USpatialAudioComponent& 
 	return nullptr;
 }
 
-// Rewriting the distance is the point, not just confirming the leg. A validated route that still
-// reports its length from where the source used to be is worse than an evicted one: PathDist feeds
-// path attenuation, and MergeIntoSameCorner refuses longer finds, so a stale short value can never
-// be corrected by a later sweep.
+// Rewriting the distance is the point. PathDist feeds path attenuation and MergeIntoSameCorner
+// refuses longer finds, so a stale short value could never be corrected by a later sweep.
 void FEdgeCache::ApplyRecheckReanchor(FCachedEdgePoint& Edge, const FVector& LiveSourcePos) {
 	if (Edge.ShortestPath.Num() < 2) {
 		Edge.CapturedSourcePos = LiveSourcePos;
@@ -765,13 +747,12 @@ void FEdgeCache::TickShortestPathReadback(USpatialAudioComponent& Component, UWo
 		              Component.PathRecheck.SegEnds[BlockedSeg], FColor::Red, false,
 		              Settings.DebugLineDuration * 4.f, 0, 3.f);
 	}
-	// The listener leg is typically still clear here, and Phase 0's clear-restore would otherwise
-	// resurrect the edge faster than the fade completes.
+	// The listener leg is typically still clear, so Phase 0 would resurrect this before the fade ends.
 	StartEviction(Component, *Edge, SourcePos, /*bSourceSide=*/true);
 }
 
-// The promotion inside TickPhase0Readback only fires once an edge goes blocked, so an edge with
-// clear LoS since discovery would otherwise never migrate inward when a shorter path opens up.
+// TickPhase0Readback only promotes once an edge goes blocked, so an edge clear since discovery
+// would otherwise never migrate inward when a shorter path opens.
 void FEdgeCache::TickInnerAnchorPromotion(USpatialAudioComponent& Component, const UWorld* World,
                                           const FVector& ListenerPos, const float DeltaTime,
                                           const USpatialAudioSettings& Settings) {

@@ -49,7 +49,7 @@ private:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components", meta=(AllowPrivateAccess="true"))
 	UAudioComponent* AudioCompSource;
 
-	/** Never plays — config template (MetaSound + attenuation) the USpatialAudioComponent
+	/** Never plays. A config template (MetaSound + attenuation) the USpatialAudioComponent
 	 *  virtual voice pool clones its runtime components from. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components", meta=(AllowPrivateAccess="true"))
 	UAudioComponent* AudioCompVirtual;

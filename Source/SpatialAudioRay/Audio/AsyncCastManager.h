@@ -46,8 +46,7 @@ public:
 
 	static FRayAccumulatorOutput ComputeAudioFromRayAccumulator(const FRayAccumulatorInput& In);
 
-	// Seeded per (source, listener, ray index) so the lateral-band bias resampling in
-	// StartAsyncFullCast is reproducible while the player and source are stationary.
+	// Seeded per (source, listener, ray index) so bias resampling replays while both are stationary.
 	static FRandomStream MakeBiasStream(const FVector& SourcePos, const FVector& ListenerPos, int32 RayIndex);
 
 	// The cycles of a full sweep sequence partition the sphere with no direction cast twice.
@@ -55,14 +54,12 @@ public:
 	static void SelectCycleDirections(const TArray<FVector>& AllDirections, int32 StartIndex, int32 CycleCount,
 	                                  TArray<FVector>& OutDirections, TArray<int32>& OutIndices);
 
-	// Anything at or past the LoS origin's travelled distance lies beyond the edge point the pull
-	// starts from, so it cannot be an anchor.
+	// Anything at or past the LoS origin's travelled distance lies beyond the edge, so it cannot anchor.
 	static int32 CountPrefixAnchorWaypoints(const TArray<FSpatialRayState::FBounceWaypoint>& Waypoints,
 	                                        float LoSCumulativeDistance);
 
-	// Mid-air counterpart of ComputeBouncedDirection. No surface normal exists, so the current
-	// direction takes the reflected direction's role and scatter uses the full sphere. At zero
-	// roughness and zero bias it turns 90 degrees instead of returning InDir unchanged.
+	// Mid-air counterpart of ComputeBouncedDirection: no normal, so the current direction takes the
+	// reflected role and scatter uses the full sphere. At zero roughness and bias it turns 90 degrees.
 	static FVector ComputeMidAirTurnDirection(const FVector& InDir, const FVector& TurnPoint,
 	                                          const FVector& ListenerPos, bool bApplyBias,
 	                                          float SurfaceRoughness, float BounceListenerBias);
@@ -76,8 +73,7 @@ private:
 	static void PublishSweepAudioTargets(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings);
 
 	// ── MergeStoredPathsIntoCache phases ─────────────────────────────────────
-	// Mirrors the cluster priority: source-path falloff over listener-proximity falloff, the
-	// listener term inert while ListenerDistanceFalloff is 0.
+	// Mirrors the cluster priority: source-path falloff over listener-proximity falloff.
 	static float RankScore(const USpatialAudioComponent& Component, const USpatialAudioSettings& Settings,
 	                       float PathDist, const FVector& Point);
 	static bool OutranksIncumbent(const USpatialAudioComponent& Component, const USpatialAudioSettings& Settings,
@@ -101,7 +97,7 @@ private:
 	                                  const AActor& Owner, const APawn& Pawn);
 	static void ResolveSweepRayBudget(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings);
 	static int32 CountHeldEdges(const TArray<FCachedEdgePoint>& Points);
-	// Scales the sweep budget down as the cache fills, never below MinFullSweepRayCount.
+	// Scales the sweep budget down as the cache fills, floored at one ray.
 	static int32 ApplyCacheFullnessRayScale(const USpatialAudioComponent& Component, int32 RayCount,
 	                                        const USpatialAudioSettings& Settings);
 	static void ResetCycleAccumulator(USpatialAudioComponent& Component);
@@ -134,8 +130,7 @@ private:
 	static void DrawFlightSegment(const USpatialAudioComponent& Component, const UWorld* World, const FVector& From,
 	                              const FVector& To, const USpatialAudioSettings& Settings);
 
-	// False when the budget gate rejected it. Since that sum only grows along a ray, it also tells
-	// a caller walking outward that every later point is out of budget too.
+	// False when the budget gate rejected it, which also means every later point is out of budget.
 	static bool TryAddListenerLoSProbe(const USpatialAudioComponent& Component, FSpatialRayState& Ray,
 	                                   UWorld* World, const FVector& SamplePos, float CumDist, float Budget,
 	                                   const USpatialAudioSettings& Settings);
@@ -155,8 +150,7 @@ private:
 	};
 
 	static bool AreCrawlTracesReady(UWorld* World, FSpatialRayState& Ray, FTraceDatum& OutRangeData);
-	// The three questions each crawl step asks: has the listener come into view, has a wall closed
-	// off the crawl, and has the surface fallen away behind us (the diffraction edge being hunted).
+	// The three questions each crawl step asks: listener in view, wall closed off, surface fallen away.
 	static void TryConfirmLoSAtCrawlStep(const USpatialAudioComponent& Component, FSpatialRayState& Ray,
 	                                     UWorld* World,
 	                                     const FSpatialRayState::FAsyncCrawlStepProbe& StepProbe,
