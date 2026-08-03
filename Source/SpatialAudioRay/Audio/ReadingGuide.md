@@ -1,6 +1,6 @@
 # SpatialAudioRay Reading Guide
 
-A route through this codebase for the first time. It says what order to read things in, what question each stop answers, and what you should understand before moving on. `CodeFlow.md` next to it is the per-system reference for when you need every detail of one subsystem. This is the on-ramp.
+A route through the codebase for the first time: what to read in what order, and what each stop answers. Everything not stated here is meant to be answerable by reading the code.
 
 ---
 
@@ -18,130 +18,150 @@ Everything else is machinery for answering those two accurately, cheaply, and wi
 
 | Loop | Rate | Job |
 |---|---|---|
-| Direct line-of-sight sampling | every frame | a handful of traces, produces the occlusion value |
-| Full async sweep | adaptive interval | a ray budget spread over several frames, finds diffraction edges |
-| Edge cache maintenance | every frame | keeps found edges validated between sweeps |
+| Direct line-of-sight sampling | on a timed interval | produces the occlusion value, smoothed every frame |
+| Full async sweep | on a timed interval, while heavily occluded or sight is confirmed lost | finds diffraction edges |
+| Edge cache maintenance | one edge at a time, each on a timed interval, while sight is lost | re-validates edges and fades out the dead |
 
-A sweep takes several frames, so its answer is slightly out of date by the time it lands. The cheap loops compensate: occlusion is sampled every frame and never waits for a sweep, and found edges are cached so the virtual emitters do not blink out between sweeps.
+All three intervals shorten as either end moves and stretch when both are still. A sweep takes several frames, so its answer is slightly out of date by the time it lands. The cheap loops compensate: occlusion is sampled on its own short interval and never waits for a sweep, and found edges are cached so the virtual emitters do not blink out between sweeps. Both the sweep and the cache go idle while the source is visible, so in that state the only thing still tracing is the occlusion sampler. "Visible" here is `bHasDirectLoS`, which is true when any one of the five samples reaches the source, so both can be idle at 80% occlusion. The sweep additionally runs through the near-occluded band, which is what warms the cache before the last sliver closes.
 
 ### Two rules to keep in mind
 
-**Listener independence.** `VirtualGain`, `PathAttenuation` and `VirtualPathBend`, which together decide how loud and how muffled the diffracted sound is, depend only on source-to-edge geometry. Never on listener position. Listener proximity is handled entirely by the engine's own `SoundAttenuation` on the emitter, which works because the emitter really is at the edge. Occlusion is the one deliberate exception, since it means "does the listener see the source" by definition. Where you see two weights computed side by side, `SrcW` and `PosW`, this rule is why.
+**Listener independence.** `VirtualGain`, `PathAttenuation` and `VirtualPathBend`, which together decide how loud and how muffled the diffracted sound is, depend only on source-to-edge geometry. Never on listener position. Listener proximity is handled entirely by the engine's own `SoundAttenuation` on the emitter, which works because the emitter really is at the edge. Occlusion is the one deliberate exception, since it means "does the listener see the source" by definition. Where you see two weights computed side by side, `SrcW` and `PosW`, this rule is why: position and ranking may use listener distance, gain may not.
 
-**Single-writer ownership.** `TargetOcclusion` is written in exactly one place, the per-frame line-of-sight sampler. The sweep readback and the line-of-sight-break sweep deliberately do not write it. Comments saying "deliberately not written here" are guarding this.
+**Single-writer ownership.** The occlusion formula, `1 - DirectLoSFraction`, is evaluated in exactly one place, the per-frame sampler. The sweep deliberately does not derive a competing value from path ratios: whenever a good diffraction path exists that value sits below the fraction-derived one, so it would drag occlusion off 1.0 every time a sweep landed. The other writes to `TargetOcclusion` are constants rather than models: 0 when a sweep confirms direct sight or the listener is out of range, 1 on init and on a blocked centre trace.
 
 ---
 
 ## Stop 1. `SpatialAudioTypes.h`, the vocabulary
 
-Read the whole file, around 260 lines. You are learning the nouns.
+Read the whole file, around 230 lines. You are learning the nouns.
 
-`FSpatialRayState` is one in-flight ray during a sweep: origin, direction, bounce count, pending trace handles, and `BounceWaypoints`, every point where it changed direction. The waypoints matter later for path shortening.
+`FSpatialRayState` is one in-flight ray: origin, direction, bounce count, pending trace handles, and `BounceWaypoints`, every point where it changed direction. The waypoints matter at Stop 5.
 
-`FCachedEdgePoint` is a confirmed diffraction edge that survives across sweeps. Note `ShortestPath` and `ShortestPathSegmentVerified`, the polyline its path distance was measured along, and `EmitterPoint()`, where the audible emitter actually sits after being walked back along that polyline. The long comments on `bRelayed` and `bSourceSideEviction` will make sense after Stop 6. Skim them for now.
+`FCachedEdgePoint` is a confirmed diffraction edge that survives across sweeps. Note `ShortestPath` and `ShortestPathSegmentVerified`, the polyline its path distance was measured along and which of its segments were actually traced clear, and `EmitterPoint()`, where the audible emitter sits after being walked back along that polyline. The comments on `bRelayed` and `bSourceSideEviction` will make sense after Stop 6.
 
-`FVirtualVoice` and `FVirtualSlot` are worth separating in your head. A voice is the logical "sound coming from cluster X". A slot is a pooled `UAudioComponent` that renders it. Voices hand slots off to each other so a position can jump without a pop, with the old slot fading out where it stands while the new one fades in.
+`FVirtualVoice` and `FVirtualSlot` are worth separating in your head. A voice is the logical "sound coming from cluster X". A slot is a pooled `UAudioComponent` that renders it. Voices hand slots off to each other so a position can jump without a pop, the old slot fading out where it stands while the new one fades in.
 
-Then skim `SpatialAudioSettings.h`. Do not read every property, just the category names. Every tunable in the system lives there in one shared `UDataAsset`.
+Then skim `SpatialAudioSettings.h` for the category names only. Every tunable lives there in one shared `UDataAsset`.
 
 ## Stop 2. `SpatialAudioComponent.h`, where the state lives
 
 `FAsyncCastManager`, `FUpdater` and `FEdgeCache` are stateless helpers made of static functions. They are friends of the component, and all the actual state sits on `USpatialAudioComponent`, so this header is the state map for the whole system.
 
-Read the private section from `AsyncRays` down. Four groups are worth registering:
+Read the private section from `AsyncRays` down. Five groups are worth registering:
 
-Sweep state is `AsyncRays`, `bAsyncCastActive`, `Finalize`, `CycleAccum`, and `AsyncSourcePos` with `AsyncListenerPos`, which are positions frozen at sweep start. A sweep spans several frames, so "current position" is ambiguous while one is running.
+Sweep state is `AsyncRays`, `bAsyncCastActive`, `Finalize`, `CycleAccum`, and `AsyncSourcePos` with `AsyncListenerPos`, which are positions frozen at sweep start, because "current position" is ambiguous across a multi-frame sweep.
 
-The targets are `TargetOcclusion`, `TargetVirtualSourceLocation` and `TargetPathAttenuation`. Casts write targets and `TickComponent` smooths the `Current` values toward them. Nothing audible ever snaps.
+The targets are `TargetOcclusion`, `TargetVirtualSourceLocation` and `TargetPathAttenuation`. Casts write `Target*`, `TickComponent` smooths `Current*` toward them, and nothing audible ever snaps.
 
-The cache is `CachedEdgePoints`. A warm cache pays off by shrinking the sweep budget through `FullCacheRayScale` rather than by steering individual rays away from known corners.
+The cache is `CachedEdgePoints`, and a warm one pays off by shrinking the next sweep's ray budget through `FullCacheRayScale`.
 
-Line-of-sight sampling keeps three values: `LastOffsetLoSFraction` raw, `WindowedLoSFraction` averaged over the pattern, and `LastDirectLoSFraction` smoothed. The distinction between them matters at Stop 4.
+Line-of-sight sampling keeps three values: `LastOffsetLoSFraction` raw, `WindowedLoSFraction` averaged over the pattern, and `LastDirectLoSFraction` smoothed. The distinction matters at Stop 4.
+
+`AudioDiag` and `TraceDiag` are debug-only. No audio path reads them.
 
 ## Stop 3. `TickComponent`, the frame skeleton
 
-Read `TickComponent`, around 60 lines, and the phase methods it calls in order. Everything hangs off this:
+Read `TickComponent`, around 60 lines, and the phase methods it calls in order:
 
 ```
 TickAsyncPipeline          read back last frame's probes, advance the sweep one step
 UpdateVelocityScaling      smoothed source and listener speeds become interval multipliers
-UpdateGeometryBurstAndIdleState
+UpdateStationaryIdleState  stretch the sweep interval while nothing moves
 FEdgeCache::TickCachedEdgeEviction   validate and evict cached edges (Stop 6)
 ComputeEffectiveSweepInterval        how long until the next sweep is allowed
 TickMovementSweepTrigger   listener moved far, request an early sweep
 TickNormalSweepDispatch    per-frame LoS sampling always, then either start a
                            sweep or run the cheap update cast
 SmoothTowardTargets        interpolate all Current values
-UpdateAudioParameters      write the final numbers to the AudioComponents (Stop 8)
+UpdateAudioParameters      write the final numbers to the audio components (Stop 8)
 ```
 
-One inline branch sits between the dispatch and the smoothing: the frame direct line of sight is lost sets `bMovementRequested`, which starts the next sweep immediately instead of waiting out the interval timer, so the edge cache refills while the crossfade is still opening.
+One inline branch sits between dispatch and smoothing: the frame direct sight is lost sets `bMovementRequested`, starting the next sweep immediately instead of waiting out the timer, so the cache refills while the crossfade is still opening.
 
-Read `BeginPlay` too. It caches every `UAudioComponent` tagged `AudioComponentSource`, since one pipeline serves all co-located sounds on an actor, creates a transient `UAudioBus` for the sources to write into, and builds the virtual voice pool. The pool is twice `MaxVirtualVoices` components, all playing silently from frame one so a fade-in never pays MetaSound startup latency.
+Sweep pacing itself is `ComputeEffectiveSweepInterval`, folding velocity scaling, a post-movement cache-fill burst and stationary idle, in that order. Every branch that lengthens the interval requires both ends stationary, so a moving listener has no floor beyond velocity scaling.
+
+Read `BeginPlay` too. It caches every `UAudioComponent` tagged `AudioComponentSource`, since one pipeline serves all co-located sounds on an actor, creates a transient `UAudioBus` for them to write into, and builds the virtual voice pool. The pool is twice `MaxVirtualVoices` components, all playing silently from frame one so a fade-in never pays MetaSound startup latency.
 
 ## Stop 4. Occlusion, the simplest complete subsystem
 
-In `UpdaterCast.cpp`, read `TickDirectLoSSampling`, then `TrySampleOffsetLoS`, `SyncOffsetLoSFraction` and `UpdateSmoothedOcclusionFromSamples`. It is self-contained and it shows the house style: heavy geometric comments and explicit reasoning about why a sampling pattern behaves the way it does.
+In `UpdaterCast.cpp`, read `TickDirectLoSSampling`, then `TrySampleOffsetLoS`, `SyncOffsetLoSFraction` and `UpdateSmoothedOcclusionFromSamples`. It is self-contained and shows the house style.
 
-Every `OffsetLoSCheckInterval` it fires five traces, the listener centre plus a four-point ring, toward matching points on the source's inner-radius sphere. The fraction is simply how many came back clear. The ring rotates and its radius ladders through annuli on each check, so one full rotation samples the whole listener disc and the source cap. A stationary scene retraces exactly the same rays every cycle, which is what keeps the value from wobbling at rest.
+Every `OffsetLoSCheckInterval` it takes five samples, the listener centre plus a four-point ring, toward matching points on the source's inner-radius sphere. That is up to nine traces, since resolving each ring point costs one of its own. Seeing any of that sphere counts as seeing the source, because the source plays at full volume anywhere inside it, so a wide source half-visible past a corner reads as partly occluded rather than clear. The fraction is how many samples came back clear.
 
-The three values from Stop 2 have different consumers, and mixing them up causes real bugs. The raw fraction drives gating: `bHasDirectLoS` and sweep suppression. Gaining sight is instant, while losing it when stationary needs a full blank rotation first, as hysteresis against grazing rays that flicker. The pattern average is the smoothing target. The smoothed value produces `TargetOcclusion`, and that line is the only place in the codebase that computes it.
+The ring rotates and its radius ladders through annuli on each check, so one full rotation samples the whole disc rather than only the rim, and a clear centre view through a small opening does not read as four fifths occluded. A stationary scene retraces exactly the same rays every cycle, which is what keeps the value from wobbling at rest.
+
+The three values from Stop 2 have different consumers, and mixing them up causes real bugs. The raw fraction drives gating: `bHasDirectLoS` and sweep suppression. Gaining sight is instant, while losing it when stationary needs a full blank rotation first, as hysteresis against grazing rays that flicker. The pattern average is the smoothing target. The smoothed value produces `TargetOcclusion`.
 
 ## Stop 5. The async sweep
 
-`AsyncCastManagerSubmit.cpp` and `AsyncCastManagerReadback.cpp`. This is the core pipeline, four entry points called across consecutive frames.
+`AsyncCastManagerSubmit.cpp` and `AsyncCastManagerReadback.cpp`, four entry points called across consecutive frames.
 
-**`StartAsyncFullCast`** fires once per sweep or sub-cycle. Read its phase methods in call order. Positions are captured by `CaptureSweepPositions`, and note the separate steering positions there: they are velocity-led and used only for aiming, never for verifying a result. The ray budget is resolved next, from distance priority and then `ApplyCacheFullnessRayScale`, which thins the budget as the cache fills. Then `SubmitSweepRays` distributes that many directions over a Fibonacci sphere and biases them toward the lateral band. That bias exists because straight at the listener hits the same wall and straight away never comes back, so diffraction edges are found to the sides.
+**`StartAsyncFullCast`** fires once per sweep, and does two separable things: decide where to aim, then decide how much to spend.
 
-**`TickAsyncCast`** runs every frame while a sweep is active and advances each ray one step through `TickSingleRay`. A ray's life goes: drain any finished line-of-sight probes, process a pending crawl batch if there is one, otherwise handle the segment trace that just finished. That trace either missed, in which case the ray terminates or turns mid-air if `MaxStraightFlightDistance` is enabled, or it hit a wall. A hit either starts a surface crawl, where `TrySetupSurfaceCrawl` submits the whole probe batch up front, or a bounce through `Math::ComputeBouncedDirection`, which blends mirror reflection with roughness scatter and a pull toward the listener. Crawls and bounces alternate per ray via `bNextHitCrawls`. Along every segment `SubmitSegmentLoSProbes` asks asynchronously whether that point can see the listener, and the first point that can becomes the ray's `LoSOrigin`, a diffraction edge candidate.
+Aiming starts at `CaptureSweepPositions`. Note the separate steering positions, which are velocity-led and used only for aiming, never for verifying a result. That split is the point: a wrong prediction can only aim rays less well, it can never cache a false edge. `SubmitSweepRays` then distributes directions over a Fibonacci sphere, biased toward the lateral band, because straight at the listener hits the same wall and straight away never comes back.
 
-Worth noticing at every decision point is the prune: a ray dies as soon as travelled distance plus straight-line distance to the listener exceeds the budget. By the triangle inequality that sum only ever grows, and every line-of-sight probe is gated on the same bound, so past it the ray cannot produce a result no matter what happens next.
+The budget comes from distance priority and then `ApplyCacheFullnessRayScale`, which thins it as the cache fills, on the reasoning that a saturated cache can only improve by displacing an entry. It scales rather than stops, because a cache that stopped searching could never find the corner that would displace something.
 
-**`SubmitFinalizeBatch`** runs on the frame all rays have finished. For each ray that found line of sight, `ComputeStringPulledLeg1` shortens the travelled path, because crawl steps and bounce detours make the raw route longer than the acoustic distance. It hops from the edge to the furthest recorded waypoint that is directly visible, repeats toward the source, and keeps raw hops only where nothing is visible. The resulting `PathDist` and polyline are what all the downstream gain maths uses.
+**`TickAsyncCast`** runs every frame while a sweep is active, advancing each ray one step: drain finished line-of-sight probes, process a pending crawl batch, else handle the segment trace that just finished. That trace either missed, terminating the ray or turning it mid-air when `MaxStraightFlightDistance` is set, or hit a wall, which starts a crawl or a bounce, alternating per ray via `bNextHitCrawls`. Along every segment `SubmitSegmentLoSProbes` asks asynchronously whether that point sees the listener, and the first that does becomes the ray's `LoSOrigin`.
 
-**`ReadbackFinalizeBatch`** runs the frame after. It opens with `TryDiscardStaleSweep`: the sweep ran against frozen positions, so line of sight is re-sampled at current positions and the whole sweep is thrown away if the listener regained sight while it was in flight. Results then accumulate into the cycle and `MergeStoredPathsIntoCache` upserts edges into `CachedEdgePoints`, merging by radius with rank-scored replacement and hysteresis. An entry is never evicted merely because a sweep failed to re-find it, since rays bounce differently every time and a miss is not evidence of absence. A find landing inside the merge radius skips the rank score entirely: same corner means a shared listener leg, so the shorter travelled path just wins. `FEdgeCache::MergeCoincidentEdges` applies the same rule to entries already in the cache, which drift toward each other as relay conversion and inner-anchor promotion move their points.
+Worth noticing at every decision point is the prune: a ray dies once travelled distance plus straight-line distance to the listener exceeds the budget. By the triangle inequality that sum only grows, and every probe is gated on the same bound, so past it the ray cannot produce a result no matter what happens next. It is lossless.
+
+**`SubmitFinalizeBatch`** runs the frame all rays finish. `bDirectLoSFound` is computed in a scan before the per-ray loop, which matters: derived inside it, rays past the first direct hit would see a different value than the readback does. Then `ComputeStringPulledLeg1` shortens each path, because crawl steps and bounce detours make the travelled route longer than the acoustic one. From the edge it hops to the furthest recorded waypoint that is directly visible and repeats toward the source. Where nothing is visible it consumes exactly one raw travelled hop rather than abandoning the rest, so a single blocked corner cannot swallow a genuine shortcut beyond it. Verified and unverified segments therefore interleave, which is what `ShortestPathSegmentVerified` records.
+
+**`ReadbackFinalizeBatch`** runs the frame after. It opens with `TryDiscardStaleSweep`: the sweep ran against frozen positions, so sight is re-sampled now and the whole sweep discarded if the listener regained it in flight. Results then accumulate and `MergeStoredPathsIntoCache` upserts edges, merging by radius with rank-scored replacement and hysteresis. An entry is never evicted merely because a sweep failed to re-find it, since rays bounce differently every time and a miss is not evidence of absence. A find inside the merge radius skips rank scoring entirely: same corner means a shared listener leg, so the shorter travelled path simply wins.
 
 ## Stop 6. `EdgeCache.cpp`, keeping edges alive
 
-Read `TickCachedEdgeEviction` top down. It is a per-edge phase sequence, and the problem it solves is that sweeps are seconds apart while the listener moves continuously, so a cached edge has to be validated from the listener's side the whole time and dropped gracefully when it stops being real.
+Read `TickCachedEdgeEviction` top down. The problem it solves is that sweeps are seconds apart while the listener moves continuously, so a cached edge has to be validated from the listener's side the whole time and dropped gracefully when it stops being real.
 
-Phase 0 is one async listener-to-edge trace per edge per interval, submitted for a single entry per slice rather than the whole cache at once. All three per-edge intervals divide by the cache size, so a setting names the period an individual edge is checked at, not the period the cache is swept at, and the cost arrives evenly instead of as a burst of N. When it comes back blocked, several things are tried before giving up. First `TryPromoteToInnerAnchor`, in case a point closer to the source now sees the listener directly, which would make the outer diffraction point obsolete. Then a four-point fan around the listener, because one centre trace grazing a corner is thin evidence. Then a relay rescue, routing the edge through the last listener position that could still see it, frozen at rescue time so the gain stays listener-independent. That one submits its four traces and rules the following tick, leaving the edge playing untouched while they fly. Only after all of that does eviction start, and eviction is a fade through `EvictionAlpha` rather than a cut, since an emitter vanishing instantly is audible.
+Note the first line: the whole thing returns early while `bHasDirectLoS`, since a visible source has no diffraction paths worth maintaining. Everything below runs only while occluded. `TickSingleEdge` then runs six phases in order: `TickEvictionFade`, `TickRelayRescueReadback`, `TickPhase0Readback`, `TickPhase0OffsetReadback`, `TickRelayMaintenance`, `TickPhase0Submission`.
 
-Source movement is handled by the shortest-path recheck rather than by a distance threshold. Only the polyline's first segment depends on where the source is, so the recheck traces that leg from the live position and, when it comes back clear, re-anchors the entry and re-measures `PathDist` and `GeomDist`. Listener movement never evicts anything, because Phase 0 already owns listener-side validity.
+Phase 0 is one async listener-to-edge trace, submitted for a single entry per slice rather than the whole cache. All three per-edge intervals divide by cache size, so a setting names the period an individual edge is checked at, and the cost arrives evenly instead of as a burst of N.
 
-The shortest-path recheck is round-robin, re-tracing one edge's stored polyline per slice to catch geometry closing on the source side, such as a door shutting between the source and the edge. Nothing else watches that leg.
+A blocked Phase 0 trace does not evict. It escalates:
 
-Whether an eviction can be undone depends on which side failed. Listener-side evictions un-evict the moment Phase 0 sees the edge again. Source-side ones, flagged `bSourceSideEviction`, can only be rehabilitated by a fresh sweep, because the listener leg is usually still clear and would otherwise resurrect them forever.
+1. `TryPromoteToInnerAnchor`, in case the previous point on the edge's own polyline already has direct listener sight, which makes the outer corner obsolete and shortens `PathDist` by the trimmed segment.
+2. A four-point fan around the listener, since one centre trace grazing a corner is thin evidence. It fires only on a blocked centre, so it costs nothing while the edge is comfortably visible.
+3. A relay rescue, routing the edge through the last listener position that could still see it, frozen at rescue time so gain stays listener-independent.
+
+Only then does eviction start, and it is a fade through `EvictionAlpha` rather than a cut, since an emitter vanishing instantly is audible. The rescue submits its four traces and rules the following tick, leaving the edge playing untouched meanwhile; pre-fading would break outright at fade time 0, where the entry is removed before any readback could land.
+
+Two design points worth carrying away. Rescue depends only on the edge's own geometry, never on whether sibling edges are healthy. That matters because edges around one corner tend to go dark on the same tick, and any rule referring to sibling state would let whichever edge happened to be processed first decide the fate of the rest. As written, N edges going dark produce N relays that each convert independently. And a confirmed relay is upgraded in place into a real edge, bisecting its verified leg to find the second corner, which makes the relay a transitional state rather than a resting one.
+
+Source movement is handled by the shortest-path recheck, not a distance threshold. It re-traces one edge's stored polyline per slice, skipping unverified segments, which were blocked at discovery by construction and would otherwise evict every multi-corner path on sight. The first segment is special: retraced from the live source position, and a clear result re-anchors the entry and re-measures `PathDist`. Listener movement never evicts anything, because Phase 0 already owns listener-side validity.
+
+Whether an eviction can be undone depends on which side failed. Listener-side ones un-evict the moment Phase 0 sees the edge again. Source-side ones, flagged `bSourceSideEviction`, need a fresh sweep, because the listener leg is usually still clear and a restore would outpace the fade forever.
 
 ## Stop 7. The crawl mechanic, and the cheap path
 
-Surface crawling deserves its own read, since it is what actually finds most diffraction edges. The mechanic is simple: step along the wall away from the hit point, and at each step probe back toward the surface. While the back-probe hits, the wall is still there. The step where it misses is past the end of the wall, and that point is the edge.
+Crawling is what actually finds most diffraction edges. Step along the wall away from the hit point and probe back toward the surface at each step. While the back-probe hits, the wall is still there. The step where it misses is past the end of the wall, and that point is the edge.
 
-The code splits that across two phases, because every probe is asynchronous. `TrySetupSurfaceCrawl` computes the crawl direction, blending the ray's slide vector along the wall with the wall-projected direction to the listener by `CrawlListenerBias`, then submits every step's three traces in one batch: the back-probe, a line-of-sight probe to the listener, and a forward probe for a perpendicular wall in the way. Submitting the whole batch up front is the point. A crawl costs one frame of latency however many steps it runs, instead of one frame per step.
+`TrySetupSurfaceCrawl` submits every step's three traces in one batch: the back-probe, a line-of-sight probe, and a forward probe for a perpendicular wall. Batching is the point, since a crawl then costs one frame of latency however many steps it runs. `EvaluateCrawlSteps` reads the batch back next frame and asks three questions per step, each its own named function. It is all-or-nothing, returning without advancing if any probe is not ready, since a partial read would evaluate steps out of order.
 
-`EvaluateCrawlSteps` reads that batch back the next frame and walks the steps in order, asking three questions per step, each its own named function: did this step see the listener, did the forward probe hit a perpendicular wall, and did the back-probe miss. The first yes wins and ends the crawl. Note that it is all-or-nothing, returning without advancing if any probe in the batch is not ready yet, since a partial read would evaluate steps out of order.
+Then `PerformUpdateRayCast`, the cheap per-frame path used when no sweep is running. It casts nothing. It re-weights the cache in `AccumulateCachedEdgeWeights`, where the `SrcW` and `PosW` split enforces listener independence, refreshes the position target and path attenuation, then clusters edges into voices. Clustering groups by edge point rather than emitter point, because pulled-back points converge toward the source and would merge distinct openings.
 
-Then `PerformUpdateRayCast` in `UpdaterCast.cpp`, the cheap per-frame path used when no sweep is running. It casts no new rays. It re-weights the existing cache in `AccumulateCachedEdgeWeights`, where the `SrcW` and `PosW` split is what enforces listener independence, refreshes the virtual position target and path attenuation, then clusters edges into voices. `Math::ClusterEdgePoints` groups cache entries by radius and `SyncVirtualVoicesToClusters` diffs desired against active: within glide range a voice keeps its slot and glides, otherwise the old slot fades out where it is and a new one fades in.
+Both halves stay active through the pre-sweep band, gated on `bVirtualPathActive` rather than on `!bHasDirectLoS` alone. The crossfade starts opening before occlusion is total, so the voices have to already exist and carry real attenuation by then.
 
 ## Stop 8. Where numbers become sound
 
 `UpdateDualModeAudio` in `UpdaterAudio.cpp` runs last every frame.
 
-Every tagged source component receives `CurvedOcclusion`, and each MetaSound shapes its own volume and filtering from that. There is no external crossfade on the source side.
+Every tagged source component receives `CurvedOcclusion`, and each MetaSound shapes its own volume and filtering from it. There is no external crossfade on the source side.
 
-`UpdateVirtualCrossfadeGate` decides whether the virtual voices are audible at all. It hard-opens once a full sampling rotation has come back blank, and can optionally ramp open earlier through the near-occluded band, keyed to smoothed occlusion, so the diffracted sound bleeds in before occlusion is total.
+`UpdateVirtualCrossfadeGate` decides whether the virtual voices are audible at all. It hard-opens once a full sampling rotation comes back blank, and can ramp open earlier through the near-occluded band. While stationary with the ramp enabled the hard term is suppressed, because a marginal pinhole can blank a rotation and would pump the gate.
 
-`UpdateVirtualVoiceSlots` writes each slot's final numbers. `VirtualGain` is the path attenuation term times weight share times fade envelope times gate, with nothing listener-dependent anywhere in it. `VirtualPathBend` is the detour ratio, travelled over straight minus one, plus a distance term, and the MetaSound derives HPF cutoff and reverb wetness from that single parameter internally. It also physically moves the slot component, which is what lets the engine's own attenuation do the listener-proximity work.
+`UpdateVirtualVoiceSlots` writes each slot's numbers. `VirtualGain` is path attenuation times weight share times fade envelope times gate, with nothing listener-dependent in it. Path attenuation is evaluated against the virtual template's own attenuation curve, so the source-to-emitter leg costs what the engine charges for the same distance on the emitter-to-listener leg. `VirtualPathBend` is the detour ratio plus a distance term, and the MetaSound derives filter cutoff and reverb from that single value. The slot component is physically moved, which is what lets the engine's attenuation do the proximity work.
 
-Finish with `Math.h` end to end, around 300 lines of pure stateless functions. Most of the formulas referenced elsewhere live there with their reasoning attached.
+Finish with `Math.h` end to end, around 300 lines of pure stateless functions.
 
-## Stop 9. Seeing it run
+## Stop 9. The voice layer, and seeing it run
 
-`SpatialAudioDebugSubsystem` is a world subsystem that registers every component and polls the debug keys. With `bDrawDebugRays` set on a source, N cycles which source draws, 2 shows bounce rays, 7 shows crawl steps with cyan for crawling and white for flying, 6 shows edge points, 0 shows the string-pulled shortest paths in magenta with unverified segments dimmed, 1 shows virtual emitter spheres, 3 is the per-source HUD and G is the global trace-count HUD. Walking behind a wall with 2, 7 and 0 on makes Stops 5 through 7 concrete faster than reading them again.
+`Voice/` is a consumer, not part of the pipeline. It never traces, and nothing in `Audio/` reads from it. `UNPCVoiceComponent` reads `GetEffectiveAcousticDistance`, the straight line while visible and the shortest cached route once occluded, and picks a vocal effort from it, so standing close but around a corner makes the NPC shout. Its own `Voice/README.md` covers the layer; the split there mirrors this one, with every scheduling decision as pure functions in `NPCVoiceLogic.h`.
 
-The `Voice/` folder is a consumer rather than part of the system. `UNPCVoiceComponent` reads the component's effective acoustic distance, which is the straight line while the source is visible and the diffraction path length once it is occluded, and picks a vocal effort bucket from it, whispering when acoustically close and shouting when far. The lines play back through the same pipeline as anything else. Nothing in `Audio/` depends on it.
+`SpatialAudioDebugSubsystem` registers every component and polls the debug keys. With `bDrawDebugRays` set, N cycles which source draws, 2 shows bounce rays, 7 crawl steps, 6 edge points, 0 the string-pulled paths with unverified segments dimmed, 1 virtual emitters, 3 the per-source HUD and G the global trace counts. Walking behind a wall with 2, 7 and 0 on makes Stops 5 through 7 concrete faster than reading them again.
 
-Tests live in `Source/SpatialAudioRay/Tests/`, registered as `SpatialAudioRay.Math.*`, `SpatialAudioRay.Async.*` and `SpatialAudioRay.Voice.*` under Session Frontend, Automation. They read as a spec for the pure helpers, and `MathTests.cpp` is a good final read.
+Tests live in `Source/SpatialAudioRay/Tests/`, 100 of them under `SpatialAudioRay.Math.*`, `.Async.*`, `.Voice.*` and `.EdgeCache.*` in Session Frontend. They read as a spec for the pure helpers, and `MathTests.cpp` is a good final read.
 
 ---
 
@@ -151,7 +171,7 @@ Tests live in `Source/SpatialAudioRay/Tests/`, registered as `SpatialAudioRay.Ma
 2. `SpatialAudioComponent.h` private section, the state map
 3. `TickComponent`, the frame skeleton
 4. `TickDirectLoSSampling`, occlusion
-5. `StartAsyncFullCast`, `TickAsyncCast`, `SubmitFinalizeBatch`, `ReadbackFinalizeBatch`, the sweep
+5. `StartAsyncFullCast` through `ReadbackFinalizeBatch`, the sweep
 6. `TickCachedEdgeEviction`, edge lifetime
 7. `TrySetupSurfaceCrawl` and `EvaluateCrawlSteps`, then `PerformUpdateRayCast`
 8. `UpdateDualModeAudio` and `Math.h`, numbers into sound
