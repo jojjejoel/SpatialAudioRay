@@ -2,12 +2,13 @@
 
 An NPC whose vocal effort follows the acoustic state of the diffraction system in `../Audio/`, rather than the straight line to the listener. Standing two steps away behind a wall makes it shout, because the sound has to travel around the corner to reach you.
 
-This layer is a consumer. It never traces anything, and nothing in `Audio/` depends on it. It reads `USpatialAudioComponent::GetEffectiveAcousticDistance`, picks an effort bucket from whisper to shout, and plays lines through the same pipeline as any other sound on the actor, so a voice line diffracts and muffles like everything else.
+This layer is a consumer. It never traces anything, and nothing in `Audio/` depends on it. It reads `USpatialAudioComponent::GetEffectiveAcousticDistance`, picks an effort from whisper to shout, and plays lines through the same pipeline as any other sound on the actor, so a voice line diffracts and muffles like everything else.
 
 | File | What lives here |
 |---|---|
 | `NPCVoiceLogic.h` | Every scheduling decision, as pure functions over explicit state. |
-| `NPCVoiceTypes.h` | Bank row, resolved runtime line, and the three scheduler state structs. |
+| `NPCVoiceTypes.h` | Bank row and resolved runtime line. |
+| `NPCVoiceState.h` | The scheduler state structs those decisions read and mutate. |
 | `NPCVoiceComponent.h/.cpp` | Engine wiring only: sibling components, DataTable loading, playback calls. |
 | `NPCVoiceSettings.h` | Tunables, following the same asset-or-CDO pattern as the audio settings. |
 

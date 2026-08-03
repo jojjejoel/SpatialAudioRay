@@ -4,22 +4,22 @@
 #include "Voice/NPCVoiceSettings.h"
 
 namespace {
-	FNPCVoiceRuntimeLine MakeVoiceLine(const TCHAR* Id, ENPCVoiceEffort Bucket, ENPCVoiceCategory Category,
+	FNPCVoiceRuntimeLine MakeVoiceLine(const TCHAR* Id, ENPCVoiceEffort Effort, ENPCVoiceCategory Category,
 	                              const TCHAR* Group = TEXT(""),
 	                              ENPCVoiceTransitionDir Dir = ENPCVoiceTransitionDir::None) {
 		FNPCVoiceRuntimeLine Line;
 		Line.Row.LineId = FName(Id);
-		Line.Row.Bucket = Bucket;
+		Line.Row.Bucket = Effort;
 		Line.Row.Category = Category;
 		Line.Row.CooldownGroup = FName(Group);
 		Line.Row.Direction = Dir;
 		return Line;
 	}
 
-	FNPCVoiceRuntimeLine MakeVoiceTransitionLine(const TCHAR* Id, ENPCVoiceEffort Bucket,
+	FNPCVoiceRuntimeLine MakeVoiceTransitionLine(const TCHAR* Id, ENPCVoiceEffort Effort,
 	                                        ENPCVoiceTransitionDir Dir,
 	                                        const TCHAR* Group = TEXT("")) {
-		return MakeVoiceLine(Id, Bucket, ENPCVoiceCategory::Transition, Group, Dir);
+		return MakeVoiceLine(Id, Effort, ENPCVoiceCategory::Transition, Group, Dir);
 	}
 
 	/** Acoustic state with no detour and no recent sight crossing — the plain visible/hidden
@@ -40,11 +40,11 @@ namespace {
 	}
 
 	/** Playback state as it looks mid-line, ready for a barge-in evaluation. */
-	FNPCVoicePlaybackState MakeVoicePlayingState(ENPCVoiceEffort ActiveBucket, float EndTime,
+	FNPCVoicePlaybackState MakeVoicePlayingState(ENPCVoiceEffort ActiveEffort, float EndTime,
 	                                        bool bIsTransition = false) {
 		FNPCVoicePlaybackState Playback;
 		Playback.bPlaying = true;
-		Playback.ActiveBucket = ActiveBucket;
+		Playback.ActiveEffort = ActiveEffort;
 		Playback.EndTime = EndTime;
 		Playback.bActiveIsBargeIn = bIsTransition;
 		return Playback;
@@ -56,32 +56,32 @@ namespace {
 	}
 }
 
-// ─── MapToBucket ──────────────────────────────────────────────────────────────
+// ─── MapToEffort ──────────────────────────────────────────────────────────────
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FVoiceMapToBucket_DistanceBands,
-	"SpatialAudioRay.Voice.MapToBucket.DistanceBands",
+	FVoiceMapToEffort_DistanceBands,
+	"SpatialAudioRay.Voice.MapToEffort.DistanceBands",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
-bool FVoiceMapToBucket_DistanceBands::RunTest(const FString& Parameters) {
+bool FVoiceMapToEffort_DistanceBands::RunTest(const FString& Parameters) {
 	const UNPCVoiceSettings* S = GetDefault<UNPCVoiceSettings>();
 
 	TestTrue(TEXT("Close = whisper"),
-	         VoiceLogic::MapToBucket(100.f, *S) == ENPCVoiceEffort::Whisper);
+	         VoiceLogic::MapToEffort(100.f, *S) == ENPCVoiceEffort::Whisper);
 	TestTrue(TEXT("Whisper band edge is inclusive"),
-	         VoiceLogic::MapToBucket(S->WhisperMaxDistance, *S) == ENPCVoiceEffort::Whisper);
+	         VoiceLogic::MapToEffort(S->WhisperMaxDistance, *S) == ENPCVoiceEffort::Whisper);
 	TestTrue(TEXT("Past whisper edge = conversational"),
-	         VoiceLogic::MapToBucket(S->WhisperMaxDistance + 1.f, *S) == ENPCVoiceEffort::Conversational);
+	         VoiceLogic::MapToEffort(S->WhisperMaxDistance + 1.f, *S) == ENPCVoiceEffort::Conversational);
 	TestTrue(TEXT("Mid range = raised"),
-	         VoiceLogic::MapToBucket(S->ConversationalMaxDistance + 1.f, *S) == ENPCVoiceEffort::Raised);
+	         VoiceLogic::MapToEffort(S->ConversationalMaxDistance + 1.f, *S) == ENPCVoiceEffort::Raised);
 	TestTrue(TEXT("Far = shout"),
-	         VoiceLogic::MapToBucket(S->RaisedMaxDistance + 1.f, *S) == ENPCVoiceEffort::Shout);
+	         VoiceLogic::MapToEffort(S->RaisedMaxDistance + 1.f, *S) == ENPCVoiceEffort::Shout);
 
 	return true;
 }
 
-// ─── AdvanceBucketHysteresis ──────────────────────────────────────────────────
+// ─── AdvanceEffortHysteresis ──────────────────────────────────────────────────
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FVoiceHysteresis_FirstSampleCommitsInstantly,
@@ -90,10 +90,10 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 )
 
 bool FVoiceHysteresis_FirstSampleCommitsInstantly::RunTest(const FString& Parameters) {
-	// Nothing to smooth against on the first sample, and the default bucket would otherwise
+	// Nothing to smooth against on the first sample, and the default effort would otherwise
 	// mis-deliver the opening line.
-	FNPCVoiceBucketHysteresis State;
-	VoiceLogic::AdvanceBucketHysteresis(State, ENPCVoiceEffort::Shout, /*Now=*/10.f, /*Dwell=*/1.f);
+	FNPCVoiceEffortHysteresis State;
+	VoiceLogic::AdvanceEffortHysteresis(State, ENPCVoiceEffort::Shout, /*Now=*/10.f, /*Dwell=*/1.f);
 
 	TestTrue(TEXT("First sample commits without waiting out the dwell"),
 	         State.Committed == ENPCVoiceEffort::Shout);
@@ -109,18 +109,18 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 )
 
 bool FVoiceHysteresis_CommitsOnlyAfterDwell::RunTest(const FString& Parameters) {
-	FNPCVoiceBucketHysteresis State;
-	VoiceLogic::AdvanceBucketHysteresis(State, ENPCVoiceEffort::Whisper, 0.f, 1.f);
+	FNPCVoiceEffortHysteresis State;
+	VoiceLogic::AdvanceEffortHysteresis(State, ENPCVoiceEffort::Whisper, 0.f, 1.f);
 
-	VoiceLogic::AdvanceBucketHysteresis(State, ENPCVoiceEffort::Shout, 10.f, 1.f);
+	VoiceLogic::AdvanceEffortHysteresis(State, ENPCVoiceEffort::Shout, 10.f, 1.f);
 	TestTrue(TEXT("A new candidate does not commit immediately"),
 	         State.Committed == ENPCVoiceEffort::Whisper);
 	TestTrue(TEXT("Candidate is recorded"), State.Candidate == ENPCVoiceEffort::Shout);
 
-	VoiceLogic::AdvanceBucketHysteresis(State, ENPCVoiceEffort::Shout, 10.9f, 1.f);
+	VoiceLogic::AdvanceEffortHysteresis(State, ENPCVoiceEffort::Shout, 10.9f, 1.f);
 	TestTrue(TEXT("Still short of the dwell time"), State.Committed == ENPCVoiceEffort::Whisper);
 
-	VoiceLogic::AdvanceBucketHysteresis(State, ENPCVoiceEffort::Shout, 11.f, 1.f);
+	VoiceLogic::AdvanceEffortHysteresis(State, ENPCVoiceEffort::Shout, 11.f, 1.f);
 	TestTrue(TEXT("Commits once the candidate has persisted for the dwell time"),
 	         State.Committed == ENPCVoiceEffort::Shout);
 	return true;
@@ -134,11 +134,11 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FVoiceHysteresis_FlipBackCancelsCommit::RunTest(const FString& Parameters) {
 	// A player loitering on a band edge must not change the NPC's delivery.
-	FNPCVoiceBucketHysteresis State;
-	VoiceLogic::AdvanceBucketHysteresis(State, ENPCVoiceEffort::Whisper, 0.f, 1.f);
-	VoiceLogic::AdvanceBucketHysteresis(State, ENPCVoiceEffort::Shout, 10.f, 1.f);
-	VoiceLogic::AdvanceBucketHysteresis(State, ENPCVoiceEffort::Whisper, 10.5f, 1.f);
-	VoiceLogic::AdvanceBucketHysteresis(State, ENPCVoiceEffort::Whisper, 20.f, 1.f);
+	FNPCVoiceEffortHysteresis State;
+	VoiceLogic::AdvanceEffortHysteresis(State, ENPCVoiceEffort::Whisper, 0.f, 1.f);
+	VoiceLogic::AdvanceEffortHysteresis(State, ENPCVoiceEffort::Shout, 10.f, 1.f);
+	VoiceLogic::AdvanceEffortHysteresis(State, ENPCVoiceEffort::Whisper, 10.5f, 1.f);
+	VoiceLogic::AdvanceEffortHysteresis(State, ENPCVoiceEffort::Whisper, 20.f, 1.f);
 
 	TestTrue(TEXT("Flipping back before the dwell expires never commits the intruder"),
 	         State.Committed == ENPCVoiceEffort::Whisper);
@@ -289,12 +289,12 @@ bool FVoiceCooldown_BlocksAndExpires::RunTest(const FString& Parameters) {
 // ─── SelectLineIndex ──────────────────────────────────────────────────────────
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FVoiceSelectLine_BucketAndCategory,
-	"SpatialAudioRay.Voice.SelectLine.BucketAndCategory",
+	FVoiceSelectLine_EffortAndCategory,
+	"SpatialAudioRay.Voice.SelectLine.EffortAndCategory",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
-bool FVoiceSelectLine_BucketAndCategory::RunTest(const FString& Parameters) {
+bool FVoiceSelectLine_EffortAndCategory::RunTest(const FString& Parameters) {
 	const UNPCVoiceSettings* S = GetDefault<UNPCVoiceSettings>();
 	TArray<FNPCVoiceRuntimeLine> Lines;
 	Lines.Add(MakeVoiceLine(TEXT("ClearShout"), ENPCVoiceEffort::Shout, ENPCVoiceCategory::Clear));
@@ -302,16 +302,16 @@ bool FVoiceSelectLine_BucketAndCategory::RunTest(const FString& Parameters) {
 	Lines.Add(MakeVoiceLine(TEXT("ClearWhisper"), ENPCVoiceEffort::Whisper, ENPCVoiceCategory::Clear));
 	const TMap<FName, float> NoCooldowns;
 
-	TestEqual(TEXT("Clear LoS picks the Clear line in the committed bucket"),
+	TestEqual(TEXT("Clear LoS picks the Clear line in the committed effort"),
 	          VoiceLogic::SelectLineIndex(Lines, ENPCVoiceEffort::Shout, MakeVoiceAcoustic(0.f),
 	                                      NAME_None, 0.f, NoCooldowns, *S), 0);
-	TestEqual(TEXT("Occluded picks the occlusion-keyed line in the same bucket"),
+	TestEqual(TEXT("Occluded picks the occlusion-keyed line in the same effort"),
 	          VoiceLogic::SelectLineIndex(Lines, ENPCVoiceEffort::Shout, MakeVoiceGenericOccluded(),
 	                                      NAME_None, 0.f, NoCooldowns, *S), 1);
-	TestEqual(TEXT("A different committed bucket selects that bucket's line"),
+	TestEqual(TEXT("A different committed effort selects that effort's line"),
 	          VoiceLogic::SelectLineIndex(Lines, ENPCVoiceEffort::Whisper, MakeVoiceAcoustic(0.f),
 	                                      NAME_None, 0.f, NoCooldowns, *S), 2);
-	TestEqual(TEXT("Bucket with no lines at all yields INDEX_NONE"),
+	TestEqual(TEXT("Effort with no lines at all yields INDEX_NONE"),
 	          VoiceLogic::SelectLineIndex(Lines, ENPCVoiceEffort::Raised, MakeVoiceAcoustic(0.f),
 	                                      NAME_None, 0.f, NoCooldowns, *S),
 	          static_cast<int32>(INDEX_NONE));
@@ -338,10 +338,10 @@ bool FVoiceSelectLine_SoftConstraintsRelax::RunTest(const FString& Parameters) {
 	          VoiceLogic::SelectLineIndex(GenericOccludedOnly, ENPCVoiceEffort::Shout, BehindWall,
 	                                      NAME_None, 0.f, NoCooldowns, *S), 0);
 
-	// The only line in the bucket is also the one that just played: no-repeat must relax.
+	// The only line in the effort is also the one that just played: no-repeat must relax.
 	TArray<FNPCVoiceRuntimeLine> ClearOnly;
 	ClearOnly.Add(MakeVoiceLine(TEXT("ClearShout"), ENPCVoiceEffort::Shout, ENPCVoiceCategory::Clear));
-	TestEqual(TEXT("A single-line bucket repeats rather than falling silent"),
+	TestEqual(TEXT("A single-line effort repeats rather than falling silent"),
 	          VoiceLogic::SelectLineIndex(ClearOnly, ENPCVoiceEffort::Shout, MakeVoiceAcoustic(0.f),
 	                                      FName(TEXT("ClearShout")), 0.f, NoCooldowns, *S), 0);
 
@@ -362,7 +362,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FVoiceSelectLine_CooldownIsHard::RunTest(const FString& Parameters) {
 	// Unlike category and no-repeat, a cooldown is never relaxed — every rung of the ladder
-	// respects it, so an entirely cooled-down bucket stays silent.
+	// respects it, so an entirely cooled-down effort stays silent.
 	const UNPCVoiceSettings* S = GetDefault<UNPCVoiceSettings>();
 	TArray<FNPCVoiceRuntimeLine> Lines;
 	Lines.Add(MakeVoiceLine(TEXT("A"), ENPCVoiceEffort::Shout, ENPCVoiceCategory::Clear, TEXT("grp")));
@@ -384,12 +384,12 @@ bool FVoiceSelectLine_CooldownIsHard::RunTest(const FString& Parameters) {
 // ─── FindBargeInLine ──────────────────────────────────────────────────────────
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FVoiceFindTransitionLine_DirectionAndBucket,
-	"SpatialAudioRay.Voice.FindTransitionLine.DirectionAndBucket",
+	FVoiceFindTransitionLine_DirectionAndEffort,
+	"SpatialAudioRay.Voice.FindTransitionLine.DirectionAndEffort",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
-bool FVoiceFindTransitionLine_DirectionAndBucket::RunTest(const FString& Parameters) {
+bool FVoiceFindTransitionLine_DirectionAndEffort::RunTest(const FString& Parameters) {
 	TArray<FNPCVoiceRuntimeLine> Lines;
 	Lines.Add(MakeVoiceTransitionLine(TEXT("T_CloserWhisper"), ENPCVoiceEffort::Whisper,
 	                             ENPCVoiceTransitionDir::Closer));
@@ -399,13 +399,13 @@ bool FVoiceFindTransitionLine_DirectionAndBucket::RunTest(const FString& Paramet
 	                             ENPCVoiceTransitionDir::Farther));
 	const TMap<FName, float> NoCooldowns;
 
-	TestEqual(TEXT("Exact target bucket wins in its direction"),
+	TestEqual(TEXT("Exact target effort wins in its direction"),
 	          VoiceLogic::FindBargeInLine(Lines, ENPCVoiceCategory::Transition, ENPCVoiceTransitionDir::Farther,
 	                                         ENPCVoiceEffort::Shout, 0.f, NoCooldowns), 2);
-	TestEqual(TEXT("No exact bucket: nearest rendered one in the direction"),
+	TestEqual(TEXT("No exact effort: nearest rendered one in the direction"),
 	          VoiceLogic::FindBargeInLine(Lines, ENPCVoiceCategory::Transition, ENPCVoiceTransitionDir::Farther,
 	                                         ENPCVoiceEffort::Conversational, 0.f, NoCooldowns), 1);
-	TestEqual(TEXT("Direction filters even when buckets fit better elsewhere"),
+	TestEqual(TEXT("Direction filters even when efforts fit better elsewhere"),
 	          VoiceLogic::FindBargeInLine(Lines, ENPCVoiceCategory::Transition, ENPCVoiceTransitionDir::Closer,
 	                                         ENPCVoiceEffort::Shout, 0.f, NoCooldowns), 0);
 	return true;
@@ -480,7 +480,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 bool FVoiceBargeIn_UnserviceableReasonYieldsToOneWithContent::RunTest(const FString& Parameters) {
 	// A sight change and the effort drift it caused arrive on the same tick. If the bank cannot
 	// service the sight reason, it must not claim the tick and abort — the drift reason has
-	// content, and the sight edge is gone next tick while the playing line's bucket is not, so
+	// content, and the sight edge is gone next tick while the playing line's effort is not, so
 	// the barge-in would be lost outright.
 	const UNPCVoiceSettings* S = GetDefault<UNPCVoiceSettings>();
 	const FNPCVoiceTransitionState Fresh;
@@ -583,14 +583,14 @@ bool FVoiceBargeIn_Gates::RunTest(const FString& Parameters) {
 	TestFalse(TEXT("A line about to end is left to finish"),
 	          VoiceLogic::EvaluateBargeIn(NearlyDone, Fresh, Drifted, ENPCVoiceSightChange::None, MakeVoiceFullBank(), 0.f, *S).ShouldBargeIn());
 
-	S->TransitionBucketDelta = 0;
+	S->TransitionEffortDelta = 0;
 	TestFalse(TEXT("Delta 0 disables effort barge-ins"),
 	          VoiceLogic::EvaluateBargeIn(Playing, Fresh, Drifted, ENPCVoiceSightChange::None, MakeVoiceFullBank(), 0.f, *S).ShouldBargeIn());
 	TestTrue(TEXT("Delta 0 leaves the sight triggers working"),
 	         VoiceLogic::EvaluateBargeIn(Playing, Fresh, Drifted, ENPCVoiceSightChange::Lost, MakeVoiceFullBank(), 0.f, *S)
 	             .ShouldBargeIn());
 
-	S->TransitionBucketDelta = 2;
+	S->TransitionEffortDelta = 2;
 	const FNPCVoicePlaybackState OneStepOff = MakeVoicePlayingState(ENPCVoiceEffort::Conversational, 100.f);
 	TestFalse(TEXT("A one-step drift is below a delta of 2"),
 	          VoiceLogic::EvaluateBargeIn(OneStepOff, Fresh, ENPCVoiceEffort::Raised, ENPCVoiceSightChange::None, MakeVoiceFullBank(), 0.f, *S)
@@ -618,8 +618,8 @@ bool FVoicePlayback_BeginAndEndLine::RunTest(const FString& Parameters) {
 
 	TestTrue(TEXT("Line is marked playing"), Playback.bPlaying);
 	TestEqual(TEXT("End time is duration plus padding"), Playback.EndTime, 13.2f);
-	TestTrue(TEXT("Active bucket is what the line was rendered at"),
-	         Playback.ActiveBucket == ENPCVoiceEffort::Raised);
+	TestTrue(TEXT("Active effort is what the line was rendered at"),
+	         Playback.ActiveEffort == ENPCVoiceEffort::Raised);
 	TestTrue(TEXT("Line id feeds the no-repeat rule"), Playback.LastLineId == FName(TEXT("L001")));
 	TestFalse(TEXT("A Clear-category line is not a transition"), Playback.bActiveIsBargeIn);
 
@@ -690,14 +690,19 @@ bool FVoicePlayback_IdleReactionBeatsTheReactionWindow::RunTest(const FString& P
 	// A sight change with nothing playing has no line to interrupt, so the only way to react is
 	// to schedule the next one sooner. Left alone, the normal silence can outlast the window
 	// LostSight / SightRegained content is gated on, and the NPC never mentions the break.
-		const UNPCVoiceSettings* S = GetDefault<UNPCVoiceSettings>();
-	TestTrue(TEXT("The normal wait can indeed outlast the reaction window"),
-	         S->LineIntervalMax > S->SightChangeReactionWindow);
+	// Tuned here rather than read from the defaults, which are free to move: the behaviour under
+	// test is what happens WHEN the wait outlasts the window, not whether it currently does.
+	UNPCVoiceSettings* S = NewObject<UNPCVoiceSettings>();
+	S->LineIntervalMax = 9.f;
+	S->SightChangeReactionWindow = 6.f;
+	S->PostTransitionLineDelay = 0.272f;
 
 	FNPCVoicePlaybackState Playback;
 	Playback.NextLineTime = 100.f + S->LineIntervalMax;
 	VoiceLogic::PullInNextLine(Playback, /*Now=*/100.f, *S);
-	TestEqual(TEXT("The next line moves inside the window"),
+	TestTrue(TEXT("A wait that outlasted the window now lands inside it"),
+	         Playback.NextLineTime < 100.f + S->SightChangeReactionWindow);
+	TestEqual(TEXT("The next line moves to the post-transition delay"),
 	          Playback.NextLineTime, 100.f + S->PostTransitionLineDelay);
 
 	// Never delays one already due — a line about to start is a faster reaction than this is.
@@ -843,7 +848,7 @@ bool FVoiceContext_PicksTheAcousticSituation::RunTest(const FString& Parameters)
 	const UNPCVoiceSettings* S = GetDefault<UNPCVoiceSettings>();
 
 	// Visible and unobstructed, near or far alike: nothing special to say about the acoustics,
-	// because distance is already carried by the effort bucket rather than by a category.
+	// because distance is already carried by the effort rather than by a category.
 	TestTrue(TEXT("Near and visible resolves to Clear"),
 	         VoiceLogic::ResolveCategoryPreference(MakeVoiceAcoustic(0.f, 300.f, 300.f), *S)[0] ==
 	         ENPCVoiceCategory::Clear);
@@ -890,7 +895,7 @@ bool FVoiceContext_VisibleHalfSplitsOnObstruction::RunTest(const FString& Parame
 	         ENPCVoiceCategory::Clear);
 
 	// Same geometry, just something clipping the line.
-	const TArray<ENPCVoiceCategory, TInlineAllocator<4>> Obstructed =
+	const VoiceLogic::FCategoryPreference Obstructed =
 		VoiceLogic::ResolveCategoryPreference(
 			MakeVoiceAcoustic(S->PartialOcclusionThreshold, Far, Far), *S);
 	TestTrue(TEXT("A blocked sample switches the visible half's context"),
@@ -928,7 +933,7 @@ bool FVoiceContext_NeverCrossesTheVisibilitySplit::RunTest(const FString& Parame
 
 	// Every ladder must end in the generic entry for its own half and contain nothing from
 	// the other — that invariant is what keeps a line from contradicting what the player sees.
-	const TArray<ENPCVoiceCategory, TInlineAllocator<4>> Visible =
+	const VoiceLogic::FCategoryPreference Visible =
 		VoiceLogic::ResolveCategoryPreference(
 			MakeVoiceAcoustic(0.f, 5000.f, 5000.f), *S);
 	TestTrue(TEXT("A visible ladder ends in Clear"), Visible.Last() == ENPCVoiceCategory::Clear);
@@ -940,7 +945,7 @@ bool FVoiceContext_NeverCrossesTheVisibilitySplit::RunTest(const FString& Parame
 
 	FNPCVoiceAcousticState Hidden = MakeVoiceAcoustic(1.f, 300.f, 2400.f);
 	Hidden.bSightReactionPending = true;
-	const TArray<ENPCVoiceCategory, TInlineAllocator<4>> Occluded =
+	const VoiceLogic::FCategoryPreference Occluded =
 		VoiceLogic::ResolveCategoryPreference(Hidden, *S);
 	TestTrue(TEXT("An occluded ladder ends in Occluded"),
 	         Occluded.Last() == ENPCVoiceCategory::Occluded);

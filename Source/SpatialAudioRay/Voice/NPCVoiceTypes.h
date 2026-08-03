@@ -6,7 +6,7 @@
 
 class USoundWave;
 
-/** Vocal effort, ordered quiet → loud so bucket shifts are integer steps. */
+/** Vocal effort, ordered quiet → loud so drift between two of them is an integer step. */
 UENUM(BlueprintType)
 enum class ENPCVoiceEffort : uint8 {
 	Whisper,
@@ -15,9 +15,7 @@ enum class ENPCVoiceEffort : uint8 {
 	Shout
 };
 
-/** Content class for a line, picked from the listener's acoustic situation. Selection never
- *  crosses the visible/occluded split (see VoiceLogic::ResolveCategoryPreference). Append only:
- *  DataTable rows store these by name. */
+/** Content class for a line, picked by VoiceLogic::ResolveCategoryPreference. Append only. */
 UENUM(BlueprintType)
 enum class ENPCVoiceCategory : uint8 {
 	/** Visible fallback. */
@@ -38,8 +36,7 @@ enum class ENPCVoiceCategory : uint8 {
 	PartiallyOccluded
 };
 
-/** Why a playing line was cut short. Each reason draws its replacement from a different
- *  category (see VoiceLogic::BargeInCategory). */
+/** Why a playing line was cut short. Each reason has its own category, see BargeInCategory. */
 UENUM(BlueprintType)
 enum class ENPCVoiceBargeInReason : uint8 {
 	None,
@@ -49,7 +46,6 @@ enum class ENPCVoiceBargeInReason : uint8 {
 	SightGained
 };
 
-/** Visibility delta for this tick. */
 UENUM(BlueprintType)
 enum class ENPCVoiceSightChange : uint8 {
 	None,
@@ -67,8 +63,7 @@ enum class ENPCVoiceTransitionDir : uint8 {
 	Farther
 };
 
-/** One take of one line at one effort level. Rows are produced by
- *  Tools/VoiceGen/export_to_unreal.py. Import its CSV with this row type. */
+/** One take of one line at one effort. Rows come from Tools/VoiceGen/export_to_unreal.py. */
 USTRUCT(BlueprintType)
 struct FNPCVoiceLineRow : public FTableRowBase {
 	GENERATED_BODY()
@@ -76,6 +71,7 @@ struct FNPCVoiceLineRow : public FTableRowBase {
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice")
 	FName LineId;
 
+	/** The line's effort. Named for the CSV column it imports from; renaming means re-exporting. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice")
 	ENPCVoiceEffort Bucket = ENPCVoiceEffort::Conversational;
 
@@ -90,8 +86,7 @@ struct FNPCVoiceLineRow : public FTableRowBase {
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice")
 	FName CooldownGroup;
 
-	/** Render length in seconds (from the generation manifest), the scheduler's only
-	 *  end-of-line signal, so it must match the actual asset. */
+	/** Render length in seconds, from the generation manifest. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice")
 	float Duration = 0.f;
 
@@ -103,8 +98,7 @@ struct FNPCVoiceLineRow : public FTableRowBase {
 	FString Text;
 };
 
-/** A bank row with its wave resolved. UPROPERTY so loaded waves stay GC-rooted
- *  (the DataTable itself only holds soft references). */
+/** A bank row with its wave resolved. UPROPERTY so loaded waves stay GC-rooted. */
 USTRUCT()
 struct FNPCVoiceRuntimeLine {
 	GENERATED_BODY()

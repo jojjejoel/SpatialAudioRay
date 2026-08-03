@@ -12,11 +12,15 @@ class USpatialAudioComponent;
 
 /**
  * Drives an NPC's voice from its USpatialAudioComponent: effective acoustic distance selects a
- * vocal-effort bucket, and a scheduler plays bank lines at that effort through the spatial bus.
+ * vocal effort, and a scheduler plays bank lines at that effort through the spatial bus.
  *
  * Setup: a USpatialAudioComponent, a UAudioComponent tagged BOTH "AudioComponentSource" and
  * VoiceAudioComponentTag (bAutoActivate off, MS_Source-style MetaSound whose wave input matches
  * WaveParameterName), and this component with a VoiceBank DataTable of FNPCVoiceLineRow.
+ *
+ * The MetaSound must apply EffortGainParameterName INSIDE the graph, ahead of the Audio Bus
+ * Writer: a component volume multiplier would only affect direct playback, leaving occluded
+ * playback at the wrong level.
  */
 UCLASS(ClassGroup=(Audio), meta=(BlueprintSpawnableComponent))
 class SPATIALAUDIORAY_API UNPCVoiceComponent : public UActorComponent {
@@ -39,8 +43,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice")
 	TObjectPtr<UDataTable> VoiceBank = nullptr;
 
-	/** Tag identifying the owner's voice UAudioComponent. That component must ALSO carry the
-	 *  "AudioComponentSource" tag so the spatial pipeline feeds it bus + occlusion. */
+	/** Tag identifying the owner's voice UAudioComponent, which must ALSO carry "AudioComponentSource". */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice")
 	FName VoiceAudioComponentTag = TEXT("NPCVoiceAudio");
 
@@ -48,10 +51,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice")
 	FName WaveParameterName = TEXT("SoundWave");
 
-	/** Float input on the voice MetaSound carrying the effort's source gain in dB. Must be
- *  applied INSIDE the graph, ahead of the Audio Bus Writer: a component volume multiplier
-	 *  would only affect direct playback, leaving occluded playback (which replays the bus
-	 *  through the virtual emitters) at the wrong level. Graphs without the input ignore it. */
+	/** Float input on the voice MetaSound carrying the effort's source gain in dB. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice")
 	FName EffortGainParameterName = TEXT("EffortGainDb");
 
@@ -61,6 +61,8 @@ public:
 private:
 	void ResolveOwnerComponents();
 	void LoadBank();
+	FNPCVoiceAcousticState SampleAcousticState(const USpatialAudioComponent& Spatial,
+	                                           const FVector& ListenerPos) const;
 	void TickSightReaction(float Now, ENPCVoiceSightChange SightChange);
 	void TickScheduler(float Now, const FNPCVoiceAcousticState& Acoustic);
 	void SelectAndPlayLine(float Now, const FNPCVoiceAcousticState& Acoustic);
@@ -75,9 +77,7 @@ private:
 	TWeakObjectPtr<UAudioComponent> VoiceAudio;
 	TWeakObjectPtr<USpatialAudioComponent> SpatialAudio;
 
-	// Scheduler state, see NPCVoiceTypes.h. Held as structs so the pure decisions in
-	// NPCVoiceLogic.h can take them by reference.
-	FNPCVoiceBucketHysteresis BucketState;
+	FNPCVoiceEffortHysteresis EffortState;
 	FNPCVoicePlaybackState Playback;
 	FNPCVoiceTransitionState Transition;
 	FNPCVoiceSightState SightState;
