@@ -39,15 +39,15 @@ namespace {
 
 	FPacingDebugInfo ComputePacingDebugInfo(
 		bool bBothStationary, bool bStationaryIdleMode,
-		float MovementCacheFillMultiplier, float StoredEffFullSweepInterval,
+		float MinSweepIntervalScale, float StoredEffFullSweepInterval,
 		float StationaryIdleMultiplier, float CoverageFraction,
 		float SmoothedSourceSpeed, float SmoothedListenerSpeed,
-		int32 CacheFillSweepsRemaining, int32 UsableEdges, int32 RequiredEdges) {
+		bool bCacheFillPending, int32 CacheFillSweepsRemaining) {
 		FPacingDebugInfo Info;
-		if (bBothStationary && CacheFillSweepsRemaining > 0 && UsableEdges < RequiredEdges) {
-			Info.Label = FString::Printf(TEXT("CACHE-FILL (%.2f×  %.2fs  new edges %d/%d  %d sweeps left)"),
-			                             MovementCacheFillMultiplier, StoredEffFullSweepInterval,
-			                             UsableEdges, RequiredEdges, CacheFillSweepsRemaining);
+		if (bBothStationary && bCacheFillPending) {
+			Info.Label = FString::Printf(TEXT("CACHE-FILL (%.2f×  %.2fs  no new edge yet  %d sweeps left)"),
+			                             MinSweepIntervalScale, StoredEffFullSweepInterval,
+			                             CacheFillSweepsRemaining);
 			Info.Color = FColor::Cyan;
 		}
 		else if (bBothStationary && bStationaryIdleMode) {
@@ -260,11 +260,10 @@ void USpatialAudioComponent::DrawSweepPacingDebugText(const uint64 Base, const U
 
 	const auto [PacingLabel, PacingColor] = ComputePacingDebugInfo(
 		bBothStationary, SweepScheduling.bStationaryIdleMode,
-		Settings.MovementCacheFillMultiplier, StoredEffFullSweepInterval,
+		Settings.MinSweepIntervalScale, StoredEffFullSweepInterval,
 		Settings.StationaryIdleMultiplier, CoverageFraction,
 		VelocityScaling.SmoothedSourceSpeed, VelocityScaling.SmoothedListenerSpeed,
-		SweepScheduling.CacheFillSweepsRemaining, CountCacheFillEdges(),
-		Settings.MovementCacheFillRequiredEdges);
+		IsCacheFillPending(), SweepScheduling.CacheFillSweepsRemaining);
 
 	const FString SweepStatus = bAsyncCastActive ? TEXT("CASTING") : TEXT("idle");
 

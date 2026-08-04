@@ -89,14 +89,16 @@ public:
 		meta = (ClampMin = "0.0"))
 	float VelocityScaleMaxSpeed = 400.f;
 
-	/** Minimum interval multiplier at VelocityScaleMaxSpeed. 0.5 = sweeps fire twice as often at
-	 *  full speed. 1.0 = off. */
+	/** Smallest factor the sweep interval is ever multiplied by, reached at VelocityScaleMaxSpeed
+	 *  while moving and applied whole while a post-movement cache fill is outstanding. The two
+	 *  states cannot overlap: a cache fill only runs once both ends are stationary. 0.5 = sweeps
+	 *  fire twice as often. 1.0 = off. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Performance",
 		meta = (ClampMin = "0.05", ClampMax = "1.0"))
-	float VelocityIntervalScale = 0.5f;
+	float MinSweepIntervalScale = 0.5f;
 
 	/** Factor on the sweep interval once a sweep has completed with both ends stationary. Takes
-	 *  precedence over MovementCacheFillMultiplier. 20 = sweeps fire 20x less often. */
+	 *  precedence over an outstanding cache fill. 20 = sweeps fire 20x less often. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Performance",
 		meta = (ClampMin = "1.0", ClampMax = "100.0"))
 	float StationaryIdleMultiplier = 20.0f;
@@ -117,23 +119,13 @@ public:
 		meta = (ClampMin = "0.0", ClampMax = "5.0"))
 	float MovementSweepCooldown = 0.3f;
 
-	/** After a movement-triggered sweep, keep sweeping at MovementCacheFillMultiplier speed for up
-	 *  to this many completed sweeps or until MovementCacheFillRequiredEdges new edges are cached.
-	 *  Covers arriving occluded somewhere new, where velocity scaling has already stopped. 0 = off. */
+	/** After a movement-triggered sweep, keep sweeping at MinSweepIntervalScale speed for up to this
+	 *  many completed sweeps, or until a new edge is cached. Edges re-confirmed at the same spot and
+	 *  relays do not count: the burst exists to survey the NEW position. Covers arriving occluded
+	 *  somewhere new, where velocity scaling has already stopped. 0 = off. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Performance",
 		meta = (ClampMin = "0", ClampMax = "20"))
 	int32 MovementCacheFillMaxSweeps = 0;
-
-	/** Newly-discovered cached edges that end the cache-fill burst early. Edges re-confirmed at the
-	 *  same spot and relays do not count: the burst exists to survey the NEW position. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Performance",
-		meta = (ClampMin = "1", ClampMax = "16"))
-	int32 MovementCacheFillRequiredEdges = 1;
-
-	/** Factor on the sweep interval while the post-movement cache fill runs. 0.25 = 4x more often. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Performance",
-		meta = (ClampMin = "0.05", ClampMax = "1.0"))
-	float MovementCacheFillMultiplier = 0.25f;
 
 
 	/** Shape of the distance priority falloff. 1 = linear; higher holds priority longer then drops
@@ -184,12 +176,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Occlusion")
 	FName OcclusionParamName = "Occlusion";
 
-
-	/** Seconds for occlusion to reach fully blocked when no rays reach the listener at all. Zero
-	 *  rays is definitive, so this can be short. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Occlusion",
-		meta = (ClampMin = "0.0", ClampMax = "10.0"))
-	float OcclusionFullBlockTime = 0.125f;
 
 	/** Seconds for occlusion to blend to its target when decreasing. 0 = instant. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Occlusion",
@@ -248,7 +234,7 @@ public:
 	float PreSweepOcclusionThreshold = 0.75f;
 
 	/** Minimum multiplier on OffsetLoSCheckInterval at VelocityScaleMaxSpeed. Separate from
-	 *  VelocityIntervalScale so cheap LoS sampling can accelerate without the expensive sweeps.
+	 *  MinSweepIntervalScale so cheap LoS sampling can accelerate without the expensive sweeps.
 	 *  0.25 = 4x as often at full speed. 1.0 = off. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Occlusion",
 		meta = (ClampMin = "0.05", ClampMax = "1.0"))

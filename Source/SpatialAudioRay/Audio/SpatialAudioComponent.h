@@ -235,7 +235,7 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Spatial Audio|Debug")
 	float CurrentPriority = 1.f;
 
-	/** Interval multiplier from velocity scaling [VelocityIntervalScale, 1.0]. 1.0 = stationary. */
+	/** Interval multiplier from velocity scaling [MinSweepIntervalScale, 1.0]. 1.0 = stationary. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Spatial Audio|Debug")
 	float CurrentVelocityIntervalMultiplier = 1.f;
 
@@ -255,7 +255,8 @@ private:
 	friend class USpatialAudioDebugSubsystem;
 
 	float ComputeEffectiveSweepInterval() const;
-	int32 CountCacheFillEdges() const;
+	bool HasNewEdgeSinceFillArm() const;
+	bool IsCacheFillPending() const;
 	FVector ComputeSteeringLead(const FVector& SmoothedVelocity, const USpatialAudioSettings& Settings) const;
 	void TickMovementSweepTrigger(float DeltaTime, bool bInRange, const APawn* Pawn);
 

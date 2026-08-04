@@ -402,9 +402,6 @@ float USpatialAudioComponent::UpdateDirectLoSConfirmationAndBlendSpeed(const flo
 	else if (TargetOcclusion > CurrentOcclusion) {
 		OccBlendSpeed = TimeToBlendSpeed(GetSettings().OcclusionAttackTime);
 	}
-	else if (TargetOcclusion >= 1.f) {
-		OccBlendSpeed = TimeToBlendSpeed(GetSettings().OcclusionFullBlockTime);
-	}
 	else {
 		OccBlendSpeed = TimeToBlendSpeed(GetSettings().OcclusionBlendTime);
 	}
@@ -544,9 +541,8 @@ float USpatialAudioComponent::ComputeEffectiveSweepInterval() const {
 			GetSettings().MaxFullSweepInterval, GetSettings().FullSweepInterval, CurrentPriority)
 		* FMath::Min(VelocityScaling.SweepMultiplier, VelocityScaling.EdgeMultiplier);
 
-	if (bBothStationary && SweepScheduling.CacheFillSweepsRemaining > 0
-		&& CountCacheFillEdges() < GetSettings().MovementCacheFillRequiredEdges) {
-		Interval *= GetSettings().MovementCacheFillMultiplier;
+	if (bBothStationary && IsCacheFillPending()) {
+		Interval *= GetSettings().MinSweepIntervalScale;
 	}
 	else if (bBothStationary && SweepScheduling.bStationaryIdleMode) {
 		Interval *= GetSettings().StationaryIdleMultiplier;
@@ -561,14 +557,17 @@ FVector USpatialAudioComponent::ComputeSteeringLead(const FVector& SmoothedVeloc
 	return SmoothedVelocity * (bRetro ? -Lead : Lead);
 }
 
-int32 USpatialAudioComponent::CountCacheFillEdges() const {
-	int32 Count = 0;
-	for (const FCachedEdgePoint& EP : CachedEdgePoints) {
-		if (EP.bNewSinceFillArm && !EP.bRelayed && !EP.bEvicting) {
-			++Count;
+bool USpatialAudioComponent::HasNewEdgeSinceFillArm() const {
+	for (const FCachedEdgePoint& Edge : CachedEdgePoints) {
+		if (Edge.bNewSinceFillArm && !Edge.bRelayed && !Edge.bEvicting) {
+			return true;
 		}
 	}
-	return Count;
+	return false;
+}
+
+bool USpatialAudioComponent::IsCacheFillPending() const {
+	return SweepScheduling.CacheFillSweepsRemaining > 0 && !HasNewEdgeSinceFillArm();
 }
 
 void USpatialAudioComponent::TickMovementSweepTrigger(const float DeltaTime, const bool bInRange, const APawn* Pawn) {
@@ -648,7 +647,7 @@ void USpatialAudioComponent::UpdateVelocityScaling(const float DeltaTime, const 
 	}
 
 	const float MaxSpeed = GetSettings().VelocityScaleMaxSpeed;
-	const float MinScale = FMath::Max(0.05f, GetSettings().VelocityIntervalScale);
+	const float MinScale = FMath::Max(0.05f, GetSettings().MinSweepIntervalScale);
 	const float VelocityFraction = MaxSpeed > 0.f
 		                               ? FMath::Clamp(VelocityScaling.SmoothedCombinedSpeed / MaxSpeed, 0.f, 1.f)
 		                               : 0.f;

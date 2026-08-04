@@ -224,8 +224,7 @@ void FAsyncCastManager::MergeStoredPathsIntoCache(USpatialAudioComponent& Compon
 
 void FAsyncCastManager::AdvanceIdleState(USpatialAudioComponent& Component,
                                          const USpatialAudioSettings& Settings) {
-	if (Component.SweepScheduling.CacheFillSweepsRemaining > 0
-		&& Component.CountCacheFillEdges() < Settings.MovementCacheFillRequiredEdges) {
+	if (Component.IsCacheFillPending()) {
 		--Component.SweepScheduling.CacheFillSweepsRemaining;
 	}
 	if (Component.VelocityScaling.IsStationary()) {
