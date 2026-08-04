@@ -62,8 +62,8 @@ every point where it changed direction. The waypoints matter at Stop 5.
 
 `FCachedEdgePoint` is a confirmed diffraction edge that survives across sweeps. Note `ShortestPath` and
 `ShortestPathSegmentVerified`, the polyline its path distance was measured along and which of its segments were actually
-traced clear, and `EmitterPoint()`, where the audible emitter sits after being walked back along that polyline. The
-comments on `bRelayed` and `bSourceSideEviction` will make sense after Stop 6.
+traced clear, and `EffectivePoint()`, where the audible emitter sits. The names `bRelayed` and `bSourceSideEviction`
+will make sense after Stop 6.
 
 `FVirtualVoice` and `FVirtualSlot` are worth separating in your head. A voice is the logical "sound coming from cluster
 X". A slot is a pooled `UAudioComponent` that renders it. Voices hand slots off to each other so a position can jump
@@ -79,7 +79,7 @@ system.
 
 Read the private section from `AsyncRays` down. Five groups are worth registering:
 
-Sweep state is `AsyncRays`, `bAsyncCastActive`, `Finalize`, `CycleAccum`, and `AsyncSourcePos` with `AsyncListenerPos`,
+Sweep state is `AsyncRays`, `bAsyncCastActive`, `Finalize`, and `AsyncSourcePos` with `AsyncListenerPos`,
 which are positions frozen at sweep start, because "current position" is ambiguous across a multi-frame sweep.
 
 The targets are `TargetOcclusion`, `TargetVirtualSourceLocation` and `TargetPathAttenuation`. Casts write `Target*`,

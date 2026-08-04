@@ -62,37 +62,6 @@ struct FCachedEdgePoint {
 
 	FVector EffectivePoint() const { return bRelayed ? RelayPoint : EdgePoint; }
 	float EffectivePathDist() const { return PathDist + RelayDist; }
-
-	FVector EmitterPoint(float PullbackDist) const {
-		FVector Current = EffectivePoint();
-		if (PullbackDist <= 0.f) {
-			return Current;
-		}
-		float Remaining = PullbackDist;
-		auto WalkToward = [&Current, &Remaining](const FVector& Target) -> bool
-		{
-			const float SegLen = FVector::Dist(Current, Target);
-			if (SegLen >= Remaining) {
-				Current += (Target - Current) * (Remaining / FMath::Max(SegLen, KINDA_SMALL_NUMBER));
-				return true;
-			}
-			Current = Target;
-			Remaining -= SegLen;
-			return false;
-		};
-		if (bRelayed && WalkToward(EdgePoint)) {
-			return Current;
-		}
-		for (int32 i = ShortestPath.Num() - 2; i >= 0; --i) {
-			if (!ShortestPathSegmentVerified.IsValidIndex(i) || !ShortestPathSegmentVerified[i]) {
-				break;
-			}
-			if (WalkToward(ShortestPath[i])) {
-				break;
-			}
-		}
-		return Current;
-	}
 };
 
 struct FEdgeCluster {

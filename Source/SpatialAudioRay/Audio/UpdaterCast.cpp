@@ -217,7 +217,7 @@ FUpdater::FEdgeWeightAccum FUpdater::AccumulateCachedEdgeWeights(USpatialAudioCo
 			* Ep.GeomDist / FMath::Max(Component.MaxRayDistance, 1.f));
 		const float PosW = SrcW / (1.f + Settings.ListenerDistanceFalloff
 			* FVector::Dist(ListenerPos, Ep.EffectivePoint()) / FMath::Max(Component.MaxRayDistance, 1.f));
-		Accum.WeightedPos += Ep.EmitterPoint(Settings.VirtualSourcePullbackDistance) * PosW;
+		Accum.WeightedPos += Ep.EffectivePoint() * PosW;
 		Accum.PosWeightTotal += PosW;
 		Accum.WeightedDistSum += Ep.EffectivePathDist() * SrcW;
 		Accum.SrcWeightTotal += SrcW;
@@ -292,7 +292,6 @@ void FUpdater::PerformUpdateRayCast(USpatialAudioComponent& Component, const USp
 		Math::ClusterEdgePoints(Component.CachedEdgePoints, Settings.VirtualVoiceClusterRadius,
 		                        Settings.CandidateDistanceFalloff, ListenerPos,
 		                        Settings.ListenerDistanceFalloff, Component.MaxRayDistance,
-		                        Settings.VirtualSourcePullbackDistance,
 		                        Settings.MaxVirtualVoices, VoiceClusters);
 	}
 	SyncVirtualVoicesToClusters(Component, VoiceClusters, Settings);

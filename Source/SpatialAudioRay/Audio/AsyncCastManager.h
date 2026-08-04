@@ -48,9 +48,6 @@ public:
 
 	static FRandomStream MakeBiasStream(const FVector& SourcePos, const FVector& ListenerPos, int32 RayIndex);
 
-	static void SelectCycleDirections(const TArray<FVector>& AllDirections, int32 StartIndex, int32 CycleCount,
-	                                  TArray<FVector>& OutDirections, TArray<int32>& OutIndices);
-
 	static int32 CountPrefixAnchorWaypoints(const TArray<FSpatialRayState::FBounceWaypoint>& Waypoints,
 	                                        float LoSCumulativeDistance);
 
@@ -61,10 +58,10 @@ public:
 private:
 	static bool TryDiscardStaleSweep(USpatialAudioComponent& Component, UWorld* World,
 	                                 const USpatialAudioSettings& Settings);
-	static void AccumulateRefineProbesIntoCycle(USpatialAudioComponent& Component, const UWorld* World,
-	                                            const USpatialAudioSettings& Settings);
+	static void AccumulateRefineProbes(USpatialAudioComponent& Component, const UWorld* World,
+	                                   const USpatialAudioSettings& Settings);
 	static void MergeStoredPathsIntoCache(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings);
-	static void AdvanceSweepCycleAndIdleState(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings);
+	static void AdvanceIdleState(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings);
 	static void PublishSweepAudioTargets(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings);
 
 	static float RankScore(const USpatialAudioComponent& Component, const USpatialAudioSettings& Settings,
@@ -91,9 +88,8 @@ private:
 	static int32 CountHeldEdges(const TArray<FCachedEdgePoint>& Points);
 	static int32 ApplyCacheFullnessRayScale(const USpatialAudioComponent& Component, int32 RayCount,
 	                                        const USpatialAudioSettings& Settings);
-	static void ResetCycleAccumulator(USpatialAudioComponent& Component);
 	static void SubmitSweepRays(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings, UWorld* World,
-	                            const FVector& ToListenerDir, float FullCastDistance, int32 CycleCount);
+	                            const FVector& ToListenerDir, float FullCastDistance);
 
 	static FVector ApplyLateralBandBias(const USpatialAudioComponent& Component, const FVector& Dir,
 	                                    const FVector& ToListenerDir, float FullCastDistance, int32 DirectionIndex,

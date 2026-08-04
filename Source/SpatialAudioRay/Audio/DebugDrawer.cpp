@@ -266,18 +266,7 @@ void USpatialAudioComponent::DrawSweepPacingDebugText(const uint64 Base, const U
 		SweepScheduling.CacheFillSweepsRemaining, CountCacheFillEdges(),
 		Settings.MovementCacheFillRequiredEdges);
 
-	const int32 CycleCount = FMath::Max(1, Settings.FullSweepCycleCount);
-	const float SubInterval = StoredEffFullSweepInterval / CycleCount;
-
-	FString SweepStatus;
-	if (bAsyncCastActive) {
-		SweepStatus = CycleCount > 1
-			              ? FString::Printf(TEXT("CASTING sub %d/%d"), StaggeredCycleIndex + 1, CycleCount)
-			              : TEXT("CASTING");
-	}
-	else {
-		SweepStatus = TEXT("idle");
-	}
+	const FString SweepStatus = bAsyncCastActive ? TEXT("CASTING") : TEXT("idle");
 
 	const bool bPreSweepBand = IsPreSweepActive();
 	const bool bSweepSuspended = bHasDirectLoS && !bPreSweepBand && !bAsyncCastActive;
@@ -286,16 +275,16 @@ void USpatialAudioComponent::DrawSweepPacingDebugText(const uint64 Base, const U
 		SweepLine = FString::Printf(TEXT("  Sweep  SUSPENDED (confirming LoS loss %d/%d)  │  timer=%.2f/%.2fs"),
 		                            NoLoSSampleStreak,
 		                            ResolveRingRotationSteps(),
-		                            TimeSinceFullCast, SubInterval);
+		                            TimeSinceFullCast, StoredEffFullSweepInterval);
 	}
 	else if (bSweepSuspended) {
 		SweepLine = FString::Printf(TEXT("  Sweep  SUSPENDED (clear LoS)  │  timer=%.2f/%.2fs"),
-		                            TimeSinceFullCast, SubInterval);
+		                            TimeSinceFullCast, StoredEffFullSweepInterval);
 	}
 	else {
 		SweepLine = FString::Printf(TEXT("  Sweep  %s%s  │  timer=%.2f/%.2fs  [%s]"),
 		                            bPreSweepBand ? TEXT("PRE-SWEEP ") : TEXT(""),
-		                            *PacingLabel, TimeSinceFullCast, SubInterval, *SweepStatus);
+		                            *PacingLabel, TimeSinceFullCast, StoredEffFullSweepInterval, *SweepStatus);
 	}
 	GEngine->AddOnScreenDebugMessage(Base + 6, 0.f, bSweepSuspended ? FColor::Green : PacingColor, SweepLine);
 }

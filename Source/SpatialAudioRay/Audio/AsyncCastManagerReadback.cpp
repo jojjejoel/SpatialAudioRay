@@ -41,13 +41,11 @@ bool FAsyncCastManager::TryDiscardStaleSweep(USpatialAudioComponent& Component, 
 	Component.Finalize.bPending = false;
 	Component.Finalize.RefineProbes.Reset();
 	Component.StoredLoSPaths.Reset();
-	Component.StaggeredCycleIndex =
-		(Component.StaggeredCycleIndex + 1) % FMath::Max(1, Settings.FullSweepCycleCount);
 	return true;
 }
 
-void FAsyncCastManager::AccumulateRefineProbesIntoCycle(USpatialAudioComponent& Component, const UWorld* World,
-                                                        const USpatialAudioSettings& Settings) {
+void FAsyncCastManager::AccumulateRefineProbes(USpatialAudioComponent& Component, const UWorld* World,
+                                               const USpatialAudioSettings& Settings) {
 	FVector WeightedPosSum = Component.Finalize.WeightedPosSum;
 	float TotalWeight = Component.Finalize.TotalWeight;
 	float WeightedDistSum = Component.Finalize.WeightedDistSum;
@@ -82,12 +80,9 @@ void FAsyncCastManager::AccumulateRefineProbesIntoCycle(USpatialAudioComponent& 
 	Component.Finalize.bPending = false;
 	Component.Finalize.RefineProbes.Reset();
 
-	Component.CycleAccum.RaysReached += Component.Finalize.RaysReached;
-	Component.CycleAccum.MinLoSDist = FMath::Min(Component.CycleAccum.MinLoSDist, Component.Finalize.MinLoSDist);
-	Component.CycleAccum.WeightedPos += WeightedPosSum;
-	Component.CycleAccum.TotalWeight += TotalWeight;
-	Component.CycleAccum.WeightedDist += WeightedDistSum;
-	Component.CycleAccum.bDirectLoSFound |= Component.Finalize.bDirectLoSFound;
+	Component.Finalize.WeightedPosSum = WeightedPosSum;
+	Component.Finalize.TotalWeight = TotalWeight;
+	Component.Finalize.WeightedDistSum = WeightedDistSum;
 }
 
 float FAsyncCastManager::RankScore(const USpatialAudioComponent& Component, const USpatialAudioSettings& Settings,
@@ -227,19 +222,13 @@ void FAsyncCastManager::MergeStoredPathsIntoCache(USpatialAudioComponent& Compon
 	Component.StoredLoSPaths.Reset();
 }
 
-void FAsyncCastManager::AdvanceSweepCycleAndIdleState(USpatialAudioComponent& Component,
-                                                      const USpatialAudioSettings& Settings) {
-	const int32 CycleCount = FMath::Max(1, Settings.FullSweepCycleCount);
-	Component.StaggeredCycleIndex = (Component.StaggeredCycleIndex + 1) % CycleCount;
-	Component.CycleAccum.Index = 0;
-
-	const bool bSweepSequenceComplete = Component.StaggeredCycleIndex == 0;
-
-	if (bSweepSequenceComplete && Component.SweepScheduling.CacheFillSweepsRemaining > 0
+void FAsyncCastManager::AdvanceIdleState(USpatialAudioComponent& Component,
+                                         const USpatialAudioSettings& Settings) {
+	if (Component.SweepScheduling.CacheFillSweepsRemaining > 0
 		&& Component.CountCacheFillEdges() < Settings.MovementCacheFillRequiredEdges) {
 		--Component.SweepScheduling.CacheFillSweepsRemaining;
 	}
-	if (bSweepSequenceComplete && Component.VelocityScaling.IsStationary()) {
+	if (Component.VelocityScaling.IsStationary()) {
 		Component.SweepScheduling.bStationaryIdleMode = true;
 		Component.SweepScheduling.StationaryIdleSourcePos = Component.AsyncSourcePos;
 		Component.SweepScheduling.StationaryIdleListenerPos = Component.AsyncListenerPos;
@@ -249,12 +238,12 @@ void FAsyncCastManager::AdvanceSweepCycleAndIdleState(USpatialAudioComponent& Co
 void FAsyncCastManager::PublishSweepAudioTargets(USpatialAudioComponent& Component,
                                                  const USpatialAudioSettings& Settings) {
 	FRayAccumulatorInput AccumIn;
-	AccumIn.RaysReached = Component.CycleAccum.RaysReached;
-	AccumIn.MinLoSDist = Component.CycleAccum.MinLoSDist;
-	AccumIn.WeightedPos = Component.CycleAccum.WeightedPos;
-	AccumIn.TotalWeight = Component.CycleAccum.TotalWeight;
+	AccumIn.RaysReached = Component.Finalize.RaysReached;
+	AccumIn.MinLoSDist = Component.Finalize.MinLoSDist;
+	AccumIn.WeightedPos = Component.Finalize.WeightedPosSum;
+	AccumIn.TotalWeight = Component.Finalize.TotalWeight;
 	AccumIn.MaxRayDistance = Component.MaxRayDistance;
-	AccumIn.bDirectLoSFound = Component.CycleAccum.bDirectLoSFound;
+	AccumIn.bDirectLoSFound = Component.Finalize.bDirectLoSFound;
 	const FRayAccumulatorOutput AccumOut = ComputeAudioFromRayAccumulator(AccumIn);
 
 	const float Leg1Geom = AccumOut.bHasVirtualSource
@@ -267,7 +256,7 @@ void FAsyncCastManager::PublishSweepAudioTargets(USpatialAudioComponent& Compone
 		return;
 	}
 
-	const float AvgSourceToEdgeDist = Component.CycleAccum.WeightedDist / Component.CycleAccum.TotalWeight;
+	const float AvgSourceToEdgeDist = Component.Finalize.WeightedDistSum / Component.Finalize.TotalWeight;
 	Component.CurrentSourceToVirtualDistance = FMath::FInterpTo(
 		Component.CurrentSourceToVirtualDistance, AvgSourceToEdgeDist,
 		Component.GetWorld()->GetDeltaSeconds(), 10.0f);
@@ -282,16 +271,16 @@ void FAsyncCastManager::ReadbackFinalizeBatch(USpatialAudioComponent& Component,
 		return;
 	}
 
-	AccumulateRefineProbesIntoCycle(Component, World, Settings);
+	AccumulateRefineProbes(Component, World, Settings);
 
 	if (Component.StoredLoSPaths.Num() > 0) {
 		MergeStoredPathsIntoCache(Component, Settings);
 	}
 
-	AdvanceSweepCycleAndIdleState(Component, Settings);
+	AdvanceIdleState(Component, Settings);
 	PublishSweepAudioTargets(Component, Settings);
 
-	if (Component.CycleAccum.TotalWeight > 0.f && Component.bDrawDebugRays) {
+	if (Component.Finalize.TotalWeight > 0.f && Component.bDrawDebugRays) {
 		TArray<FVector>& Path = Component.LoSDiffractionPaths.AddDefaulted_GetRef();
 		Path.Add(Component.AsyncSourcePos);
 		Path.Add(Component.TargetVirtualSourceLocation);
@@ -299,9 +288,9 @@ void FAsyncCastManager::ReadbackFinalizeBatch(USpatialAudioComponent& Component,
 	}
 
 	if (!Component.bPreSweepCast) {
-		Component.bHasDirectLoS = Component.CycleAccum.bDirectLoSFound;
+		Component.bHasDirectLoS = Component.Finalize.bDirectLoSFound;
 	}
-	if (Component.CycleAccum.bDirectLoSFound) {
+	if (Component.Finalize.bDirectLoSFound) {
 		Component.TargetOcclusion = 0.f;
 		Component.CachedEdgePoints.Empty();
 	}

@@ -269,7 +269,7 @@ private:
 	}
 
 	void TickAsyncPipeline(const USpatialAudioSettings& Settings);
-	void TickNormalSweepDispatch(float DeltaTime, bool bInRange, float SubInterval);
+	void TickNormalSweepDispatch(float DeltaTime, bool bInRange, float SweepInterval);
 	float UpdateDirectLoSConfirmationAndBlendSpeed(float DeltaTime);
 	void SmoothTowardTargets(float DeltaTime, float OccBlendSpeed, bool bConfirmedDirectLoS);
 	void UpdateTraceDiagnostics(float DeltaTime);
@@ -341,19 +341,6 @@ private:
 	FVector AsyncSteeringSourcePos = FVector::ZeroVector;
 	FVector AsyncSteeringListenerPos = FVector::ZeroVector;
 	int32 AsyncTotalRays = 0;
-
-	struct FCycleAccumulator {
-		int32 Index = 0;
-		int32 RaysReached = 0;
-		float MinLoSDist = TNumericLimits<float>::Max();
-		FVector WeightedPos = FVector::ZeroVector;
-		float TotalWeight = 0.f;
-		float WeightedDist = 0.f;
-		bool bDirectLoSFound = false;
-	};
-
-	FCycleAccumulator CycleAccum;
-	int32 StaggeredCycleIndex = 0;
 
 	float TimeSinceFullCast = 0.f;
 	float StoredEffFullSweepInterval = 0.5f;

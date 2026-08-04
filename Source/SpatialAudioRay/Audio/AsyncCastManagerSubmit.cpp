@@ -119,28 +119,6 @@ void FAsyncCastManager::ResolveSweepRayBudget(USpatialAudioComponent& Component,
 	Component.TraceDiag.SweepAsyncRayAccum = 0;
 }
 
-void FAsyncCastManager::ResetCycleAccumulator(USpatialAudioComponent& Component) {
-	Component.CycleAccum.RaysReached = 0;
-	Component.CycleAccum.MinLoSDist = TNumericLimits<float>::Max();
-	Component.CycleAccum.WeightedPos = FVector::ZeroVector;
-	Component.CycleAccum.TotalWeight = 0.f;
-	Component.CycleAccum.WeightedDist = 0.f;
-	Component.CycleAccum.bDirectLoSFound = false;
-}
-
-void FAsyncCastManager::SelectCycleDirections(const TArray<FVector>& AllDirections, int32 StartIndex, int32 CycleCount,
-                                              TArray<FVector>& OutDirections, TArray<int32>& OutIndices) {
-	const int32 Stride = FMath::Max(CycleCount, 1);
-	const int32 Expected = AllDirections.Num() / Stride + 1;
-	OutDirections.Reset(Expected);
-	OutIndices.Reset(Expected);
-
-	for (int32 i = StartIndex; i < AllDirections.Num(); i += Stride) {
-		OutDirections.Add(AllDirections[i]);
-		OutIndices.Add(i);
-	}
-}
-
 FRandomStream FAsyncCastManager::MakeBiasStream(const FVector& SourcePos, const FVector& ListenerPos, int32 RayIndex) {
 	uint32 Seed = HashCombine(GetTypeHash(SourcePos), GetTypeHash(ListenerPos));
 	Seed = HashCombine(Seed, static_cast<uint32>(RayIndex));
@@ -171,12 +149,8 @@ FVector FAsyncCastManager::ApplyLateralBandBias(const USpatialAudioComponent& Co
 }
 
 void FAsyncCastManager::SubmitSweepRays(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings,
-                                        UWorld* World, const FVector& ToListenerDir, float FullCastDistance,
-                                        int32 CycleCount) {
-	const TArray<FVector> AllDirections = Math::GenerateFibonacciDirections(Component.AsyncTotalRays, ToListenerDir);
-	TArray<FVector> Directions;
-	TArray<int32> DirectionIndices;
-	SelectCycleDirections(AllDirections, Component.CycleAccum.Index, CycleCount, Directions, DirectionIndices);
+                                        UWorld* World, const FVector& ToListenerDir, float FullCastDistance) {
+	const TArray<FVector> Directions = Math::GenerateFibonacciDirections(Component.AsyncTotalRays, ToListenerDir);
 
 	const bool bBias = FullCastDistance > 0.f;
 
@@ -185,7 +159,7 @@ void FAsyncCastManager::SubmitSweepRays(USpatialAudioComponent& Component, const
 	for (int32 i = 0; i < Directions.Num(); ++i) {
 		FVector Dir = Directions[i];
 		if (bBias) {
-			Dir = ApplyLateralBandBias(Component, Dir, ToListenerDir, FullCastDistance, DirectionIndices[i], Settings);
+			Dir = ApplyLateralBandBias(Component, Dir, ToListenerDir, FullCastDistance, i, Settings);
 		}
 
 		FSpatialRayState& Ray = Component.AsyncRays.AddDefaulted_GetRef();
@@ -213,8 +187,6 @@ void FAsyncCastManager::StartAsyncFullCast(USpatialAudioComponent& Component, co
 		return;
 	}
 
-	const int32 CycleCount = FMath::Max(1, Settings.FullSweepCycleCount);
-
 	CaptureSweepPositions(Component, Settings, *Owner, *PC->GetPawn());
 
 	if (FVector::DistSquared(Component.AsyncSourcePos, Component.AsyncListenerPos) > FMath::Square(
@@ -225,7 +197,6 @@ void FAsyncCastManager::StartAsyncFullCast(USpatialAudioComponent& Component, co
 	}
 
 	ResolveSweepRayBudget(Component, Settings);
-	ResetCycleAccumulator(Component);
 
 	Component.LoSDiffractionPaths.Reset();
 	Component.StoredLoSPaths.Reset();
@@ -236,7 +207,7 @@ void FAsyncCastManager::StartAsyncFullCast(USpatialAudioComponent& Component, co
 		                              FullCastDistance
 		                              : FVector::ForwardVector;
 
-	SubmitSweepRays(Component, Settings, World, ToListenerDir, FullCastDistance, CycleCount);
+	SubmitSweepRays(Component, Settings, World, ToListenerDir, FullCastDistance);
 
 	Component.TraceDiag.SweepAsyncRayAccum += Component.AsyncRays.Num();
 	Component.bAsyncCastActive = true;

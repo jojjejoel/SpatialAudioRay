@@ -268,66 +268,6 @@ bool FMidAirTurn_ResultIsNormalized::RunTest(const FString& Parameters) {
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FSelectCycleDirections_PartitionsTheSet,
-	"SpatialAudioRay.Async.SelectCycleDirections.PartitionsTheSet",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
-)
-
-bool FSelectCycleDirections_PartitionsTheSet::RunTest(const FString& Parameters) {
-	constexpr int32 Total = 10;
-	constexpr int32 CycleCount = 3;
-
-	TArray<FVector> All;
-	for (int32 i = 0; i < Total; ++i) {
-		All.Add(FVector(static_cast<double>(i), 0.0, 0.0));
-	}
-
-	TArray<int32> Seen;
-	for (int32 Cycle = 0; Cycle < CycleCount; ++Cycle) {
-		TArray<FVector> Dirs;
-		TArray<int32> Indices;
-		FAsyncCastManager::SelectCycleDirections(All, Cycle, CycleCount, Dirs, Indices);
-
-		TestEqual(TEXT("Every selected direction carries its index"), Dirs.Num(), Indices.Num());
-		for (int32 i = 0; i < Dirs.Num(); ++i) {
-			TestTrue(TEXT("Index refers to the direction it was taken from"),
-			         Dirs[i].Equals(All[Indices[i]]));
-			Seen.Add(Indices[i]);
-		}
-	}
-
-	Seen.Sort();
-	TestEqual(TEXT("The cycles together cover the whole set"), Seen.Num(), Total);
-	for (int32 i = 0; i < Seen.Num(); ++i) {
-		TestEqual(TEXT("Each direction is cast exactly once across the sequence"), Seen[i], i);
-	}
-
-	return true;
-}
-
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FSelectCycleDirections_ResetsOutputs,
-	"SpatialAudioRay.Async.SelectCycleDirections.ResetsOutputs",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
-)
-
-bool FSelectCycleDirections_ResetsOutputs::RunTest(const FString& Parameters) {
-	const TArray<FVector> All = {FVector::ForwardVector, FVector::RightVector};
-
-	TArray<FVector> Dirs = {FVector::UpVector, FVector::UpVector, FVector::UpVector};
-	TArray<int32> Indices = {99, 99, 99};
-	FAsyncCastManager::SelectCycleDirections(All, 0, 1, Dirs, Indices);
-
-	TestEqual(TEXT("Leftover directions from a previous cycle are cleared"), Dirs.Num(), 2);
-	TestEqual(TEXT("Leftover indices from a previous cycle are cleared"), Indices.Num(), 2);
-
-	FAsyncCastManager::SelectCycleDirections(All, 5, 1, Dirs, Indices);
-	TestEqual(TEXT("A start index past the end selects nothing"), Dirs.Num(), 0);
-
-	return true;
-}
-
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FCountPrefixAnchorWaypoints_StopsAtTheEdge,
 	"SpatialAudioRay.Async.CountPrefixAnchorWaypoints.StopsAtTheEdge",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter

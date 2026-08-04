@@ -132,7 +132,6 @@ namespace Math {
 	inline void ClusterEdgePoints(const TArray<FCachedEdgePoint>& Points, float ClusterRadius,
 	                              float CandidateDistanceFalloff, const FVector& ListenerPos,
 	                              float ListenerDistanceFalloff, float MaxRayDistance,
-	                              float EmitterPullback,
 	                              int32 MaxClusters, TArray<FEdgeCluster>& OutClusters) {
 		OutClusters.Reset();
 		if (MaxClusters <= 0 || ClusterRadius <= 0.f) {
@@ -141,7 +140,6 @@ namespace Math {
 
 		struct FAccum {
 			FVector PosSum = FVector::ZeroVector;
-			FVector EmitterPosSum = FVector::ZeroVector;
 			float PathSum = 0.f;
 			float SrcWeight = 0.f;
 			float RankWeight = 0.f;
@@ -173,7 +171,6 @@ namespace Math {
 			}
 			FAccum& A = Accums[Best];
 			A.PosSum += EpPos * RankW;
-			A.EmitterPosSum += Ep.EmitterPoint(EmitterPullback) * RankW;
 			A.PathSum += Ep.EffectivePathDist() * SrcW;
 			A.SrcWeight += SrcW;
 			A.RankWeight += RankW;
@@ -188,7 +185,6 @@ namespace Math {
 					if (FVector::DistSquared(Accums[i].Centroid, Accums[j].Centroid)
 						<= FMath::Square(ClusterRadius)) {
 						Accums[i].PosSum += Accums[j].PosSum;
-						Accums[i].EmitterPosSum += Accums[j].EmitterPosSum;
 						Accums[i].PathSum += Accums[j].PathSum;
 						Accums[i].SrcWeight += Accums[j].SrcWeight;
 						Accums[i].RankWeight += Accums[j].RankWeight;
@@ -206,7 +202,7 @@ namespace Math {
 		OutClusters.Reserve(Count);
 		for (int32 i = 0; i < Count; ++i) {
 			FEdgeCluster Cluster;
-			Cluster.Centroid = Accums[i].EmitterPosSum / Accums[i].RankWeight;
+			Cluster.Centroid = Accums[i].Centroid;
 			Cluster.PathDist = Accums[i].PathSum / Accums[i].SrcWeight;
 			Cluster.TotalWeight = Accums[i].SrcWeight;
 			OutClusters.Add(Cluster);

@@ -595,7 +595,7 @@ bool FClusterEdgePoints_TightGroup_YieldsSingleCluster::RunTest(const FString& P
 	TArray<FEdgeCluster> Clusters;
 	Math::ClusterEdgePoints(Points, /*ClusterRadius=*/250.f, /*Falloff=*/0.f,
 	                        /*ListenerPos=*/FVector::ZeroVector, /*ListenerFalloff=*/0.f,
-	                        /*MaxRayDistance=*/5000.f, /*EmitterPullback=*/0.f, /*MaxClusters=*/4, Clusters);
+	                        /*MaxRayDistance=*/5000.f, /*MaxClusters=*/4, Clusters);
 
 	TestEqual(TEXT("Points within the radius form one cluster"), Clusters.Num(), 1);
 	if (Clusters.Num() == 1) {
@@ -618,7 +618,7 @@ bool FClusterEdgePoints_SeparatedGroups_YieldTwoClusters::RunTest(const FString&
 	Points.Add(MakeEdgePoint(FVector(2000, 0, 0), /*PathDist=*/1000.f));
 
 	TArray<FEdgeCluster> Clusters;
-	Math::ClusterEdgePoints(Points, 250.f, 0.f, FVector::ZeroVector, 0.f, 5000.f, /*EmitterPullback=*/0.f, 4, Clusters);
+	Math::ClusterEdgePoints(Points, 250.f, 0.f, FVector::ZeroVector, 0.f, 5000.f, 4, Clusters);
 
 	TestEqual(TEXT("Groups beyond the radius stay separate clusters"), Clusters.Num(), 2);
 	if (Clusters.Num() == 2) {
@@ -644,7 +644,7 @@ bool FClusterEdgePoints_DriftedCentroids_AreMerged::RunTest(const FString& Param
 	Points.Add(MakeEdgePoint(FVector(120, 0, 0)));
 
 	TArray<FEdgeCluster> Clusters;
-	Math::ClusterEdgePoints(Points, 250.f, 0.f, FVector::ZeroVector, 0.f, 5000.f, /*EmitterPullback=*/0.f, 4, Clusters);
+	Math::ClusterEdgePoints(Points, 250.f, 0.f, FVector::ZeroVector, 0.f, 5000.f, 4, Clusters);
 
 	TestEqual(TEXT("Clusters whose centroids drift within the radius merge into one"),
 	          Clusters.Num(), 1);
@@ -671,7 +671,7 @@ bool FClusterEdgePoints_MaxClusters_KeepsHeaviest::RunTest(const FString& Parame
 	Points.Add(MakeEdgePoint(FVector(0, 5000, 0)));
 
 	TArray<FEdgeCluster> Clusters;
-	Math::ClusterEdgePoints(Points, 250.f, 0.f, FVector::ZeroVector, 0.f, 10000.f, /*EmitterPullback=*/0.f,
+	Math::ClusterEdgePoints(Points, 250.f, 0.f, FVector::ZeroVector, 0.f, 10000.f,
 	                        /*MaxClusters=*/2, Clusters);
 
 	TestEqual(TEXT("Output truncates to MaxClusters"), Clusters.Num(), 2);
@@ -697,7 +697,7 @@ bool FClusterEdgePoints_ListenerFalloff_RanksWithoutTouchingGain::RunTest(const 
 
 	TArray<FEdgeCluster> Clusters;
 	Math::ClusterEdgePoints(Points, 250.f, 0.f, /*ListenerPos=*/FVector(2000, 0, 0),
-	                        /*ListenerFalloff=*/5.f, 5000.f, /*EmitterPullback=*/0.f, 4, Clusters);
+	                        /*ListenerFalloff=*/5.f, 5000.f, 4, Clusters);
 
 	TestEqual(TEXT("Both points form clusters"), Clusters.Num(), 2);
 	if (Clusters.Num() == 2) {
@@ -724,7 +724,7 @@ bool FClusterEdgePoints_EvictionAlpha_ScalesWeight::RunTest(const FString& Param
 	Points.Add(MakeEdgePoint(FVector(4000, 0, 0), 500.f, 400.f, /*EvictionAlpha=*/0.f));
 
 	TArray<FEdgeCluster> Clusters;
-	Math::ClusterEdgePoints(Points, 250.f, 0.f, FVector::ZeroVector, 0.f, 5000.f, /*EmitterPullback=*/0.f, 4, Clusters);
+	Math::ClusterEdgePoints(Points, 250.f, 0.f, FVector::ZeroVector, 0.f, 5000.f, 4, Clusters);
 
 	TestEqual(TEXT("Zero-alpha point creates no cluster"), Clusters.Num(), 2);
 	if (Clusters.Num() == 2) {
@@ -736,126 +736,6 @@ bool FClusterEdgePoints_EvictionAlpha_ScalesWeight::RunTest(const FString& Param
 	return true;
 }
 
-
-namespace {
-	FCachedEdgePoint MakePathedEdgePoint() {
-		FCachedEdgePoint Ep;
-		Ep.EdgePoint = FVector(1000, 500, 0);
-		Ep.ShortestPath = {FVector::ZeroVector, FVector(1000, 0, 0), FVector(1000, 500, 0)};
-		Ep.ShortestPathSegmentVerified = {true, true};
-		return Ep;
-	}
-}
-
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FEmitterPoint_ZeroPullback_IsEffectivePoint,
-	"SpatialAudioRay.Math.EmitterPoint.ZeroPullback_IsEffectivePoint",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
-)
-
-bool FEmitterPoint_ZeroPullback_IsEffectivePoint::RunTest(const FString& Parameters) {
-	const FCachedEdgePoint Ep = MakePathedEdgePoint();
-	TestTrue(TEXT("Pullback 0 sits exactly at the edge point"),
-	         Ep.EmitterPoint(0.f).Equals(Ep.EdgePoint, 0.01f));
-	FCachedEdgePoint NoPath;
-	NoPath.EdgePoint = FVector(300, 0, 0);
-	TestTrue(TEXT("Empty polyline stays at the edge point regardless of pullback"),
-	         NoPath.EmitterPoint(500.f).Equals(NoPath.EdgePoint, 0.01f));
-	return true;
-}
-
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FEmitterPoint_Pullback_WalksAlongPath,
-	"SpatialAudioRay.Math.EmitterPoint.Pullback_WalksAlongPath",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
-)
-
-bool FEmitterPoint_Pullback_WalksAlongPath::RunTest(const FString& Parameters) {
-	const FCachedEdgePoint Ep = MakePathedEdgePoint();
-	TestTrue(TEXT("Pullback within the last segment stays on it"),
-	         Ep.EmitterPoint(200.f).Equals(FVector(1000, 300, 0), 0.01f));
-	TestTrue(TEXT("Pullback spanning a corner continues along the next segment"),
-	         Ep.EmitterPoint(700.f).Equals(FVector(800, 0, 0), 0.01f));
-	TestTrue(TEXT("Pullback beyond the whole path clamps at the source"),
-	         Ep.EmitterPoint(99999.f).Equals(FVector::ZeroVector, 0.01f));
-	return true;
-}
-
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FEmitterPoint_Pullback_StopsAtVerifiedBoundary,
-	"SpatialAudioRay.Math.EmitterPoint.Pullback_StopsAtVerifiedBoundary",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
-)
-
-bool FEmitterPoint_Pullback_StopsAtVerifiedBoundary::RunTest(const FString& Parameters) {
-	FCachedEdgePoint Ep = MakePathedEdgePoint();
-	Ep.ShortestPathSegmentVerified = {false, true};
-	TestTrue(TEXT("Walk clamps at the first verified anchor"),
-	         Ep.EmitterPoint(99999.f).Equals(FVector(1000, 0, 0), 0.01f));
-	return true;
-}
-
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FEmitterPoint_Pullback_DoesNotResumePastGap,
-	"SpatialAudioRay.Math.EmitterPoint.Pullback_DoesNotResumePastGap",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
-)
-
-bool FEmitterPoint_Pullback_DoesNotResumePastGap::RunTest(const FString& Parameters) {
-	FCachedEdgePoint Ep;
-	Ep.EdgePoint = FVector(1000, 500, 0);
-	Ep.ShortestPath = {
-		FVector::ZeroVector, FVector(500, 0, 0), FVector(1000, 0, 0), FVector(1000, 500, 0)
-	};
-	Ep.ShortestPathSegmentVerified = {true, false, true};
-	TestTrue(TEXT("Walk clamps at the gap, not the far verified stretch"),
-	         Ep.EmitterPoint(99999.f).Equals(FVector(1000, 0, 0), 0.01f));
-	return true;
-}
-
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FEmitterPoint_Relayed_WalksRelayLegFirst,
-	"SpatialAudioRay.Math.EmitterPoint.Relayed_WalksRelayLegFirst",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
-)
-
-bool FEmitterPoint_Relayed_WalksRelayLegFirst::RunTest(const FString& Parameters) {
-	FCachedEdgePoint Ep = MakePathedEdgePoint();
-	Ep.bRelayed = true;
-	Ep.RelayPoint = FVector(1000, 1000, 0);
-	TestTrue(TEXT("Small pullback stays on the relay leg"),
-	         Ep.EmitterPoint(200.f).Equals(FVector(1000, 800, 0), 0.01f));
-	TestTrue(TEXT("Larger pullback continues past the edge down the polyline"),
-	         Ep.EmitterPoint(700.f).Equals(FVector(1000, 300, 0), 0.01f));
-	return true;
-}
-
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FClusterEdgePoints_EmitterPullback_MovesCentroidOnly,
-	"SpatialAudioRay.Math.ClusterEdgePoints.EmitterPullback_MovesCentroidOnly",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
-)
-
-bool FClusterEdgePoints_EmitterPullback_MovesCentroidOnly::RunTest(const FString& Parameters) {
-	TArray<FCachedEdgePoint> Points;
-	FCachedEdgePoint Ep = MakePathedEdgePoint();
-	Ep.PathDist = 1500.f;
-	Ep.GeomDist = 1200.f;
-	Points.Add(Ep);
-
-	TArray<FEdgeCluster> Clusters;
-	Math::ClusterEdgePoints(Points, 250.f, 0.f, FVector::ZeroVector, 0.f, 5000.f,
-	                        /*EmitterPullback=*/200.f, 4, Clusters);
-
-	TestEqual(TEXT("One cluster forms"), Clusters.Num(), 1);
-	if (Clusters.Num() == 1) {
-		TestTrue(TEXT("Centroid is the pulled-back point on the arrival path"),
-		         Clusters[0].Centroid.Equals(FVector(1000, 300, 0), 0.01f));
-		TestTrue(TEXT("PathDist is untouched by the pullback"),
-		         FMath::IsNearlyEqual(Clusters[0].PathDist, 1500.f, 0.1f));
-	}
-	return true;
-}
 
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(

@@ -20,13 +20,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Ray Casting")
 	int32 FullSweepRayCount = 64;
 
-	/** Divide the full sweep ray count across this many consecutive async casts. Each cast fires a
-	 *  strided slice of the sphere, spreading trace cost at the price of proportionally longer
-	 *  total sweep latency. 1 = all rays in one cast. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Ray Casting",
-		meta = (ClampMin = "1", ClampMax = "8"))
-	int32 FullSweepCycleCount = 1;
-
 	/** Maximum number of wall bounces a ray can take before being discarded. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Ray Casting",
 		meta = (ClampMin = "0", ClampMax = "16"))
@@ -309,13 +302,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Virtual Source",
 		meta = (ClampMin = "0.0", ClampMax = "10.0"))
 	float AudioSourceMoveTime = 0.125f;
-
-	/** How far behind each cached edge the virtual emitter sits (cm), walked back along that edge's
-	 *  verified arrival path. An absolute distance keeps the depth independent of source distance
-	 *  and always lands in free space on the acoustic path. 0 = emitter at the edge point. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Virtual Source",
-		meta = (ClampMin = "0.0", ClampMax = "10000.0"))
-	float VirtualSourcePullbackDistance = 0.f;
 
 	/** Seconds for the virtual source to follow its target. 0 = instant. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Virtual Source",

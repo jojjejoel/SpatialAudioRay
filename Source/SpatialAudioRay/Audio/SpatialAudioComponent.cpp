@@ -356,7 +356,7 @@ void USpatialAudioComponent::TickAsyncPipeline(const USpatialAudioSettings& Sett
 }
 
 void USpatialAudioComponent::TickNormalSweepDispatch(const float DeltaTime, const bool bInRange,
-                                                     const float SubInterval) {
+                                                     const float SweepInterval) {
 	CurrentTraceBucket = ETraceBucket::Occlusion;
 	FUpdater::TickDirectLoSSampling(*this, DeltaTime, GetSettings());
 	CurrentTraceBucket = ETraceBucket::Sweep;
@@ -364,7 +364,7 @@ void USpatialAudioComponent::TickNormalSweepDispatch(const float DeltaTime, cons
 	const bool bPreSweep = IsPreSweepActive();
 	if (!bAsyncCastActive && !Finalize.bPending && bInRange &&
 		(bPreSweep || HasConfirmedLoSLoss()) &&
-		(TimeSinceFullCast >= SubInterval || SweepScheduling.bMovementRequested)) {
+		(TimeSinceFullCast >= SweepInterval || SweepScheduling.bMovementRequested)) {
 		FUpdater::PerformUpdateRayCast(*this, GetSettings());
 		if (!bHasDirectLoS || bPreSweep) {
 			const bool bMovementTriggered = SweepScheduling.bMovementRequested;
@@ -372,15 +372,13 @@ void USpatialAudioComponent::TickNormalSweepDispatch(const float DeltaTime, cons
 			SweepScheduling.bMovementRequested = false;
 			SweepScheduling.bStationaryIdleMode = false;
 			if (bMovementTriggered) {
-				StaggeredCycleIndex = 0;
 				SweepScheduling.CacheFillSweepsRemaining = GetSettings().MovementCacheFillMaxSweeps;
 				for (FCachedEdgePoint& EP : CachedEdgePoints) {
 					EP.bNewSinceFillArm = false;
 				}
 			}
-			CycleAccum.Index = StaggeredCycleIndex;
 			TraceDiag.SweepStartTime = GetWorld()->GetTimeSeconds();
-			TraceDiag.LastSweepInterval = SubInterval;
+			TraceDiag.LastSweepInterval = SweepInterval;
 			FAsyncCastManager::StartAsyncFullCast(*this, GetSettings());
 		}
 	}
@@ -520,9 +518,7 @@ void USpatialAudioComponent::TickComponent(const float DeltaTime, const ELevelTi
 	TickMovementSweepTrigger(DeltaTime, bInRange, TickPawn);
 
 	const bool bPrevHadDirectLoS = bHasDirectLoS;
-	const int32 CycleCount = FMath::Max(1, GetSettings().FullSweepCycleCount);
-	const float SubInterval = EffFullSweepInterval / CycleCount;
-	TickNormalSweepDispatch(DeltaTime, bInRange, SubInterval);
+	TickNormalSweepDispatch(DeltaTime, bInRange, EffFullSweepInterval);
 
 	if (bPrevHadDirectLoS && !bHasDirectLoS) {
 		SweepScheduling.bMovementRequested = true;
