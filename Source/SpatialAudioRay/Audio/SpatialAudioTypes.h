@@ -73,7 +73,6 @@ struct FEdgeCluster {
 struct FVirtualVoice {
 	bool bActive = false;
 	FVector TargetPosition = FVector::ZeroVector;
-	FVector SmoothedPosition = FVector::ZeroVector;
 	float PathDist = 0.f;
 	float TargetPathAttenuation = 0.f;
 	float CurrentPathAttenuation = 0.f;

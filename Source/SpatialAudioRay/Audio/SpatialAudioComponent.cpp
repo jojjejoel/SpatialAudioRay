@@ -54,7 +54,6 @@ void USpatialAudioComponent::BeginPlay() {
 
 	if (AActor* Owner = GetOwner()) {
 		TargetVirtualSourceLocation = Owner->GetActorLocation();
-		CurrentVirtualSourceLocation = Owner->GetActorLocation();
 		TraceQueryParams.AddIgnoredActor(Owner);
 	}
 	TraceQueryParams.bTraceComplex = false;
@@ -408,22 +407,10 @@ float USpatialAudioComponent::UpdateDirectLoSConfirmationAndBlendSpeed(const flo
 	return OccBlendSpeed;
 }
 
-void USpatialAudioComponent::SmoothTowardTargets(const float DeltaTime, const float OccBlendSpeed,
-                                                 const bool bConfirmedDirectLoS) {
+void USpatialAudioComponent::SmoothTowardTargets(const float DeltaTime, const float OccBlendSpeed) {
 	CurrentOcclusion = FMath::FInterpConstantTo(CurrentOcclusion, TargetOcclusion, DeltaTime, OccBlendSpeed);
 	CurrentPathAttenuation = FMath::FInterpTo(CurrentPathAttenuation, TargetPathAttenuation, DeltaTime,
 	                                          TimeToBlendSpeed(GetSettings().PathAttenuationBlendTime));
-	const float EffVirtualBlendSpeed = bConfirmedDirectLoS
-		                                   ? TimeToBlendSpeed(GetSettings().VirtualSourceSnapTime)
-		                                   : TimeToBlendSpeed(GetSettings().VirtualSourceMoveTime);
-	CurrentVirtualSourceLocation = FMath::VInterpTo(CurrentVirtualSourceLocation, TargetVirtualSourceLocation,
-	                                                DeltaTime, EffVirtualBlendSpeed);
-	for (FVirtualVoice& Voice : VirtualVoices) {
-		if (Voice.bActive) {
-			Voice.SmoothedPosition = FMath::VInterpTo(Voice.SmoothedPosition, Voice.TargetPosition,
-			                                          DeltaTime, EffVirtualBlendSpeed);
-		}
-	}
 }
 
 void USpatialAudioComponent::UpdateTraceDiagnostics(const float DeltaTime) {
@@ -522,7 +509,7 @@ void USpatialAudioComponent::TickComponent(const float DeltaTime, const ELevelTi
 
 	const float OccBlendSpeed = UpdateDirectLoSConfirmationAndBlendSpeed(DeltaTime);
 	const bool bConfirmedDirectLoS = DirectLoSConfirmedDuration >= GetSettings().DirectLoSConfirmTime;
-	SmoothTowardTargets(DeltaTime, OccBlendSpeed, bConfirmedDirectLoS);
+	SmoothTowardTargets(DeltaTime, OccBlendSpeed);
 
 	UpdateTraceDiagnostics(DeltaTime);
 

@@ -240,11 +240,6 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Spatial Audio|Debug")
 	float CurrentVelocityIntervalMultiplier = 1.f;
 
-	/** Smoothed virtual source position in world space. Diagnostic: emitters are placed per voice
-	 *  from their own cluster centroid, so nothing audible reads this. */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Spatial Audio|Virtual Source")
-	FVector CurrentVirtualSourceLocation = FVector::ZeroVector;
-
 	/** Slewed virtual crossfade gate [0-1], chasing ComputeVirtualCrossfadeTarget. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Spatial Audio|Virtual Source")
 	float CurrentVirtualCrossfade = 0.f;
@@ -276,7 +271,7 @@ private:
 	void TickAsyncPipeline(const USpatialAudioSettings& Settings);
 	void TickNormalSweepDispatch(float DeltaTime, bool bInRange, float SweepInterval);
 	float UpdateDirectLoSConfirmationAndBlendSpeed(float DeltaTime);
-	void SmoothTowardTargets(float DeltaTime, float OccBlendSpeed, bool bConfirmedDirectLoS);
+	void SmoothTowardTargets(float DeltaTime, float OccBlendSpeed);
 	void UpdateTraceDiagnostics(float DeltaTime);
 
 	bool TraceLine(const UWorld* World, FHitResult& Hit, const FVector& Start, const FVector& End) const;

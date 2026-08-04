@@ -57,14 +57,13 @@ private:
 	struct FVoiceBlendRates {
 		float FadeStep = 1.f;
 		float ParamBlendSpeed = 1000.f;
-		float MoveSpeed = 1000.f;
 	};
 
 	static FVoiceBlendRates ComputeVoiceBlendRates(const USpatialAudioSettings& Settings, float DeltaTime);
 	static void TickFadingOutSlot(const USpatialAudioComponent& Component, FVirtualSlot& Slot, UAudioComponent* VC,
 	                              float FadeStep, float VirtualCrossfade, FVirtualVoiceUpdateResult& OutResult);
 	static void MoveSlotToVoice(FVirtualSlot& Slot, UAudioComponent* VC, const FVirtualVoice& Voice,
-	                            const FVector& ActorPos, float DeltaTime, float MoveSpeed);
+	                            const FVector& ActorPos);
 	static void ApplyVoiceAudioParams(const USpatialAudioComponent& Component, const USpatialAudioSettings& Settings,
 	                                  FVirtualSlot& Slot, FVirtualVoice& Voice, UAudioComponent* VC,
 	                                  const FVector& ActorPos, float DeltaTime, float ParamBlendSpeed,

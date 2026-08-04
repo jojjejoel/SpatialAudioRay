@@ -58,7 +58,6 @@ FUpdater::FVoiceBlendRates FUpdater::ComputeVoiceBlendRates(const USpatialAudioS
 	Rates.ParamBlendSpeed = Settings.PathAttenuationBlendTime > 0.f
 		                        ? 1.f / Settings.PathAttenuationBlendTime
 		                        : 1000.f;
-	Rates.MoveSpeed = Settings.AudioSourceMoveTime > 0.f ? 1.f / Settings.AudioSourceMoveTime : 1000.f;
 	return Rates;
 }
 
@@ -78,15 +77,9 @@ void FUpdater::TickFadingOutSlot(const USpatialAudioComponent& Component, FVirtu
 }
 
 void FUpdater::MoveSlotToVoice(FVirtualSlot& Slot, UAudioComponent* VC, const FVirtualVoice& Voice,
-                               const FVector& ActorPos, const float DeltaTime, const float MoveSpeed) {
-	const FVector TargetOffset = Voice.SmoothedPosition - ActorPos;
-	if (!Slot.bOffsetInit) {
-		Slot.WorldOffset = TargetOffset;
-		Slot.bOffsetInit = true;
-	}
-	else {
-		Slot.WorldOffset = FMath::VInterpTo(Slot.WorldOffset, TargetOffset, DeltaTime, MoveSpeed);
-	}
+                               const FVector& ActorPos) {
+	Slot.WorldOffset = Voice.TargetPosition - ActorPos;
+	Slot.bOffsetInit = true;
 	VC->SetWorldLocation(ActorPos + Slot.WorldOffset);
 }
 
@@ -154,7 +147,7 @@ FUpdater::FVirtualVoiceUpdateResult FUpdater::UpdateVirtualVoiceSlots(USpatialAu
 		}
 
 		FVirtualVoice& Voice = Component.VirtualVoices[Slot.VoiceIndex];
-		MoveSlotToVoice(Slot, VC, Voice, ActorPos, DeltaTime, Rates.MoveSpeed);
+		MoveSlotToVoice(Slot, VC, Voice, ActorPos);
 		ApplyVoiceAudioParams(Component, Settings, Slot, Voice, VC, ActorPos, DeltaTime,
 		                      Rates.ParamBlendSpeed, VirtualCrossfade, Result);
 	}

@@ -331,14 +331,14 @@ void FUpdater::MatchVoicesToDesired(const TArray<FVirtualVoice>& Voices, TArray<
 		int32 VoiceIdx;
 	};
 	TArray<FMatchPair> Pairs;
-	const float GlideMaxSq = FMath::Square(Settings.VirtualVoiceGlideMaxDistance);
+	const float MaxMoveSq = FMath::Square(Settings.VirtualVoiceMaxMoveDistance);
 	for (int32 D = 0; D < Desired.Num(); ++D) {
 		for (int32 V = 0; V < Voices.Num(); ++V) {
 			if (!Voices[V].bActive) {
 				continue;
 			}
 			const float DistSq = FVector::DistSquared(Voices[V].TargetPosition, Desired[D].Position);
-			if (DistSq <= GlideMaxSq) {
+			if (DistSq <= MaxMoveSq) {
 				Pairs.Add({DistSq, D, V});
 			}
 		}
@@ -392,7 +392,6 @@ void FUpdater::AssignDesiredToVoices(USpatialAudioComponent& Component, TArray<F
 			FVirtualVoice& NewVoice = Voices[V];
 			NewVoice = FVirtualVoice{};
 			NewVoice.bActive = true;
-			NewVoice.SmoothedPosition = D.Position;
 			NewVoice.SlotIndex = SlotIdx;
 
 			FVirtualSlot& Slot = Component.VirtualSlots[SlotIdx];

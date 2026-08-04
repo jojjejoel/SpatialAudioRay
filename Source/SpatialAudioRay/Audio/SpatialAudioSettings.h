@@ -278,21 +278,6 @@ public:
 		meta = (ClampMin = "0.0", ClampMax = "10.0"))
 	float PathAttenuationBlendTime = 0.2f;
 
-	/** Seconds for the AudioComponent to follow its target position, smoothing position jumps. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Virtual Source",
-		meta = (ClampMin = "0.0", ClampMax = "10.0"))
-	float AudioSourceMoveTime = 0.125f;
-
-	/** Seconds for the virtual source to follow its target. 0 = instant. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Virtual Source",
-		meta = (ClampMin = "0.0", ClampMax = "10.0"))
-	float VirtualSourceMoveTime = 0.25f;
-
-	/** Seconds for the virtual source to snap back to the actual source on direct LoS. 0 = instant. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Virtual Source",
-		meta = (ClampMin = "0.0", ClampMax = "10.0"))
-	float VirtualSourceSnapTime = 0.05f;
-
 	/** Seconds for the virtual crossfade gate to ramp from silent to fully engaged once every offset
 	 *  point loses line-of-sight. 0 = instant. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Virtual Source",
@@ -350,11 +335,12 @@ public:
 		meta = (ClampMin = "1", ClampMax = "8"))
 	int32 MaxVirtualVoices = 3;
 
-	/** Maximum distance (cm) a voice's target may move per update while still gliding the same
-	 *  audio component. Larger jumps cross-fade instead of sweeping audibly through space. */
+	/** Maximum distance (cm) a voice may move in one update while keeping its audio component.
+	 *  Beyond it the old voice fades out where it stands and a new one fades in at the new
+	 *  position, over VirtualVoiceHandoffFadeTime. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Virtual Source",
 		meta = (ClampMin = "0.0", ClampMax = "5000.0"))
-	float VirtualVoiceGlideMaxDistance = 150.f;
+	float VirtualVoiceMaxMoveDistance = 150.f;
 
 	/** Seconds for a voice's fade envelope on position handoffs and appear/disappear. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Virtual Source",
