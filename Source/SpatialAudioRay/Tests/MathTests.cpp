@@ -632,6 +632,57 @@ bool FClusterEdgePoints_SeparatedGroups_YieldTwoClusters::RunTest(const FString&
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FClusterEdgePoints_PointToCluster_MapsEachEdgeToItsVoice,
+	"SpatialAudioRay.Math.ClusterEdgePoints.PointToCluster_MapsEachEdgeToItsVoice",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FClusterEdgePoints_PointToCluster_MapsEachEdgeToItsVoice::RunTest(const FString& Parameters) {
+	TArray<FCachedEdgePoint> Points;
+	Points.Add(MakeEdgePoint(FVector(0, 0, 0), /*PathDist=*/400.f));
+	Points.Add(MakeEdgePoint(FVector(50, 0, 0), /*PathDist=*/600.f));
+	Points.Add(MakeEdgePoint(FVector(2000, 0, 0), /*PathDist=*/1000.f));
+
+	TArray<FEdgeCluster> Clusters;
+	TArray<int32> PointToCluster;
+	Math::ClusterEdgePoints(Points, 250.f, 0.f, FVector::ZeroVector, 0.f, 5000.f, 4, Clusters,
+	                        &PointToCluster);
+
+	TestEqual(TEXT("One entry per input edge"), PointToCluster.Num(), 3);
+	TestEqual(TEXT("Grouped edges share the heaviest cluster"), PointToCluster[0], 0);
+	TestEqual(TEXT("Both members map to the same cluster"), PointToCluster[1], 0);
+	TestEqual(TEXT("The isolated edge maps to its own cluster"), PointToCluster[2], 1);
+
+	Math::ClusterEdgePoints(Points, 250.f, 0.f, FVector::ZeroVector, 0.f, 5000.f, /*MaxClusters=*/1,
+	                        Clusters, &PointToCluster);
+	TestEqual(TEXT("An edge whose cluster lost its voice slot maps to nothing"),
+	          PointToCluster[2], static_cast<int32>(INDEX_NONE));
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FClusterEdgePoints_ZeroRadius_GivesOneClusterPerPoint,
+	"SpatialAudioRay.Math.ClusterEdgePoints.ZeroRadius_GivesOneClusterPerPoint",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FClusterEdgePoints_ZeroRadius_GivesOneClusterPerPoint::RunTest(const FString& Parameters) {
+	TArray<FCachedEdgePoint> Points;
+	Points.Add(MakeEdgePoint(FVector(0, 0, 0), /*PathDist=*/400.f));
+	Points.Add(MakeEdgePoint(FVector(50, 0, 0), /*PathDist=*/600.f));
+
+	TArray<FEdgeCluster> Clusters;
+	Math::ClusterEdgePoints(Points, /*ClusterRadius=*/0.f, 0.f, FVector::ZeroVector, 0.f, 5000.f, 4, Clusters);
+
+	TestEqual(TEXT("A virtual emitter with no full-volume zone groups nothing"), Clusters.Num(), 2);
+
+	Math::ClusterEdgePoints(Points, /*ClusterRadius=*/0.f, 0.f, FVector::ZeroVector, 0.f, 5000.f, 1, Clusters);
+	TestEqual(TEXT("MaxVirtualVoices still caps the result"), Clusters.Num(), 1);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FClusterEdgePoints_DriftedCentroids_AreMerged,
 	"SpatialAudioRay.Math.ClusterEdgePoints.DriftedCentroids_AreMerged",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter

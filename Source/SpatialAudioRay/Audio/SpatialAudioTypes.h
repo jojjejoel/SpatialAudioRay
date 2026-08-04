@@ -80,6 +80,7 @@ struct FVirtualVoice {
 	float TargetWeightShare = 1.f;
 	float CurrentWeightShare = 1.f;
 	int32 SlotIndex = INDEX_NONE;
+	int32 ClusterIndex = INDEX_NONE;
 };
 
 struct FVirtualSlot {

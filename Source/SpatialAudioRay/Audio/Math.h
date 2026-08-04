@@ -129,14 +129,21 @@ namespace Math {
 		return FMath::Lerp(DirectDist, FMath::Max(PathDist, DirectDist), Alpha);
 	}
 
+	constexpr int32 PointAwaitingCluster = -2;
+
 	inline void ClusterEdgePoints(const TArray<FCachedEdgePoint>& Points, float ClusterRadius,
 	                              float CandidateDistanceFalloff, const FVector& ListenerPos,
 	                              float ListenerDistanceFalloff, float MaxRayDistance,
-	                              int32 MaxClusters, TArray<FEdgeCluster>& OutClusters) {
+	                              int32 MaxClusters, TArray<FEdgeCluster>& OutClusters,
+	                              TArray<int32>* OutPointToCluster = nullptr) {
 		OutClusters.Reset();
-		if (MaxClusters <= 0 || ClusterRadius <= 0.f) {
+		if (OutPointToCluster) {
+			OutPointToCluster->Init(INDEX_NONE, Points.Num());
+		}
+		if (MaxClusters <= 0) {
 			return;
 		}
+		const float GroupRadiusSq = FMath::Square(FMath::Max(ClusterRadius, 0.f));
 
 		struct FAccum {
 			FVector PosSum = FVector::ZeroVector;
@@ -147,7 +154,8 @@ namespace Math {
 		};
 		TArray<FAccum> Accums;
 
-		for (const FCachedEdgePoint& Ep : Points) {
+		for (int32 PointIdx = 0; PointIdx < Points.Num(); ++PointIdx) {
+			const FCachedEdgePoint& Ep = Points[PointIdx];
 			const FVector EpPos = Ep.EffectivePoint();
 			const float SrcW = Ep.EvictionAlpha / (1.f + CandidateDistanceFalloff
 				* Ep.GeomDist / FMath::Max(MaxRayDistance, 1.f));
@@ -156,9 +164,12 @@ namespace Math {
 			if (RankW <= KINDA_SMALL_NUMBER) {
 				continue;
 			}
+			if (OutPointToCluster) {
+				(*OutPointToCluster)[PointIdx] = PointAwaitingCluster;
+			}
 
 			int32 Best = INDEX_NONE;
-			float BestDistSq = FMath::Square(ClusterRadius);
+			float BestDistSq = GroupRadiusSq;
 			for (int32 i = 0; i < Accums.Num(); ++i) {
 				const float DistSq = FVector::DistSquared(Accums[i].Centroid, EpPos);
 				if (DistSq <= BestDistSq) {
@@ -182,8 +193,7 @@ namespace Math {
 			bMerged = false;
 			for (int32 i = 0; i < Accums.Num() && !bMerged; ++i) {
 				for (int32 j = i + 1; j < Accums.Num() && !bMerged; ++j) {
-					if (FVector::DistSquared(Accums[i].Centroid, Accums[j].Centroid)
-						<= FMath::Square(ClusterRadius)) {
+					if (FVector::DistSquared(Accums[i].Centroid, Accums[j].Centroid) <= GroupRadiusSq) {
 						Accums[i].PosSum += Accums[j].PosSum;
 						Accums[i].PathSum += Accums[j].PathSum;
 						Accums[i].SrcWeight += Accums[j].SrcWeight;
@@ -206,6 +216,26 @@ namespace Math {
 			Cluster.PathDist = Accums[i].PathSum / Accums[i].SrcWeight;
 			Cluster.TotalWeight = Accums[i].SrcWeight;
 			OutClusters.Add(Cluster);
+		}
+
+		if (!OutPointToCluster) {
+			return;
+		}
+		for (int32 PointIdx = 0; PointIdx < Points.Num(); ++PointIdx) {
+			if ((*OutPointToCluster)[PointIdx] != PointAwaitingCluster) {
+				continue;
+			}
+			const FVector EpPos = Points[PointIdx].EffectivePoint();
+			int32 Best = INDEX_NONE;
+			float BestDistSq = GroupRadiusSq;
+			for (int32 i = 0; i < OutClusters.Num(); ++i) {
+				const float DistSq = FVector::DistSquared(OutClusters[i].Centroid, EpPos);
+				if (DistSq <= BestDistSq) {
+					BestDistSq = DistSq;
+					Best = i;
+				}
+			}
+			(*OutPointToCluster)[PointIdx] = Best;
 		}
 	}
 

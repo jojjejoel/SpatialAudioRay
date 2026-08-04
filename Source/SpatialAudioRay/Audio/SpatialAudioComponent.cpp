@@ -557,6 +557,10 @@ FVector USpatialAudioComponent::ComputeSteeringLead(const FVector& SmoothedVeloc
 	return SmoothedVelocity * (bRetro ? -Lead : Lead);
 }
 
+float USpatialAudioComponent::GetVoiceClusterRadius() const {
+	return bHasVirtualAttenuationSettings ? VirtualAttenuationSettings.AttenuationShapeExtents.X : 0.f;
+}
+
 bool USpatialAudioComponent::HasNewEdgeSinceFillArm() const {
 	for (const FCachedEdgePoint& Edge : CachedEdgePoints) {
 		if (Edge.bNewSinceFillArm && !Edge.bRelayed && !Edge.bEvicting) {

@@ -116,11 +116,29 @@ void USpatialAudioComponent::DrawVirtualSourceDebug() {
 	}
 }
 
+int32 USpatialAudioComponent::FindSlotDrawingEdge(const int32 EdgeIndex) const {
+	if (!EdgeClusterIndices.IsValidIndex(EdgeIndex)) {
+		return INDEX_NONE;
+	}
+	const int32 ClusterIdx = EdgeClusterIndices[EdgeIndex];
+	if (ClusterIdx == INDEX_NONE) {
+		return INDEX_NONE;
+	}
+	for (const FVirtualVoice& Voice : VirtualVoices) {
+		if (Voice.bActive && Voice.ClusterIndex == ClusterIdx) {
+			return Voice.SlotIndex;
+		}
+	}
+	return INDEX_NONE;
+}
+
 void USpatialAudioComponent::DrawEdgePointsDebug() {
 	if (!bShowEdgePoints) {
 		return;
 	}
-	for (const FCachedEdgePoint& EP : CachedEdgePoints) {
+	const FVector ActorLoc = GetOwner()->GetActorLocation();
+	for (int32 EdgeIdx = 0; EdgeIdx < CachedEdgePoints.Num(); ++EdgeIdx) {
+		const FCachedEdgePoint& EP = CachedEdgePoints[EdgeIdx];
 		DrawDebugSphere(GetWorld(), EP.EdgePoint, 18.f, 8, FColor::Yellow, false, -1.f, SDPG_Foreground, 2.f);
 		if (EP.bRelayed) {
 			DrawDebugSphere(GetWorld(), EP.RelayPoint, 14.f, 8, FColor::Yellow, false,
@@ -128,6 +146,13 @@ void USpatialAudioComponent::DrawEdgePointsDebug() {
 			DrawDebugLine(GetWorld(), EP.EdgePoint, EP.RelayPoint, FColor::Yellow, false,
 			              GetSettings().DebugLineDuration, 0, 1.f);
 		}
+
+		const int32 SlotIdx = FindSlotDrawingEdge(EdgeIdx);
+		if (!VirtualSlots.IsValidIndex(SlotIdx) || !VirtualSlots[SlotIdx].bOffsetInit) {
+			continue;
+		}
+		DrawDebugLine(GetWorld(), EP.EffectivePoint(), ActorLoc + VirtualSlots[SlotIdx].WorldOffset,
+		              VirtualVoiceDebugColors[SlotIdx % NumVirtualVoiceDebugColors], false, -1.f, 0, 2.f);
 	}
 }
 

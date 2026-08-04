@@ -350,12 +350,6 @@ public:
 		meta = (ClampMin = "1", ClampMax = "8"))
 	int32 MaxVirtualVoices = 3;
 
-	/** Distance (cm) within which cached edge points group into one cluster and voice. Clusters
-	 *  whose centroids end up closer than this are merged. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Virtual Source",
-		meta = (ClampMin = "10.0", ClampMax = "5000.0"))
-	float VirtualVoiceClusterRadius = 250.f;
-
 	/** Maximum distance (cm) a voice's target may move per update while still gliding the same
 	 *  audio component. Larger jumps cross-fade instead of sweeping audibly through space. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Virtual Source",

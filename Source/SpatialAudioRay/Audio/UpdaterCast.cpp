@@ -289,10 +289,14 @@ void FUpdater::PerformUpdateRayCast(USpatialAudioComponent& Component, const USp
 
 	TArray<FEdgeCluster> VoiceClusters;
 	if (bVirtualPathActive) {
-		Math::ClusterEdgePoints(Component.CachedEdgePoints, Settings.VirtualVoiceClusterRadius,
+		Math::ClusterEdgePoints(Component.CachedEdgePoints, Component.GetVoiceClusterRadius(),
 		                        Settings.CandidateDistanceFalloff, ListenerPos,
 		                        Settings.ListenerDistanceFalloff, Component.MaxRayDistance,
-		                        Settings.MaxVirtualVoices, VoiceClusters);
+		                        Settings.MaxVirtualVoices, VoiceClusters,
+		                        &Component.EdgeClusterIndices);
+	}
+	else {
+		Component.EdgeClusterIndices.Reset();
 	}
 	SyncVirtualVoicesToClusters(Component, VoiceClusters, Settings);
 }
@@ -367,7 +371,8 @@ void FUpdater::FadeOutUnmatchedVoices(USpatialAudioComponent& Component, TArray<
 
 void FUpdater::AssignDesiredToVoices(USpatialAudioComponent& Component, TArray<FVirtualVoice>& Voices,
                                      TArray<FDesired>& Desired) {
-	for (FDesired& D : Desired) {
+	for (int32 ClusterIdx = 0; ClusterIdx < Desired.Num(); ++ClusterIdx) {
+		FDesired& D = Desired[ClusterIdx];
 		int32 V = D.MatchedVoice;
 		if (V == INDEX_NONE) {
 			for (int32 i = 0; i < Voices.Num(); ++i) {
@@ -399,6 +404,7 @@ void FUpdater::AssignDesiredToVoices(USpatialAudioComponent& Component, TArray<F
 		}
 
 		FVirtualVoice& Voice = Voices[V];
+		Voice.ClusterIndex = ClusterIdx;
 		Voice.TargetPosition = D.Position;
 		Voice.PathDist = D.PathDist;
 		Voice.TargetWeightShare = D.WeightShare;

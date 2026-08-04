@@ -151,7 +151,8 @@ public:
 	bool bShowDiffractionPaths = false;
 
 	/** Edge detection results: green per-ray edge spheres, yellow recheck lines, LoS state
-	 *  spheres, and the yellow cached-edge spheres with their relay legs. */
+	 *  spheres, the yellow cached-edge spheres with their relay legs, and a line from each edge
+	 *  to the virtual emitter it feeds, in that emitter's colour. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Debug",
 		meta = (EditCondition = "bDrawDebugRays"))
 	bool bShowEdgePoints = false;
@@ -255,6 +256,9 @@ private:
 	friend class USpatialAudioDebugSubsystem;
 
 	float ComputeEffectiveSweepInterval() const;
+	/** Openings closer together than the virtual emitter's full-volume radius are one sound, so an
+	 *  emitter's inner sphere covers exactly the edges its voice represents. 0 = one voice per edge. */
+	float GetVoiceClusterRadius() const;
 	bool HasNewEdgeSinceFillArm() const;
 	bool IsCacheFillPending() const;
 	FVector ComputeSteeringLead(const FVector& SmoothedVelocity, const USpatialAudioSettings& Settings) const;
@@ -288,6 +292,7 @@ private:
 
 	void DrawSteeringPredictionDebug(const USpatialAudioSettings& Settings) const;
 	void DrawVirtualSourceDebug();
+	int32 FindSlotDrawingEdge(int32 EdgeIndex) const;
 	void DrawEdgePointsDebug();
 	void DrawShortestPathsDebug();
 	void DrawDiffractionPathsDebug();
@@ -437,6 +442,10 @@ private:
 	TArray<FStoredLoSPath> StoredLoSPaths;
 
 	TArray<FCachedEdgePoint> CachedEdgePoints;
+
+	/** Parallel to CachedEdgePoints: which voice cluster each edge feeds, INDEX_NONE if none.
+	 *  Debug only, and refreshed by clustering, so it can lag the cache by a frame. */
+	TArray<int32> EdgeClusterIndices;
 
 	TArray<FCachedEdgePoint> PendingValidCachedPoints;
 
