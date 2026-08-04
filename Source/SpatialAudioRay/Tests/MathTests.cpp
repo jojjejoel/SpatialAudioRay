@@ -488,54 +488,36 @@ bool FVirtualCrossfadeTarget_StationarySuppression_RampGovernsAlone::RunTest(con
 
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FVirtualCrossfadeSlew_FadeIn_RampsAtFadeInRate,
-	"SpatialAudioRay.Math.VirtualAudio.CrossfadeSlew.FadeIn_RampsAtFadeInRate",
+	FVirtualCrossfadeSlew_FadeIn_RampsAtFadeRate,
+	"SpatialAudioRay.Math.VirtualAudio.CrossfadeSlew.FadeIn_RampsAtFadeRate",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
-bool FVirtualCrossfadeSlew_FadeIn_RampsAtFadeInRate::RunTest(const FString& Parameters) {
-	const float FadeInTime = 0.5f;
+bool FVirtualCrossfadeSlew_FadeIn_RampsAtFadeRate::RunTest(const FString& Parameters) {
+	const float FadeTime = 0.5f;
 	const float DeltaTime = 0.1f;
 	const float Result = Math::ComputeVirtualCrossfadeSlew(
-		/*CurrentCrossfade=*/0.f, /*TargetCrossfade=*/1.f, FadeInTime, /*FadeOutTime=*/0.5f, DeltaTime);
+		/*CurrentCrossfade=*/0.f, /*TargetCrossfade=*/1.f, FadeTime, DeltaTime);
 
-	const float Expected = DeltaTime / FadeInTime;
-	TestTrue(TEXT("Fades in linearly at the fade-in rate"), FMath::IsNearlyEqual(Result, Expected, 0.0001f));
+	const float Expected = DeltaTime / FadeTime;
+	TestTrue(TEXT("Fades in linearly at the fade rate"), FMath::IsNearlyEqual(Result, Expected, 0.0001f));
 	return true;
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FVirtualCrossfadeSlew_FadeOut_RampsAtFadeOutRate,
-	"SpatialAudioRay.Math.VirtualAudio.CrossfadeSlew.FadeOut_RampsAtFadeOutRate",
+	FVirtualCrossfadeSlew_FadeOut_RampsAtFadeRate,
+	"SpatialAudioRay.Math.VirtualAudio.CrossfadeSlew.FadeOut_RampsAtFadeRate",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
-bool FVirtualCrossfadeSlew_FadeOut_RampsAtFadeOutRate::RunTest(const FString& Parameters) {
-	const float FadeOutTime = 0.5f;
+bool FVirtualCrossfadeSlew_FadeOut_RampsAtFadeRate::RunTest(const FString& Parameters) {
+	const float FadeTime = 0.5f;
 	const float DeltaTime = 0.1f;
 	const float Result = Math::ComputeVirtualCrossfadeSlew(
-		/*CurrentCrossfade=*/1.f, /*TargetCrossfade=*/0.f, /*FadeInTime=*/0.5f, FadeOutTime, DeltaTime);
+		/*CurrentCrossfade=*/1.f, /*TargetCrossfade=*/0.f, FadeTime, DeltaTime);
 
-	const float Expected = 1.f - DeltaTime / FadeOutTime;
-	TestTrue(TEXT("Fades out linearly at the fade-out rate"), FMath::IsNearlyEqual(Result, Expected, 0.0001f));
-	return true;
-}
-
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FVirtualCrossfadeSlew_AsymmetricTimes_UseCorrectDirection,
-	"SpatialAudioRay.Math.VirtualAudio.CrossfadeSlew.AsymmetricTimes_UseCorrectDirection",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
-)
-
-bool FVirtualCrossfadeSlew_AsymmetricTimes_UseCorrectDirection::RunTest(const FString& Parameters) {
-	const float DeltaTime = 0.05f;
-	const float FadingIn = Math::ComputeVirtualCrossfadeSlew(0.f, 1.f, /*FadeInTime=*/0.1f, /*FadeOutTime=*/2.0f,
-	                                                         DeltaTime);
-	const float FadingOut = Math::ComputeVirtualCrossfadeSlew(1.f, 0.f, /*FadeInTime=*/0.1f, /*FadeOutTime=*/2.0f,
-	                                                          DeltaTime);
-
-	TestTrue(TEXT("Fast fade-in moves further per step than slow fade-out"),
-	         FadingIn > (1.f - FadingOut));
+	const float Expected = 1.f - DeltaTime / FadeTime;
+	TestTrue(TEXT("Fades out linearly at the fade rate"), FMath::IsNearlyEqual(Result, Expected, 0.0001f));
 	return true;
 }
 
@@ -547,8 +529,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FVirtualCrossfadeSlew_ZeroFadeTime_IsInstant::RunTest(const FString& Parameters) {
 	const float Result = Math::ComputeVirtualCrossfadeSlew(
-		/*CurrentCrossfade=*/0.f, /*TargetCrossfade=*/1.f, /*FadeInTime=*/0.f, /*FadeOutTime=*/0.f, /*DeltaTime=*/
-		                     0.016f);
+		/*CurrentCrossfade=*/0.f, /*TargetCrossfade=*/1.f, /*FadeTime=*/0.f, /*DeltaTime=*/0.016f);
 	TestEqual(TEXT("Zero fade time snaps instantly to target"), Result, 1.f);
 	return true;
 }
@@ -561,8 +542,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FVirtualCrossfadeSlew_DoesNotOvershoot::RunTest(const FString& Parameters) {
 	const float Result = Math::ComputeVirtualCrossfadeSlew(
-		/*CurrentCrossfade=*/0.f, /*TargetCrossfade=*/1.f, /*FadeInTime=*/0.1f, /*FadeOutTime=*/0.1f, /*DeltaTime=*/
-		                     5.f);
+		/*CurrentCrossfade=*/0.f, /*TargetCrossfade=*/1.f, /*FadeTime=*/0.1f, /*DeltaTime=*/5.f);
 	TestEqual(TEXT("Large DeltaTime clamps at target rather than overshooting"), Result, 1.f);
 	return true;
 }

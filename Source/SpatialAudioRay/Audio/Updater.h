@@ -75,9 +75,7 @@ private:
 	                               const USpatialAudioSettings& Settings,
 	                               float DeltaTime, const FVector& SourcePos, const FVector& ListenerPos,
 	                               int32 RotationSteps);
-	static void UpdateSmoothedOcclusionFromSamples(USpatialAudioComponent& Component,
-	                                               const USpatialAudioSettings& Settings,
-	                                               float DeltaTime, int32 RotationSteps);
+	static void UpdateOcclusionFromSamples(USpatialAudioComponent& Component, int32 RotationSteps);
 
 	struct FEdgeWeightAccum {
 		FVector WeightedPos = FVector::ZeroVector;

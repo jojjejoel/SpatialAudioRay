@@ -270,8 +270,8 @@ private:
 
 	void TickAsyncPipeline(const USpatialAudioSettings& Settings);
 	void TickNormalSweepDispatch(float DeltaTime, bool bInRange, float SweepInterval);
-	float UpdateDirectLoSConfirmationAndBlendSpeed(float DeltaTime);
-	void SmoothTowardTargets(float DeltaTime, float OccBlendSpeed);
+	void TickDirectLoSConfirmation(float DeltaTime);
+	void SmoothTowardTargets(float DeltaTime);
 	void UpdateTraceDiagnostics(float DeltaTime);
 
 	bool TraceLine(const UWorld* World, FHitResult& Hit, const FVector& Start, const FVector& End) const;
@@ -370,7 +370,6 @@ private:
 
 	float CurrentSourceToVirtualDistance = 0.f;
 
-	float LastDirectLoSFraction = 0.f;
 
 	struct FAudioDiagnostics {
 		float CurvedOcclusion = 0.f;

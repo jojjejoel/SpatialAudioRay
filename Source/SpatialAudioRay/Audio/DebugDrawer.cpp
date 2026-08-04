@@ -244,13 +244,12 @@ void USpatialAudioComponent::DrawOcclusionDebugText(const uint64 Base) const {
 	GEngine->AddOnScreenDebugMessage(Base + 3, 0.f, OccColor,
 	                                 FString::Printf(
 		                                 TEXT(
-			                                 "  Occ %s  cur=%3.0f%% -> param=%3.0f%%  tgt=%3.0f%%  │  LoS:%s  frac inst=%.0f%% avg=%.0f%% smooth=%.0f%%"),
+			                                 "  Occ %s  cur=%3.0f%% -> param=%3.0f%%  tgt=%3.0f%%  │  LoS:%s  frac inst=%.0f%% avg=%.0f%%"),
 		                                 *Bar, CurrentOcclusion * 100.f, AudioDiag.CurvedOcclusion * 100.f,
 		                                 TargetOcclusion * 100.f,
 		                                 bHasDirectLoS ? TEXT("YES") : TEXT("NO"),
 		                                 LastOffsetLoSFraction * 100.f,
-		                                 WindowedLoSFraction * 100.f,
-		                                 LastDirectLoSFraction * 100.f));
+		                                 WindowedLoSFraction * 100.f));
 }
 
 void USpatialAudioComponent::DrawEdgeCacheDebugText(const uint64 Base, const USpatialAudioSettings& Settings) const {
@@ -335,7 +334,7 @@ void USpatialAudioComponent::DrawTraceStatsDebugText(const uint64 Base) const {
 }
 
 void USpatialAudioComponent::DrawEdgeTimerDebugText(const uint64 Base, const USpatialAudioSettings& Settings) const {
-	const float Ph0Interval = Settings.Phase0CheckInterval * VelocityScaling.EdgeMultiplier;
+	const float Ph0Interval = Settings.CachedEdgeCheckInterval * VelocityScaling.EdgeMultiplier;
 
 	int32 Ph0Pending = 0;
 	for (const FCachedEdgePoint& EP : CachedEdgePoints) {

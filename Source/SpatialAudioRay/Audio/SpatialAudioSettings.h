@@ -203,7 +203,7 @@ public:
 	float OffsetLoSCheckInterval = 0.f;
 
 	/** Minimum multiplier on OffsetLoSCheckInterval at VelocityScaleMaxSpeed. Separate from
-	 *  MinSweepIntervalScale so cheap LoS sampling can accelerate without the expensive sweeps.
+	 *  MinSweepIntervalScale, so sampling and sweeps can accelerate by different amounts.
 	 *  0.25 = 4x as often at full speed. 1.0 = off. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Line Of Sight Sampling",
 		meta = (ClampMin = "0.05", ClampMax = "1.0"))
@@ -220,28 +220,10 @@ public:
 		meta = (ClampMin = "0.0", ClampMax = "8.0"))
 	float OcclusionCurveExponent = 1.5f;
 
-	/** Seconds of smoothing on the pattern-averaged LoS fraction that drives occlusion. Gating
-	 *  always uses the raw instant sample. 0 = raw pattern average. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Occlusion",
-		meta = (ClampMin = "0.0", ClampMax = "2.0"))
-	float LoSFractionSmoothingTime = 0.25f;
-
-	/** Seconds for occlusion to rise when direct LoS is blocked. Keep short so the virtual source
-	 *  takes over naturally at LoS loss. 0 = instant. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Occlusion",
-		meta = (ClampMin = "0.0"))
-	float OcclusionAttackTime = 0.1f;
-
-	/** Seconds for occlusion to blend to its target when decreasing. 0 = instant. */
+	/** Seconds for occlusion to follow its target, in either direction. 0 = instant. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Occlusion",
 		meta = (ClampMin = "0.0", ClampMax = "10.0"))
 	float OcclusionBlendTime = 0.25f;
-
-	/** Seconds for occlusion to clear when direct line-of-sight is detected. Keep short so sound
-	 *  opens up quickly when rounding a corner. 0 = instant. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Occlusion",
-		meta = (ClampMin = "0.0"))
-	float OcclusionClearTime = 0.05f;
 
 	/** Seconds direct LoS must hold before the virtual source snaps back and the edge cache clears.
 	 *  Debounces single-frame flickers at a shadow boundary. Occlusion itself still reacts
@@ -270,27 +252,14 @@ public:
 		meta = (ClampMin = "0.0", ClampMax = "2.0"))
 	float CachedEdgeEvictionFadeTime = 0.3f;
 
-	/** Seconds between Phase 0 listener-to-edge checks, PER CACHED EDGE: the interval is divided by
-	 *  cache size and one entry is submitted per slice, so cost spreads instead of arriving as a
-	 *  burst. Scales down with listener speed. 0 = every frame. */
+	/** Seconds between checks on one cached edge, PER CACHED EDGE: the interval is divided by cache
+	 *  size and one entry is taken per slice, so cost spreads instead of arriving as a burst of N.
+	 *  Scales down with listener speed. Drives all three passes, which each take their own turn:
+	 *  the listener-to-edge trace, the source-side polyline recheck, and the promotion step that
+	 *  walks an edge toward its true corner. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Edge Cache",
-		meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float Phase0CheckInterval = 0.1f;
-
-	/** Seconds between source-side path re-verifications, PER CACHED EDGE. Re-traces one entry's
-	 *  stored polyline to catch geometry closing the source side, which nothing else guards. Since
-	 *  unverified segments were already blocked at discovery, this also evicts ordinary
-	 *  multi-corner paths when they come up: the deliberate trade-off of enabling it. 0 = off. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Edge Cache",
-		meta = (ClampMin = "0.0", ClampMax = "5.0"))
-	float ShortestPathRecheckInterval = 0.f;
-
-	/** Seconds between attempts to shrink a cached edge back toward the source while it still has
-	 *  listener LoS, PER CACHED EDGE. Each check tries only the point immediately before the edge on
-	 *  its polyline, so the edge migrates toward the true corner one step at a time. 0 = off. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Edge Cache",
-		meta = (ClampMin = "0.0", ClampMax = "5.0"))
-	float ShortestPathPromotionInterval = 0.f;
+		meta = (ClampMin = "0.01", ClampMax = "5.0"))
+	float CachedEdgeCheckInterval = 0.1f;
 
 	/** Binary-search steps the promotion spends locating the corner on the final polyline segment.
 	 *  Each costs 2 traces and halves the bracket. 0 = derive the count from the segment, stopping
@@ -331,15 +300,12 @@ public:
 		meta = (ClampMin = "0.0", ClampMax = "10.0"))
 	float ListenerDistanceFalloff = 0.f;
 
-	/** Reduce a ray's contribution to the virtual source position by BounceCountFalloff per bounce.
-	 *  When disabled, only path distance matters. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Virtual Voices")
-	bool bWeightCandidatesByBounceCount = false;
-
-	/** Per-bounce weight multiplier. 0.5 = each extra bounce halves the influence. 1.0 = no falloff. */
+	/** Per-bounce multiplier on a ray's contribution to the virtual source position, applied as
+	 *  falloff^bounces. 0.5 = each extra bounce halves the influence. 1 = off, only path distance
+	 *  matters. Above 1 favours the more indirect routes instead. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Virtual Voices",
-		meta = (ClampMin = "0.05", ClampMax = "10.0", EditCondition = "bWeightCandidatesByBounceCount"))
-	float BounceCountFalloff = 0.5f;
+		meta = (ClampMin = "0.05", ClampMax = "10.0"))
+	float BounceCountFalloff = 1.f;
 
 
 	/** Smoothed occlusion at which the virtual voices begin fading in, reaching full level at total
@@ -355,17 +321,11 @@ public:
 		meta = (ClampMin = "0.0", ClampMax = "2.0"))
 	float VirtualCrossfadeSmoothingTime = 0.35f;
 
-	/** Seconds for the virtual crossfade gate to ramp from silent to fully engaged once every offset
-	 *  point loses line-of-sight. 0 = instant. */
+	/** Seconds for the virtual crossfade gate to ramp between silent and fully engaged, in either
+	 *  direction. 0 = instant. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Virtual Sound",
 		meta = (ClampMin = "0.0", ClampMax = "2.0"))
-	float VirtualCrossfadeFadeInTime = 0.15f;
-
-	/** Seconds for the virtual crossfade gate to ramp back to silent once any offset point regains
-	 *  line-of-sight. 0 = instant. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Virtual Sound",
-		meta = (ClampMin = "0.0", ClampMax = "2.0"))
-	float VirtualCrossfadeFadeOutTime = 0.15f;
+	float VirtualCrossfadeFadeTime = 0.15f;
 
 	/** How strongly diffracted path distance attenuates VirtualGain. 0 = no effect, 1 = fully
 	 *  attenuated when the path equals MaxRayDistance. */

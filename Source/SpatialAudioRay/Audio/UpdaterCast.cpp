@@ -142,7 +142,6 @@ void FUpdater::TrySampleOffsetLoS(USpatialAudioComponent& Component, UWorld* Wor
 			Slot = Component.LastOffsetLoSFraction;
 		}
 		Component.bLoSFractionSeeded = true;
-		Component.LastDirectLoSFraction = Component.LastOffsetLoSFraction;
 	}
 	else {
 		Component.LoSSlotFractions[Component.LoSSlotIndex] = Component.LastOffsetLoSFraction;
@@ -160,23 +159,12 @@ void FUpdater::TrySampleOffsetLoS(USpatialAudioComponent& Component, UWorld* Wor
 		                              : Component.NoLoSSampleStreak + 1;
 }
 
-void FUpdater::UpdateSmoothedOcclusionFromSamples(USpatialAudioComponent& Component,
-                                                  const USpatialAudioSettings& Settings,
-                                                  float DeltaTime, int32 RotationSteps) {
-	const float PatternLoSFraction = Component.WindowedLoSFraction;
-
-	const float EffSmoothingTime = Settings.LoSFractionSmoothingTime * Component.VelocityScaling.OffsetLoSMultiplier;
-	const float DirectLoSFraction = EffSmoothingTime > 0.f
-		                                ? FMath::FInterpTo(Component.LastDirectLoSFraction, PatternLoSFraction,
-		                                                   DeltaTime, 1.f / EffSmoothingTime)
-		                                : PatternLoSFraction;
-
+void FUpdater::UpdateOcclusionFromSamples(USpatialAudioComponent& Component, int32 RotationSteps) {
 	const bool bHoldLoSThroughRotation = Component.bHasDirectLoS && Component.VelocityScaling.IsStationary()
 		&& Component.NoLoSSampleStreak < RotationSteps;
 	Component.bHasDirectLoS = Component.LastOffsetLoSFraction > 0.f || bHoldLoSThroughRotation;
-	Component.LastDirectLoSFraction = DirectLoSFraction;
 
-	Component.TargetOcclusion = 1.f - DirectLoSFraction;
+	Component.TargetOcclusion = 1.f - Component.WindowedLoSFraction;
 }
 
 void FUpdater::TickDirectLoSSampling(USpatialAudioComponent& Component, const float DeltaTime,
@@ -192,7 +180,7 @@ void FUpdater::TickDirectLoSSampling(USpatialAudioComponent& Component, const fl
 	const int32 RotationSteps = Component.ResolveRingRotationSteps();
 
 	TrySampleOffsetLoS(Component, World, Settings, DeltaTime, SourcePos, ListenerPos, RotationSteps);
-	UpdateSmoothedOcclusionFromSamples(Component, Settings, DeltaTime, RotationSteps);
+	UpdateOcclusionFromSamples(Component, RotationSteps);
 
 	if (Component.bDrawDebugRays && Component.bShowEdgePoints) {
 		const bool bFullyClear = Component.LastOffsetLoSFraction >= 1.f;

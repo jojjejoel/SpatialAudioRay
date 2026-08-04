@@ -15,6 +15,7 @@ public:
 
 private:
 	static float PerEdgeInterval(const USpatialAudioComponent& Component, float Interval);
+	static float EdgeCheckSlice(const USpatialAudioComponent& Component, const USpatialAudioSettings& Settings);
 	static int32 SelectRoundRobinEdge(const TArray<FCachedEdgePoint>& Points, int32& Cursor,
 	                                  const TFunctionRef<bool(const FCachedEdgePoint&)>& ShouldSkip);
 	static void SubmitPolylineRecheckTraces(USpatialAudioComponent& Component, UWorld* World,

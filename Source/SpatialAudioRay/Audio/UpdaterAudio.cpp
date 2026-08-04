@@ -31,8 +31,7 @@ float FUpdater::UpdateVirtualCrossfadeGate(USpatialAudioComponent& Component, co
 		bGateHasLoS, bRampEnabled && Component.VelocityScaling.IsStationary(),
 		Component.SmoothedCrossfadeRamp);
 	Component.CurrentVirtualCrossfade = Math::ComputeVirtualCrossfadeSlew(
-		Component.CurrentVirtualCrossfade, CrossfadeTarget,
-		Settings.VirtualCrossfadeFadeInTime, Settings.VirtualCrossfadeFadeOutTime, DeltaTime);
+		Component.CurrentVirtualCrossfade, CrossfadeTarget, Settings.VirtualCrossfadeFadeTime, DeltaTime);
 	return Component.CurrentVirtualCrossfade;
 }
 

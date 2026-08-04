@@ -9,6 +9,12 @@ float FEdgeCache::PerEdgeInterval(const USpatialAudioComponent& Component, const
 	return Interval / FMath::Max(1, Component.CachedEdgePoints.Num());
 }
 
+float FEdgeCache::EdgeCheckSlice(const USpatialAudioComponent& Component,
+                                 const USpatialAudioSettings& Settings) {
+	return PerEdgeInterval(Component,
+	                       Settings.CachedEdgeCheckInterval * Component.VelocityScaling.EdgeMultiplier);
+}
+
 int32 FEdgeCache::SelectRoundRobinEdge(const TArray<FCachedEdgePoint>& Points, int32& Cursor,
                                        const TFunctionRef<bool(const FCachedEdgePoint&)>& ShouldSkip) {
 	const int32 Num = Points.Num();
@@ -476,8 +482,7 @@ void FEdgeCache::ClearStalePendingChecks(USpatialAudioComponent& Component) {
 bool FEdgeCache::AdvancePhase0Timer(USpatialAudioComponent& Component, const float DeltaTime,
                                     const USpatialAudioSettings& Settings) {
 	Component.Phase0Timer += DeltaTime;
-	const float Slice = PerEdgeInterval(
-		Component, Settings.Phase0CheckInterval * Component.VelocityScaling.EdgeMultiplier);
+	const float Slice = EdgeCheckSlice(Component, Settings);
 	if (Component.Phase0Timer < Slice) {
 		return false;
 	}
@@ -588,12 +593,12 @@ bool FEdgeCache::TravelledFurther(const FCachedEdgePoint& Edge, const FCachedEdg
 void FEdgeCache::TickShortestPathRecheck(USpatialAudioComponent& Component, UWorld* World,
                                          const FVector& SourcePos, const float DeltaTime,
                                          const USpatialAudioSettings& Settings) {
-	if (Settings.ShortestPathRecheckInterval <= 0.f || Component.CachedEdgePoints.IsEmpty()) {
+	if (Component.CachedEdgePoints.IsEmpty()) {
 		return;
 	}
 	const USpatialAudioComponent::FTraceBucketScope Bucket(Component, USpatialAudioComponent::ETraceBucket::PathCheck);
 	Component.ShortestPathCheckTimer += DeltaTime;
-	if (Component.ShortestPathCheckTimer < PerEdgeInterval(Component, Settings.ShortestPathRecheckInterval)
+	if (Component.ShortestPathCheckTimer < EdgeCheckSlice(Component, Settings)
 		|| Component.PathRecheck.bPending) {
 		return;
 	}
@@ -719,12 +724,12 @@ void FEdgeCache::TickShortestPathReadback(USpatialAudioComponent& Component, UWo
 void FEdgeCache::TickInnerAnchorPromotion(USpatialAudioComponent& Component, const UWorld* World,
                                           const FVector& ListenerPos, const float DeltaTime,
                                           const USpatialAudioSettings& Settings) {
-	if (Settings.ShortestPathPromotionInterval <= 0.f || Component.CachedEdgePoints.IsEmpty()) {
+	if (Component.CachedEdgePoints.IsEmpty()) {
 		return;
 	}
 	const USpatialAudioComponent::FTraceBucketScope Bucket(Component, USpatialAudioComponent::ETraceBucket::PathCheck);
 	Component.ShortestPathPromotionTimer += DeltaTime;
-	if (Component.ShortestPathPromotionTimer < PerEdgeInterval(Component, Settings.ShortestPathPromotionInterval)) {
+	if (Component.ShortestPathPromotionTimer < EdgeCheckSlice(Component, Settings)) {
 		return;
 	}
 	Component.ShortestPathPromotionTimer = 0.f;

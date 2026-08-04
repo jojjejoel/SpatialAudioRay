@@ -385,30 +385,20 @@ void USpatialAudioComponent::TickNormalSweepDispatch(const float DeltaTime, cons
 	}
 }
 
-float USpatialAudioComponent::UpdateDirectLoSConfirmationAndBlendSpeed(const float DeltaTime) {
+void USpatialAudioComponent::TickDirectLoSConfirmation(const float DeltaTime) {
 	DirectLoSConfirmedDuration = bHasDirectLoS ? DirectLoSConfirmedDuration + DeltaTime : 0.f;
 	TimeSinceHadDirectLoS = bHasDirectLoS ? 0.f : TimeSinceHadDirectLoS + DeltaTime;
-	const bool bConfirmedDirectLoS = DirectLoSConfirmedDuration >= GetSettings().DirectLoSConfirmTime;
 
-	float OccBlendSpeed;
-	if (bHasDirectLoS) {
-		OccBlendSpeed = TimeToBlendSpeed(GetSettings().OcclusionClearTime);
-		if (bConfirmedDirectLoS && !IsPreSweepActive()) {
-			CachedEdgePoints.Empty();
-			SweepScheduling.CacheFillSweepsRemaining = 0;
-		}
+	const bool bConfirmedDirectLoS = DirectLoSConfirmedDuration >= GetSettings().DirectLoSConfirmTime;
+	if (bHasDirectLoS && bConfirmedDirectLoS && !IsPreSweepActive()) {
+		CachedEdgePoints.Empty();
+		SweepScheduling.CacheFillSweepsRemaining = 0;
 	}
-	else if (TargetOcclusion > CurrentOcclusion) {
-		OccBlendSpeed = TimeToBlendSpeed(GetSettings().OcclusionAttackTime);
-	}
-	else {
-		OccBlendSpeed = TimeToBlendSpeed(GetSettings().OcclusionBlendTime);
-	}
-	return OccBlendSpeed;
 }
 
-void USpatialAudioComponent::SmoothTowardTargets(const float DeltaTime, const float OccBlendSpeed) {
-	CurrentOcclusion = FMath::FInterpConstantTo(CurrentOcclusion, TargetOcclusion, DeltaTime, OccBlendSpeed);
+void USpatialAudioComponent::SmoothTowardTargets(const float DeltaTime) {
+	CurrentOcclusion = FMath::FInterpConstantTo(CurrentOcclusion, TargetOcclusion, DeltaTime,
+	                                            TimeToBlendSpeed(GetSettings().OcclusionBlendTime));
 	CurrentPathAttenuation = FMath::FInterpTo(CurrentPathAttenuation, TargetPathAttenuation, DeltaTime,
 	                                          TimeToBlendSpeed(GetSettings().PathAttenuationBlendTime));
 }
@@ -507,9 +497,8 @@ void USpatialAudioComponent::TickComponent(const float DeltaTime, const ELevelTi
 		SweepScheduling.bMovementRequested = true;
 	}
 
-	const float OccBlendSpeed = UpdateDirectLoSConfirmationAndBlendSpeed(DeltaTime);
-	const bool bConfirmedDirectLoS = DirectLoSConfirmedDuration >= GetSettings().DirectLoSConfirmTime;
-	SmoothTowardTargets(DeltaTime, OccBlendSpeed);
+	TickDirectLoSConfirmation(DeltaTime);
+	SmoothTowardTargets(DeltaTime);
 
 	UpdateTraceDiagnostics(DeltaTime);
 

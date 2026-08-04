@@ -89,8 +89,8 @@ move too large to make in one step is handled by fading a new voice in rather th
 The cache is `CachedEdgePoints`, and a warm one pays off by shrinking the next sweep's ray budget through
 `FullCacheRayScale`.
 
-Line-of-sight sampling keeps three values: `LastOffsetLoSFraction` raw, `WindowedLoSFraction` averaged over the pattern,
-and `LastDirectLoSFraction` smoothed. The distinction matters at Stop 4.
+Line-of-sight sampling keeps two values: `LastOffsetLoSFraction`, the raw instant sample, and
+`WindowedLoSFraction`, averaged over the rotation pattern. The distinction matters at Stop 4.
 
 `AudioDiag` and `TraceDiag` are debug-only. No audio path reads them.
 
@@ -127,7 +127,7 @@ MetaSound startup latency.
 ## Stop 4. Occlusion, the simplest complete subsystem
 
 In `UpdaterCast.cpp`, read `TickDirectLoSSampling`, then `TrySampleOffsetLoS`, `SyncOffsetLoSFraction` and
-`UpdateSmoothedOcclusionFromSamples`. It is self-contained and shows the house style.
+`UpdateOcclusionFromSamples`. It is self-contained and shows the house style.
 
 Every `OffsetLoSCheckInterval` it takes five samples, the listener centre plus a four-point ring, toward matching points
 on the source's inner-radius sphere. That is up to nine traces, since resolving each ring point costs one of its own.
@@ -139,10 +139,11 @@ The ring rotates and its radius ladders through annuli on each check, so one ful
 than only the rim, and a clear centre view through a small opening does not read as four fifths occluded. A stationary
 scene retraces exactly the same rays every cycle, which is what keeps the value from wobbling at rest.
 
-The three values from Stop 2 have different consumers, and mixing them up causes real bugs. The raw fraction drives
+The two values from Stop 2 have different consumers, and mixing them up causes real bugs. The raw fraction drives
 gating: `bHasDirectLoS` and sweep suppression. Gaining sight is instant, while losing it when stationary needs a full
-blank rotation first, as hysteresis against grazing rays that flicker. The pattern average is the smoothing target. The
-smoothed value produces `TargetOcclusion`.
+blank rotation first, as hysteresis against grazing rays that flicker. The pattern average produces `TargetOcclusion`,
+which `OcclusionBlendTime` then smooths on the way into `CurrentOcclusion`. Never gate on that smoothed value: it
+lags a real break by design.
 
 ## Stop 5. The async sweep
 
@@ -196,9 +197,10 @@ paths worth maintaining. Everything below runs only while occluded. `TickSingleE
 `TickEvictionFade`, `TickRelayRescueReadback`, `TickPhase0Readback`, `TickPhase0OffsetReadback`, `TickRelayMaintenance`,
 `TickPhase0Submission`.
 
-Phase 0 is one async listener-to-edge trace, submitted for a single entry per slice rather than the whole cache. All
-three per-edge intervals divide by cache size, so a setting names the period an individual edge is checked at, and the
-cost arrives evenly instead of as a burst of N.
+Phase 0 is one async listener-to-edge trace, submitted for a single entry per slice rather than the whole cache. It
+shares `CachedEdgeCheckInterval` with the polyline recheck and the promotion step, and `EdgeCheckSlice` divides that by
+cache size, so the setting names the period an individual edge is checked at and the cost arrives evenly instead of as
+a burst of N. The three passes take their own turns through the cache, so they never fire on the same edge together.
 
 A blocked Phase 0 trace does not evict. It escalates:
 
@@ -293,7 +295,7 @@ and 0 on makes Stops 5 through 7 concrete faster than reading them again. 6 and 
 question above: each edge draws a line to the emitter it feeds, in that emitter's colour, and an edge with no line is
 one no audible voice speaks for.
 
-Tests live in `Source/SpatialAudioRay/Tests/`, 95 of them under `SpatialAudioRay.Math.*`, `.Async.*`, `.Voice.*` and
+Tests live in `Source/SpatialAudioRay/Tests/`, 94 of them under `SpatialAudioRay.Math.*`, `.Async.*`, `.Voice.*` and
 `.EdgeCache.*` in Session Frontend. They read as a spec for the pure helpers, and `MathTests.cpp` is a good final read.
 
 ---

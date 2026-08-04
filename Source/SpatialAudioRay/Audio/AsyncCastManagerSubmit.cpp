@@ -130,7 +130,7 @@ FVector FAsyncCastManager::ApplyLateralBandBias(const USpatialAudioComponent& Co
                                                 int32 DirectionIndex, const USpatialAudioSettings& Settings) {
 	const float Radius = Settings.DirectLoSSampleRadius;
 	const float FibWeight = Math::ComputeRayDirectionWeight(
-		Dir, ToListenerDir, Component.LastDirectLoSFraction, Radius, FullCastDistance);
+		Dir, ToListenerDir, Component.WindowedLoSFraction, Radius, FullCastDistance);
 
 	FRandomStream BiasStream = MakeBiasStream(Component.AsyncSourcePos, Component.AsyncListenerPos, DirectionIndex);
 	if (BiasStream.FRand() <= FibWeight) {
@@ -140,7 +140,7 @@ FVector FAsyncCastManager::ApplyLateralBandBias(const USpatialAudioComponent& Co
 	for (int32 Attempt = 0; Attempt < 30; ++Attempt) {
 		const FVector Candidate = BiasStream.VRand();
 		const float CandidateWeight = Math::ComputeRayDirectionWeight(
-			Candidate, ToListenerDir, Component.LastDirectLoSFraction, Radius, FullCastDistance);
+			Candidate, ToListenerDir, Component.WindowedLoSFraction, Radius, FullCastDistance);
 		if (BiasStream.FRand() < FMath::Min(CandidateWeight, 1.f)) {
 			return Candidate;
 		}
@@ -911,9 +911,8 @@ void FAsyncCastManager::SubmitFinalizeBatch(USpatialAudioComponent& Component, c
 			Probe.BasePathDist = ComputeStringPulledLeg1(Component, World, Ray, Component.AsyncSourcePos,
 			                                             Probe.ShortestPath, Probe.ShortestPathSegmentVerified);
 			Probe.LoSBounces = Ray.LoSBounces;
-			Probe.BounceWeightFactor = Settings.bWeightCandidatesByBounceCount
-				                           ? FMath::Pow(Settings.BounceCountFalloff, static_cast<float>(Ray.LoSBounces))
-				                           : 1.f;
+			Probe.BounceWeightFactor =
+				FMath::Pow(Settings.BounceCountFalloff, static_cast<float>(Ray.LoSBounces));
 			Component.Finalize.RefineProbes.Add(MoveTemp(Probe));
 		}
 	}

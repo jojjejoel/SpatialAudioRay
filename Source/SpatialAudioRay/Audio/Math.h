@@ -300,9 +300,7 @@ namespace Math {
 	}
 
 	inline float ComputeVirtualCrossfadeSlew(
-		float CurrentCrossfade, float TargetCrossfade, float FadeInTime, float FadeOutTime, float DeltaTime) {
-		const bool bFadingIn = TargetCrossfade > CurrentCrossfade;
-		const float FadeTime = bFadingIn ? FadeInTime : FadeOutTime;
+		float CurrentCrossfade, float TargetCrossfade, float FadeTime, float DeltaTime) {
 		const float SlewRate = FadeTime > 0.f ? 1.f / FadeTime : 1000.f;
 		return FMath::FInterpConstantTo(CurrentCrossfade, TargetCrossfade, DeltaTime, SlewRate);
 	}
