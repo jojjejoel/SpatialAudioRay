@@ -38,12 +38,6 @@ public:
 		meta = (ClampMin = "0.05"))
 	float FullSweepInterval = 0.5f;
 
-	/** Scales the ray range, which is otherwise the audible range of the widest source's
-	 *  attenuation, read at BeginPlay. Below 1 trades far-field paths for trace budget. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Ray Casting",
-		meta = (ClampMin = "0.1", ClampMax = "4.0"))
-	float MaxRayDistanceScale = 1.f;
-
 	/** Multiplier on MaxRayDistance setting the total travel budget across all bounces. Each
 	 *  individual segment is still capped to MaxRayDistance. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Ray Casting",

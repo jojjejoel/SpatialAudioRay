@@ -261,10 +261,9 @@ void USpatialAudioComponent::ReadAttenuationSettings() {
 
 	AttenuationInnerRadius = Widest->AttenuationShapeExtents.X;
 	BaseAttenuationFalloffDistance = Widest->FalloffDistance;
-	MaxRayDistance = WidestRange * GetSettings().MaxRayDistanceScale;
-	UE_LOG(LogSpatialAudio, Log,
-	       TEXT("SpatialAudioComponent: ray range %.0f cm (attenuation %.0f cm x %.2f)."),
-	       MaxRayDistance, WidestRange, GetSettings().MaxRayDistanceScale);
+	MaxRayDistance = WidestRange;
+	UE_LOG(LogSpatialAudio, Log, TEXT("SpatialAudioComponent: ray range %.0f cm, from the widest source attenuation."),
+	       MaxRayDistance);
 }
 
 float USpatialAudioComponent::EvaluateVirtualAttenuationVolumeAt(const float Distance) const {
