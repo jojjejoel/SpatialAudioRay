@@ -169,8 +169,7 @@ void FAsyncCastManager::SubmitSweepRays(USpatialAudioComponent& Component, const
 		Ray.bNextHitCrawls = i % 2 == 0;
 
 		const float SegLen = Math::ComputeNextSegmentLength(
-			Component.MaxRayDistance * Settings.RayLengthMultiplier,
-			TNumericLimits<float>::Max(), Settings.MaxStraightFlightDistance);
+			Component.MaxRayDistance, TNumericLimits<float>::Max(), Settings.MaxStraightFlightDistance);
 		SubmitFlightSegment(Component, Ray, World, SegLen);
 	}
 }
@@ -259,10 +258,8 @@ void FAsyncCastManager::ProcessRayTermination(const USpatialAudioComponent& Comp
                                               const FTraceDatum& SegData, bool bSegMissed, float Budget,
                                               bool& bAllDone, const USpatialAudioSettings& Settings) {
 	if (bSegMissed) {
-		const float RemainingBudget = FMath::Max(0.f, FMath::Min(
-			                                         FMath::Min(Component.MaxRayDistance * Settings.RayLengthMultiplier,
-			                                                    Ray.SegSubmitLen),
-			                                         Budget - Ray.CumulativeDistance));
+		const float RemainingBudget = FMath::Max(0.f, FMath::Min(Ray.SegSubmitLen,
+		                                                        Budget - Ray.CumulativeDistance));
 		const FVector TerminalPoint = Ray.Origin + Ray.Dir * RemainingBudget;
 
 		if (ShouldDrawFlightPaths(Component)) {
@@ -317,31 +314,30 @@ bool FAsyncCastManager::TrySetupSurfaceCrawl(USpatialAudioComponent& Component, 
 	Ray.CrawlHitNormal = Hit.Normal;
 	Ray.CrawlHitLoc = Hit.Location;
 	Ray.CrawlInDir = Ray.Dir;
-	Ray.CrawlStepSz = Settings.CrawlStepSize;
+	Ray.CrawlStepSz = Settings.DiffractionEdgeSampleStep;
 	Ray.CrawlNudgeDist = NudgeDist;
 	Ray.CrawlInCumDist = Ray.CumulativeDistance;
-	int32 CrawlStepCap = Settings.MaxCrawlSteps;
-	if (Settings.MaxStraightFlightDistance > 0.f) {
-		CrawlStepCap = FMath::Clamp(FMath::FloorToInt(
-			                            Settings.MaxStraightFlightDistance / FMath::Max(Settings.CrawlStepSize, 1.f)),
-		                            1, Settings.MaxCrawlSteps);
-	}
+
+	const float CrawlRange = Settings.MaxStraightFlightDistance > 0.f
+		                         ? Settings.MaxStraightFlightDistance
+		                         : Component.MaxRayDistance;
+	const int32 CrawlStepCap = Math::ComputeDiffractionStepCount(CrawlRange, Ray.CrawlStepSz);
 	Ray.CrawlMaxSteps = CrawlStepCap;
 
-	const float MaxCrawlRange = CrawlStepCap * Settings.CrawlStepSize;
+	const float MaxCrawlRange = CrawlStepCap * Ray.CrawlStepSz;
 	Ray.CrawlRangeHandle = Component.SubmitAsyncTrace(World, NudgedStart,
 	                                                  NudgedStart + CrawlDir * MaxCrawlRange);
 
 	Ray.CrawlStepProbes.Reset();
 	Ray.CrawlStepProbes.Reserve(CrawlStepCap);
 	for (int32 Step = 1; Step <= CrawlStepCap; ++Step) {
-		const FVector StepPos = NudgedStart + Step * Settings.CrawlStepSize * CrawlDir;
+		const FVector StepPos = NudgedStart + Step * Ray.CrawlStepSz * CrawlDir;
 		const FVector BackEnd = StepPos + BackDir * BackProbeLen;
-		const FVector ForwardEnd = StepPos + CrawlDir * Settings.CrawlStepSize;
+		const FVector ForwardEnd = StepPos + CrawlDir * Ray.CrawlStepSz;
 
 		FSpatialRayState::FAsyncCrawlStepProbe StepProbe;
 		StepProbe.StepPos = StepPos;
-		StepProbe.StepCumDist = Ray.CumulativeDistance + Step * Settings.CrawlStepSize;
+		StepProbe.StepCumDist = Ray.CumulativeDistance + Step * Ray.CrawlStepSz;
 		StepProbe.BackHandle = Component.SubmitAsyncTrace(World, StepPos, BackEnd);
 		StepProbe.LoSHandle = Component.SubmitAsyncTrace(World, StepPos, Component.AsyncListenerPos);
 		StepProbe.PerpHandle = Component.SubmitAsyncTrace(World, StepPos, ForwardEnd);
@@ -780,7 +776,7 @@ void FAsyncCastManager::SubmitSegmentLoSProbes(const USpatialAudioComponent& Com
                                                float SegLen, float Budget,
                                                const USpatialAudioSettings& Settings) {
 	const float StepSize = Settings.DiffractionEdgeSampleStep;
-	const int32 MaxSamples = Settings.MaxSamplesPerSegment > 0 ? Settings.MaxSamplesPerSegment : 16;
+	const int32 MaxSamples = Math::MaxDiffractionSamples;
 	int32 SampleCount = 0;
 
 	for (float T = StepSize; T < SegLen; T += StepSize) {

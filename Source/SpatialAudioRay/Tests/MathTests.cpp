@@ -632,6 +632,26 @@ bool FClusterEdgePoints_SeparatedGroups_YieldTwoClusters::RunTest(const FString&
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FDiffractionStepCount_DerivesFromDistanceAndStep,
+	"SpatialAudioRay.Math.DiffractionStepCount.DerivesFromDistanceAndStep",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FDiffractionStepCount_DerivesFromDistanceAndStep::RunTest(const FString& Parameters) {
+	TestEqual(TEXT("Whole steps fit exactly"),
+	          Math::ComputeDiffractionStepCount(1000.f, 500.f), 2);
+	TestEqual(TEXT("A partial trailing step is not taken"),
+	          Math::ComputeDiffractionStepCount(1001.f, 500.f), 2);
+	TestEqual(TEXT("A finer step yields more samples over the same distance"),
+	          Math::ComputeDiffractionStepCount(1000.f, 200.f), 5);
+	TestEqual(TEXT("The burst ceiling caps a very fine step"),
+	          Math::ComputeDiffractionStepCount(1000.f, 5.f), Math::MaxDiffractionSamples);
+	TestEqual(TEXT("A step longer than the distance still takes one sample"),
+	          Math::ComputeDiffractionStepCount(100.f, 500.f), 1);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FClusterEdgePoints_PointToCluster_MapsEachEdgeToItsVoice,
 	"SpatialAudioRay.Math.ClusterEdgePoints.PointToCluster_MapsEachEdgeToItsVoice",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter

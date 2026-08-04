@@ -44,15 +44,9 @@ public:
 		meta = (ClampMin = "0.0"))
 	float TotalPathBudgetMultiplier = 1.5f;
 
-	/** Scales the maximum length of the first and terminal ray segments. Intermediate bounce
-	 *  segments are always capped to MaxRayDistance. Does not affect the total path budget. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Ray Casting",
-		meta = (ClampMin = "0.1", ClampMax = "1.0"))
-	float RayLengthMultiplier = 1.0f;
-
 	/** Maximum distance (cm) a ray may travel in one direction before changing course. Airborne
 	 *  misses turn mid-air instead of terminating and crawls bounce off the wall, each consuming a
-	 *  bounce. 0 = off: misses terminate and crawl range is MaxCrawlSteps x CrawlStepSize. */
+	 *  bounce. 0 = off: misses terminate and crawl range falls back to the full ray range. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Ray Casting",
 		meta = (ClampMin = "0.0"))
 	float MaxStraightFlightDistance = 0.f;
@@ -151,19 +145,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Performance",
 		meta = (ClampMin = "0", ClampMax = "16"))
 	int32 MinMaxBounces = 1;
-
-
-	/** Maximum crawl steps taken along a wall to find its edge. With CrawlStepSize this sets the
-	 *  crawl range; a ray that finds no edge falls back to random reflection. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Surface Crawl",
-		meta = (ClampMin = "1", ClampMax = "64"))
-	int32 MaxCrawlSteps = 12;
-
-	/** Distance (cm) between consecutive crawl sample points. Smaller = more precise edge location,
-	 *  more traces per wall hit. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Surface Crawl",
-		meta = (ClampMin = "1.0", ClampMax = "1000.0"))
-	float CrawlStepSize = 10.f;
 
 
 	/** How strongly the crawl direction is pulled toward the listener. 0 = the ray's own slide
@@ -347,17 +328,13 @@ public:
 		meta = (ClampMin = "0.0", ClampMax = "2.0"))
 	float VirtualVoiceHandoffFadeTime = 0.25f;
 
-	/** Step size (cm) between line-of-sight sample points along each ray segment, catching
-	 *  diffraction edges that rays pass by without bouncing. */
+	/** Step size (cm) for every diffraction sample: line-of-sight points along a flight segment,
+	 *  and the steps a surface crawl takes along a wall. Counts are derived from this and the
+	 *  distance available, capped by Math::MaxDiffractionSamples. Smaller finds narrower openings
+	 *  and locates edges more precisely, at three traces per crawl step. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Virtual Source",
 		meta = (ClampMin = "5.0", ClampMax = "1000.0"))
 	float DiffractionEdgeSampleStep = 30.f;
-
-	/** Maximum sample positions tested per ray segment. Caps worst-case trace cost on long walls
-	 *  but may miss edges deeper along the segment. 0 = no limit. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Virtual Source",
-		meta = (ClampMin = "0", ClampMax = "64"))
-	int32 MaxSamplesPerSegment = 0;
 
 	/** Reduce a ray's contribution to the virtual source position by BounceCountFalloff per bounce.
 	 *  When disabled, only path distance matters. */

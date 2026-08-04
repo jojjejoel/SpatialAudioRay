@@ -60,6 +60,15 @@ namespace Math {
 		return CumulativeDistance + FVector::Dist(Point, ListenerPos) <= Budget;
 	}
 
+	/** Ceiling on samples taken along one crawl or one flight segment. Crawl submits three traces
+	 *  per step up front, so this bounds the largest single-frame burst in the sweep. */
+	constexpr int32 MaxDiffractionSamples = 16;
+
+	inline int32 ComputeDiffractionStepCount(float Distance, float StepSize) {
+		return FMath::Clamp(FMath::FloorToInt(Distance / FMath::Max(StepSize, 1.f)),
+		                    1, MaxDiffractionSamples);
+	}
+
 	inline float ComputeNextSegmentLength(float MaxRayDistance, float RemainingBudget,
 	                                      float MaxStraightFlightDistance) {
 		float Length = FMath::Min(MaxRayDistance, RemainingBudget);
