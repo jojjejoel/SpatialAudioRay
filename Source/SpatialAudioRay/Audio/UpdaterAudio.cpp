@@ -10,18 +10,20 @@
 #include "GameFramework/Pawn.h"
 #include "Engine/World.h"
 
-void FUpdater::UpdateAudioParameters(USpatialAudioComponent& Component, const float DeltaTime, const USpatialAudioSettings& Settings) {
+void FUpdater::UpdateAudioParameters(USpatialAudioComponent& Component, const float DeltaTime,
+                                     const USpatialAudioSettings& Settings) {
 	const float CurvedOcclusion = FMath::Pow(Component.CurrentOcclusion, Settings.OcclusionCurveExponent);
 	UpdateDualModeAudio(Component, DeltaTime, Settings, CurvedOcclusion);
 }
 
-float FUpdater::UpdateVirtualCrossfadeGate(USpatialAudioComponent& Component, const float DeltaTime, const USpatialAudioSettings& Settings) {
+float FUpdater::UpdateVirtualCrossfadeGate(USpatialAudioComponent& Component, const float DeltaTime,
+                                           const USpatialAudioSettings& Settings) {
 	const float RawRamp = Math::ComputeVirtualCrossfadeRamp(
 		Component.CurrentOcclusion, Settings.VirtualCrossfadeStartOcclusion);
 	Component.SmoothedCrossfadeRamp = Settings.VirtualCrossfadeSmoothingTime > 0.f
-		? FMath::FInterpTo(Component.SmoothedCrossfadeRamp, RawRamp,
-		                   DeltaTime, 1.f / Settings.VirtualCrossfadeSmoothingTime)
-		: RawRamp;
+		                                  ? FMath::FInterpTo(Component.SmoothedCrossfadeRamp, RawRamp,
+		                                                     DeltaTime, 1.f / Settings.VirtualCrossfadeSmoothingTime)
+		                                  : RawRamp;
 	const int32 RotationSteps = Component.ResolveRingRotationSteps();
 	const bool bGateHasLoS = Component.NoLoSSampleStreak < RotationSteps;
 	const bool bRampEnabled = Settings.VirtualCrossfadeStartOcclusion < 1.f;
@@ -34,7 +36,8 @@ float FUpdater::UpdateVirtualCrossfadeGate(USpatialAudioComponent& Component, co
 	return Component.CurrentVirtualCrossfade;
 }
 
-void FUpdater::ApplySourceOcclusionParams(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings, const float CurvedOcclusion) {
+void FUpdater::ApplySourceOcclusionParams(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings,
+                                          const float CurvedOcclusion) {
 	for (int32 i = Component.CachedAudioComponentSources.Num() - 1; i >= 0; --i) {
 		if (UAudioComponent* Ac = Component.CachedAudioComponentSources[i].Get()) {
 			Ac->SetFloatParameter(Settings.OcclusionParamName, CurvedOcclusion);
@@ -115,9 +118,11 @@ void FUpdater::ApplyVoiceAudioParams(const USpatialAudioComponent& Component, co
 	}
 }
 
-FUpdater::FVirtualVoiceUpdateResult FUpdater::UpdateVirtualVoiceSlots(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings,
-                                                                       const float DeltaTime, const float VirtualCrossfade,
-                                                                       const FVector& ActorPos) {
+FUpdater::FVirtualVoiceUpdateResult FUpdater::UpdateVirtualVoiceSlots(USpatialAudioComponent& Component,
+                                                                      const USpatialAudioSettings& Settings,
+                                                                      const float DeltaTime,
+                                                                      const float VirtualCrossfade,
+                                                                      const FVector& ActorPos) {
 	FVirtualVoiceUpdateResult Result;
 	const FVoiceBlendRates Rates = ComputeVoiceBlendRates(Settings, DeltaTime);
 
@@ -157,7 +162,8 @@ FUpdater::FVirtualVoiceUpdateResult FUpdater::UpdateVirtualVoiceSlots(USpatialAu
 	return Result;
 }
 
-void FUpdater::UpdateDualModeAudio(USpatialAudioComponent& Component, const float DeltaTime, const USpatialAudioSettings& Settings,
+void FUpdater::UpdateDualModeAudio(USpatialAudioComponent& Component, const float DeltaTime,
+                                   const USpatialAudioSettings& Settings,
                                    const float CurvedOcclusion) {
 	const float VirtualCrossfade = UpdateVirtualCrossfadeGate(Component, DeltaTime, Settings);
 	Component.AudioDiag.CurvedOcclusion = CurvedOcclusion;

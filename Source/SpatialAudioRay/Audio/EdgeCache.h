@@ -10,7 +10,8 @@ struct FCachedEdgePoint;
 
 class FEdgeCache {
 public:
-	static void TickCachedEdgeEviction(USpatialAudioComponent& Component, float DeltaTime, const USpatialAudioSettings& Settings);
+	static void TickCachedEdgeEviction(USpatialAudioComponent& Component, float DeltaTime,
+	                                   const USpatialAudioSettings& Settings);
 
 private:
 	static float PerEdgeInterval(const USpatialAudioComponent& Component, float Interval);
@@ -39,7 +40,8 @@ private:
 	static void TickPhase0OffsetReadback(USpatialAudioComponent& Component, FCachedEdgePoint& Edge, UWorld* World,
 	                                     const FVector& SourcePos, const FVector& ListenerPos);
 	static bool ReadOffsetFanTraces(FCachedEdgePoint& Edge, UWorld* World, bool (&OutFanClear)[4]);
-	static void DrawOffsetFan(const USpatialAudioComponent& Component, const FCachedEdgePoint& Edge, const UWorld* World,
+	static void DrawOffsetFan(const USpatialAudioComponent& Component, const FCachedEdgePoint& Edge,
+	                          const UWorld* World,
 	                          const bool (&FanClear)[4]);
 	static void RestoreFromListenerSideEviction(FCachedEdgePoint& Edge, const FVector& SourcePos,
 	                                            const FVector& ListenerPos);
@@ -58,15 +60,18 @@ private:
 	static void DrawProbeResult(const USpatialAudioComponent& Component, const UWorld* World,
 	                            const FVector& Point, bool bClear);
 	static int32 ResolveStepsForMergeRadius(const USpatialAudioComponent& Component, float Span);
-	static FVector BisectListenerLoS(const USpatialAudioComponent& Component, const UWorld* World, const FVector& ListenerPos,
+	static FVector BisectListenerLoS(const USpatialAudioComponent& Component, const UWorld* World,
+	                                 const FVector& ListenerPos,
 	                                 const FVector& BlockedEnd, const FVector& ClearEnd, bool& bOutFoundClear,
 	                                 int32 ExplicitSteps = 0);
-	static bool TryPromoteToInnerAnchor(const USpatialAudioComponent& Component, FCachedEdgePoint& Edge, const UWorld* World,
+	static bool TryPromoteToInnerAnchor(const USpatialAudioComponent& Component, FCachedEdgePoint& Edge,
+	                                    const UWorld* World,
 	                                    const FVector& ListenerPos, bool bAllowSubSegmentRefine);
 	static bool TryJumpToPreviousVertex(const USpatialAudioComponent& Component, FCachedEdgePoint& Edge,
 	                                    const UWorld* World, const FVector& ListenerPos,
 	                                    const FVector& InnerAnchor);
-	static bool TryRefineAlongFinalSegment(const USpatialAudioComponent& Component, FCachedEdgePoint& Edge, const UWorld* World,
+	static bool TryRefineAlongFinalSegment(const USpatialAudioComponent& Component, FCachedEdgePoint& Edge,
+	                                       const UWorld* World,
 	                                       const FVector& ListenerPos, const FVector& InnerAnchor);
 	static void TickRelayMaintenance(USpatialAudioComponent& Component, FCachedEdgePoint& Edge, UWorld* World,
 	                                 const FVector& SourcePos, const FVector& ListenerPos, bool bIntervalFired);

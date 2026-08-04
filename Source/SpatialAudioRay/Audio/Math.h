@@ -5,7 +5,6 @@
 #include "SpatialAudioTypes.h"
 
 namespace Math {
-
 	inline FVector ReflectDirection(const FVector& Dir, const FVector& Normal) {
 		return Dir - 2.f * FVector::DotProduct(Dir, Normal) * Normal;
 	}
@@ -229,10 +228,10 @@ namespace Math {
 	};
 
 	inline float ComputeVirtualPathBend(float Leg1Geom, float Leg1Traveled, float MaxRayDistance,
-	                                    const USpatialAudioSettings& Settings)
-	{
+	                                    const USpatialAudioSettings& Settings) {
 		const float Leg1ExcessRatio = Leg1Geom > 0.f
-			? FMath::Max(0.f, Leg1Traveled / Leg1Geom - 1.f) : 0.f;
+			                              ? FMath::Max(0.f, Leg1Traveled / Leg1Geom - 1.f)
+			                              : 0.f;
 		const float FullExcess = FMath::Max(Settings.VirtualPathBendFullExcess, KINDA_SMALL_NUMBER);
 		const float DistanceBend = Settings.VirtualPathBendDistanceStrength
 			* Leg1Traveled / FMath::Max(MaxRayDistance, 1.f);
@@ -245,8 +244,7 @@ namespace Math {
 		float Leg1Geom,
 		float Leg1Traveled,
 		float MaxRayDistance,
-		const USpatialAudioSettings& Settings)
-	{
+		const USpatialAudioSettings& Settings) {
 		FVirtualAudioParams Out;
 		Out.VirtualGain = VirtualCrossfade * (1.f - PathAttenuation);
 		Out.VirtualPathBend =
@@ -254,23 +252,20 @@ namespace Math {
 		return Out;
 	}
 
-	inline float ComputeVirtualCrossfadeRamp(float CurrentOcclusion, float StartOcclusion)
-	{
+	inline float ComputeVirtualCrossfadeRamp(float CurrentOcclusion, float StartOcclusion) {
 		if (StartOcclusion >= 1.f) {
 			return 0.f;
 		}
 		return FMath::Clamp((CurrentOcclusion - StartOcclusion) / (1.f - StartOcclusion), 0.f, 1.f);
 	}
 
-	inline float ComputeVirtualCrossfadeTarget(bool bHasLoS, bool bSuppressHardGate, float SmoothedRamp)
-	{
+	inline float ComputeVirtualCrossfadeTarget(bool bHasLoS, bool bSuppressHardGate, float SmoothedRamp) {
 		const float HardGate = (bHasLoS || bSuppressHardGate) ? 0.f : 1.f;
 		return FMath::Max(HardGate, SmoothedRamp);
 	}
 
 	inline float ComputeVirtualCrossfadeSlew(
-		float CurrentCrossfade, float TargetCrossfade, float FadeInTime, float FadeOutTime, float DeltaTime)
-	{
+		float CurrentCrossfade, float TargetCrossfade, float FadeInTime, float FadeOutTime, float DeltaTime) {
 		const bool bFadingIn = TargetCrossfade > CurrentCrossfade;
 		const float FadeTime = bFadingIn ? FadeInTime : FadeOutTime;
 		const float SlewRate = FadeTime > 0.f ? 1.f / FadeTime : 1000.f;

@@ -5,16 +5,15 @@
 #include "NPCVoiceState.h"
 
 namespace VoiceLogic {
-
 	constexpr float TransitionPlayMargin = 0.03f;
 
 	constexpr float DurationMismatchTolerance = 0.05f;
 
 	inline ENPCVoiceCategory BargeInCategory(ENPCVoiceBargeInReason Reason) {
 		switch (Reason) {
-			case ENPCVoiceBargeInReason::SightLost: return ENPCVoiceCategory::LostSight;
-			case ENPCVoiceBargeInReason::SightGained: return ENPCVoiceCategory::SightRegained;
-			default: return ENPCVoiceCategory::Transition;
+		case ENPCVoiceBargeInReason::SightLost: return ENPCVoiceCategory::LostSight;
+		case ENPCVoiceBargeInReason::SightGained: return ENPCVoiceCategory::SightRegained;
+		default: return ENPCVoiceCategory::Transition;
 		}
 	}
 
@@ -23,10 +22,13 @@ namespace VoiceLogic {
 		FNPCVoiceBargeInAvailability Available;
 		for (const FNPCVoiceRuntimeLine& Line : Lines) {
 			switch (Line.Row.Category) {
-				case ENPCVoiceCategory::Transition: Available.bTransition = true; break;
-				case ENPCVoiceCategory::LostSight: Available.bLostSight = true; break;
-				case ENPCVoiceCategory::SightRegained: Available.bSightRegained = true; break;
-				default: break;
+			case ENPCVoiceCategory::Transition: Available.bTransition = true;
+				break;
+			case ENPCVoiceCategory::LostSight: Available.bLostSight = true;
+				break;
+			case ENPCVoiceCategory::SightRegained: Available.bSightRegained = true;
+				break;
+			default: break;
 			}
 		}
 		return Available;
@@ -272,14 +274,16 @@ namespace VoiceLogic {
 			return {};
 		}
 		const bool bRose = static_cast<int32>(Committed) > static_cast<int32>(Playback.ActiveEffort);
-		return {ENPCVoiceBargeInReason::EffortDrift,
-		        bRose ? ENPCVoiceTransitionDir::Farther : ENPCVoiceTransitionDir::Closer};
+		return {
+			ENPCVoiceBargeInReason::EffortDrift,
+			bRose ? ENPCVoiceTransitionDir::Farther : ENPCVoiceTransitionDir::Closer
+		};
 	}
 
 	inline float ResolveNextLineDelay(bool bAfterTransition, const UNPCVoiceSettings& Settings) {
 		return bAfterTransition
-			? Settings.PostTransitionLineDelay
-			: FMath::RandRange(Settings.LineIntervalMin, Settings.LineIntervalMax);
+			       ? Settings.PostTransitionLineDelay
+			       : FMath::RandRange(Settings.LineIntervalMin, Settings.LineIntervalMax);
 	}
 
 	inline void PullInNextLine(FNPCVoicePlaybackState& Playback, float Now,
@@ -320,5 +324,4 @@ namespace VoiceLogic {
 		Transition.PlayTime = Now + Settings.TransitionFadeOutTime + TransitionPlayMargin;
 		Transition.LastTime = Now;
 	}
-
 }

@@ -10,7 +10,8 @@
 #include "GameFramework/Pawn.h"
 
 
-bool FAsyncCastManager::TryDiscardStaleSweep(USpatialAudioComponent& Component, UWorld* World, const USpatialAudioSettings& Settings) {
+bool FAsyncCastManager::TryDiscardStaleSweep(USpatialAudioComponent& Component, UWorld* World,
+                                             const USpatialAudioSettings& Settings) {
 	if (Component.Finalize.bDirectLoSFound) {
 		return false;
 	}
@@ -45,7 +46,8 @@ bool FAsyncCastManager::TryDiscardStaleSweep(USpatialAudioComponent& Component, 
 	return true;
 }
 
-void FAsyncCastManager::AccumulateRefineProbesIntoCycle(USpatialAudioComponent& Component, const UWorld* World, const USpatialAudioSettings& Settings) {
+void FAsyncCastManager::AccumulateRefineProbesIntoCycle(USpatialAudioComponent& Component, const UWorld* World,
+                                                        const USpatialAudioSettings& Settings) {
 	FVector WeightedPosSum = Component.Finalize.WeightedPosSum;
 	float TotalWeight = Component.Finalize.TotalWeight;
 	float WeightedDistSum = Component.Finalize.WeightedDistSum;
@@ -54,7 +56,8 @@ void FAsyncCastManager::AccumulateRefineProbesIntoCycle(USpatialAudioComponent& 
 		const FVector EdgePoint = Probe.LoSOrigin;
 
 		if (Component.bDrawDebugRays && Component.bShowEdgePoints && World) {
-			DrawDebugSphere(World, EdgePoint, 14.f, 8, FColor(80, 255, 120), false, Settings.DebugLineDuration, SDPG_Foreground, 2.f);
+			DrawDebugSphere(World, EdgePoint, 14.f, 8, FColor(80, 255, 120), false, Settings.DebugLineDuration,
+			                SDPG_Foreground, 2.f);
 		}
 
 		const float GeomDist = FVector::Dist(Component.AsyncSourcePos, EdgePoint);
@@ -95,15 +98,16 @@ float FAsyncCastManager::RankScore(const USpatialAudioComponent& Component, cons
 			* FVector::Dist(Component.AsyncListenerPos, Point) / MaxRay);
 }
 
-bool FAsyncCastManager::OutranksIncumbent(const USpatialAudioComponent& Component, const USpatialAudioSettings& Settings,
+bool FAsyncCastManager::OutranksIncumbent(const USpatialAudioComponent& Component,
+                                          const USpatialAudioSettings& Settings,
                                           const FStoredLoSPath& Found, const FCachedEdgePoint& Incumbent) {
 	if (Incumbent.bRelayed) {
 		return true;
 	}
 	return Found.LoSBounces < Incumbent.LoSBounces ||
-		(Found.LoSBounces == Incumbent.LoSBounces
-			&& RankScore(Component, Settings, Found.PathDist, Found.LoSOrigin)
-				> RankScore(Component, Settings, Incumbent.EffectivePathDist(), Incumbent.EffectivePoint()) * 1.01f);
+	(Found.LoSBounces == Incumbent.LoSBounces
+		&& RankScore(Component, Settings, Found.PathDist, Found.LoSOrigin)
+		> RankScore(Component, Settings, Incumbent.EffectivePathDist(), Incumbent.EffectivePoint()) * 1.01f);
 }
 
 void FAsyncCastManager::WriteEntry(const USpatialAudioComponent& Component, FCachedEdgePoint& Edge,
@@ -155,12 +159,13 @@ bool FAsyncCastManager::IsWorseIncumbent(const USpatialAudioComponent& Component
 		return Candidate.bRelayed;
 	}
 	return Candidate.LoSBounces > Worst.LoSBounces ||
-		(Candidate.LoSBounces == Worst.LoSBounces
-			&& RankScore(Component, Settings, Candidate.EffectivePathDist(), Candidate.EffectivePoint())
-				< RankScore(Component, Settings, Worst.EffectivePathDist(), Worst.EffectivePoint()));
+	(Candidate.LoSBounces == Worst.LoSBounces
+		&& RankScore(Component, Settings, Candidate.EffectivePathDist(), Candidate.EffectivePoint())
+		< RankScore(Component, Settings, Worst.EffectivePathDist(), Worst.EffectivePoint()));
 }
 
-int32 FAsyncCastManager::FindWorstIncumbent(const USpatialAudioComponent& Component, const USpatialAudioSettings& Settings,
+int32 FAsyncCastManager::FindWorstIncumbent(const USpatialAudioComponent& Component,
+                                            const USpatialAudioSettings& Settings,
                                             const TArray<bool>& bMatchedThisCycle) {
 	int32 WorstIdx = INDEX_NONE;
 	for (int32 i = 0; i < Component.CachedEdgePoints.Num(); ++i) {
@@ -168,17 +173,20 @@ int32 FAsyncCastManager::FindWorstIncumbent(const USpatialAudioComponent& Compon
 			continue;
 		}
 		if (WorstIdx == INDEX_NONE
-			|| IsWorseIncumbent(Component, Settings, Component.CachedEdgePoints[i], Component.CachedEdgePoints[WorstIdx])) {
+			|| IsWorseIncumbent(Component, Settings, Component.CachedEdgePoints[i],
+			                    Component.CachedEdgePoints[WorstIdx])) {
 			WorstIdx = i;
 		}
 	}
 	return WorstIdx;
 }
 
-bool FAsyncCastManager::TryDisplaceWorstIncumbent(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings,
+bool FAsyncCastManager::TryDisplaceWorstIncumbent(USpatialAudioComponent& Component,
+                                                  const USpatialAudioSettings& Settings,
                                                   const FStoredLoSPath& Found, TArray<bool>& bMatchedThisCycle) {
 	const int32 WorstIdx = FindWorstIncumbent(Component, Settings, bMatchedThisCycle);
-	if (WorstIdx == INDEX_NONE || !OutranksIncumbent(Component, Settings, Found, Component.CachedEdgePoints[WorstIdx])) {
+	if (WorstIdx == INDEX_NONE || !
+		OutranksIncumbent(Component, Settings, Found, Component.CachedEdgePoints[WorstIdx])) {
 		return false;
 	}
 	WriteEntry(Component, Component.CachedEdgePoints[WorstIdx], Found);
@@ -187,7 +195,8 @@ bool FAsyncCastManager::TryDisplaceWorstIncumbent(USpatialAudioComponent& Compon
 	return true;
 }
 
-void FAsyncCastManager::MergeStoredPathsIntoCache(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings) {
+void FAsyncCastManager::MergeStoredPathsIntoCache(USpatialAudioComponent& Component,
+                                                  const USpatialAudioSettings& Settings) {
 	const float MergeRadiusSq = FMath::Square(Settings.CachedEdgeMergeRadius);
 	TArray<bool> bMatchedThisCycle;
 	bMatchedThisCycle.Init(false, Component.CachedEdgePoints.Num());
@@ -218,7 +227,8 @@ void FAsyncCastManager::MergeStoredPathsIntoCache(USpatialAudioComponent& Compon
 	Component.StoredLoSPaths.Reset();
 }
 
-void FAsyncCastManager::AdvanceSweepCycleAndIdleState(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings) {
+void FAsyncCastManager::AdvanceSweepCycleAndIdleState(USpatialAudioComponent& Component,
+                                                      const USpatialAudioSettings& Settings) {
 	const int32 CycleCount = FMath::Max(1, Settings.FullSweepCycleCount);
 	Component.StaggeredCycleIndex = (Component.StaggeredCycleIndex + 1) % CycleCount;
 	Component.CycleAccum.Index = 0;
@@ -236,7 +246,8 @@ void FAsyncCastManager::AdvanceSweepCycleAndIdleState(USpatialAudioComponent& Co
 	}
 }
 
-void FAsyncCastManager::PublishSweepAudioTargets(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings) {
+void FAsyncCastManager::PublishSweepAudioTargets(USpatialAudioComponent& Component,
+                                                 const USpatialAudioSettings& Settings) {
 	FRayAccumulatorInput AccumIn;
 	AccumIn.RaysReached = Component.CycleAccum.RaysReached;
 	AccumIn.MinLoSDist = Component.CycleAccum.MinLoSDist;
@@ -247,8 +258,8 @@ void FAsyncCastManager::PublishSweepAudioTargets(USpatialAudioComponent& Compone
 	const FRayAccumulatorOutput AccumOut = ComputeAudioFromRayAccumulator(AccumIn);
 
 	const float Leg1Geom = AccumOut.bHasVirtualSource
-		? FVector::Dist(Component.AsyncSourcePos, AccumOut.VirtualSourcePos)
-		: AccumOut.MinLoSDist;
+		                       ? FVector::Dist(Component.AsyncSourcePos, AccumOut.VirtualSourcePos)
+		                       : AccumOut.MinLoSDist;
 	Component.TargetPathAttenuation = Component.ComputePathAttenuationCurved(
 		AccumOut.MinLoSDist, Leg1Geom, Settings);
 
@@ -263,7 +274,8 @@ void FAsyncCastManager::PublishSweepAudioTargets(USpatialAudioComponent& Compone
 	Component.TargetVirtualSourceLocation = AccumOut.VirtualSourcePos;
 }
 
-void FAsyncCastManager::ReadbackFinalizeBatch(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings) {
+void FAsyncCastManager::ReadbackFinalizeBatch(USpatialAudioComponent& Component,
+                                              const USpatialAudioSettings& Settings) {
 	UWorld* World = Component.GetWorld();
 
 	if (TryDiscardStaleSweep(Component, World, Settings)) {

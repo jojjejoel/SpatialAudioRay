@@ -61,14 +61,16 @@ float FUpdater::SyncOffsetLoSFraction(USpatialAudioComponent& Component, UWorld*
                                       float RingStepRad) {
 	const FVector ToListenerDir = (ListenerPos - SourcePos).GetSafeNormal();
 
-	auto SampleClear = [&Component, World, &SourcePos, SourceR](const FVector& From, const FVector& End) {
+	auto SampleClear = [&Component, World, &SourcePos, SourceR](const FVector& From, const FVector& End)
+	{
 		if (FVector::Dist(From, SourcePos) <= FMath::Max(SourceR, UE_KINDA_SMALL_NUMBER)) {
 			return true;
 		}
 		FHitResult Hit;
 		return !Component.TraceLine(World, Hit, From, End);
 	};
-	auto SphereCapPoint = [&SourcePos, &ToListenerDir, SourceR](const FVector& RingDir, float LateralR) {
+	auto SphereCapPoint = [&SourcePos, &ToListenerDir, SourceR](const FVector& RingDir, float LateralR)
+	{
 		const float Lift = FMath::Sqrt(FMath::Max(SourceR * SourceR - LateralR * LateralR, 0.f));
 		return SourcePos + RingDir * LateralR + ToListenerDir * Lift;
 	};
@@ -116,7 +118,8 @@ float FUpdater::SyncOffsetLoSFraction(USpatialAudioComponent& Component, UWorld*
 	return static_cast<float>(Clear) / 5.f;
 }
 
-void FUpdater::TrySampleOffsetLoS(USpatialAudioComponent& Component, UWorld* World, const USpatialAudioSettings& Settings,
+void FUpdater::TrySampleOffsetLoS(USpatialAudioComponent& Component, UWorld* World,
+                                  const USpatialAudioSettings& Settings,
                                   float DeltaTime, const FVector& SourcePos, const FVector& ListenerPos,
                                   int32 RotationSteps) {
 	Component.OffsetLoSCheckTimer += DeltaTime;
@@ -140,7 +143,8 @@ void FUpdater::TrySampleOffsetLoS(USpatialAudioComponent& Component, UWorld* Wor
 		}
 		Component.bLoSFractionSeeded = true;
 		Component.LastDirectLoSFraction = Component.LastOffsetLoSFraction;
-	} else {
+	}
+	else {
 		Component.LoSSlotFractions[Component.LoSSlotIndex] = Component.LastOffsetLoSFraction;
 	}
 	Component.LoSSlotIndex = (Component.LoSSlotIndex + 1) % RotationSteps;
@@ -156,15 +160,16 @@ void FUpdater::TrySampleOffsetLoS(USpatialAudioComponent& Component, UWorld* Wor
 		                              : Component.NoLoSSampleStreak + 1;
 }
 
-void FUpdater::UpdateSmoothedOcclusionFromSamples(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings,
-                                                   float DeltaTime, int32 RotationSteps) {
+void FUpdater::UpdateSmoothedOcclusionFromSamples(USpatialAudioComponent& Component,
+                                                  const USpatialAudioSettings& Settings,
+                                                  float DeltaTime, int32 RotationSteps) {
 	const float PatternLoSFraction = Component.WindowedLoSFraction;
 
 	const float EffSmoothingTime = Settings.LoSFractionSmoothingTime * Component.VelocityScaling.OffsetLoSMultiplier;
 	const float DirectLoSFraction = EffSmoothingTime > 0.f
-		? FMath::FInterpTo(Component.LastDirectLoSFraction, PatternLoSFraction,
-		                   DeltaTime, 1.f / EffSmoothingTime)
-		: PatternLoSFraction;
+		                                ? FMath::FInterpTo(Component.LastDirectLoSFraction, PatternLoSFraction,
+		                                                   DeltaTime, 1.f / EffSmoothingTime)
+		                                : PatternLoSFraction;
 
 	const bool bHoldLoSThroughRotation = Component.bHasDirectLoS && Component.VelocityScaling.IsStationary()
 		&& Component.NoLoSSampleStreak < RotationSteps;
@@ -202,8 +207,8 @@ void FUpdater::TickDirectLoSSampling(USpatialAudioComponent& Component, const fl
 }
 
 FUpdater::FEdgeWeightAccum FUpdater::AccumulateCachedEdgeWeights(USpatialAudioComponent& Component, const UWorld* World,
-                                                                  const USpatialAudioSettings& Settings,
-                                                                  const FVector& ListenerPos) {
+                                                                 const USpatialAudioSettings& Settings,
+                                                                 const FVector& ListenerPos) {
 	FEdgeWeightAccum Accum;
 	for (int32 i = 0; i < Component.CachedEdgePoints.Num(); ++i) {
 		const FCachedEdgePoint& Ep = Component.CachedEdgePoints[i];
@@ -294,8 +299,8 @@ void FUpdater::PerformUpdateRayCast(USpatialAudioComponent& Component, const USp
 }
 
 TArray<FUpdater::FDesired> FUpdater::BuildDesiredVoices(const USpatialAudioComponent& Component,
-                                                         const TArray<FEdgeCluster>& Clusters,
-                                                         const USpatialAudioSettings& Settings) {
+                                                        const TArray<FEdgeCluster>& Clusters,
+                                                        const USpatialAudioSettings& Settings) {
 	TArray<FDesired> Desired;
 
 	const FVector ActorPos = Component.GetOwner()->GetActorLocation();
@@ -305,9 +310,11 @@ TArray<FUpdater::FDesired> FUpdater::BuildDesiredVoices(const USpatialAudioCompo
 	}
 	for (const FEdgeCluster& Cluster : Clusters) {
 		const float Leg1Geom = FVector::Dist(ActorPos, Cluster.Centroid);
-		Desired.Add({Cluster.Centroid, Cluster.PathDist,
-		             Component.ComputePathAttenuationCurved(Cluster.PathDist, Leg1Geom, Settings),
-		             Cluster.TotalWeight / FMath::Max(TotalWeight, KINDA_SMALL_NUMBER)});
+		Desired.Add({
+			Cluster.Centroid, Cluster.PathDist,
+			Component.ComputePathAttenuationCurved(Cluster.PathDist, Leg1Geom, Settings),
+			Cluster.TotalWeight / FMath::Max(TotalWeight, KINDA_SMALL_NUMBER)
+		});
 	}
 
 	return Desired;

@@ -16,7 +16,6 @@ class SPATIALAUDIORAY_API USpatialAudioSettings : public UDataAsset {
 	GENERATED_BODY()
 
 public:
-
 	/** Number of rays fired in the full async sweep (Fibonacci sphere distribution). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Ray Casting")
 	int32 FullSweepRayCount = 64;

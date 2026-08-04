@@ -29,6 +29,7 @@ private:
 		float Avg60Sec = 0.f;
 		float PeakTracesPerSec = 0.f;
 	};
+
 	FAggregateTraceStats AggregateSourceTraceStats();
 	bool ComputeAnyDebugRaysActive() const;
 	void HandleCycleKey(const USpatialAudioComponent& First, const APlayerController* PC);

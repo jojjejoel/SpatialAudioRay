@@ -91,8 +91,6 @@ bool Accumulate_SinglePoint_AlphaHalf::RunTest(const FString& Parameters) {
 }
 
 
-
-
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FComputeAudio_VirtualSource_WeightedAverage,
 	"SpatialAudioRay.Async.ComputeAudio.VirtualSource.WeightedAverage",
@@ -109,7 +107,7 @@ bool FComputeAudio_VirtualSource_WeightedAverage::RunTest(const FString& Paramet
 
 	TestTrue(TEXT("Virtual source is set when weight > 0"), Out.bHasVirtualSource);
 	TestTrue(TEXT("Virtual source equals WeightedPos / TotalWeight"),
-		Out.VirtualSourcePos.Equals(FVector(100.f, 0.f, 0.f), 0.001f));
+	         Out.VirtualSourcePos.Equals(FVector(100.f, 0.f, 0.f), 0.001f));
 	return true;
 }
 
@@ -169,7 +167,7 @@ bool FMakeBiasStream_DifferentRayIndexDiffers::RunTest(const FString& Parameters
 	FRandomStream StreamB = FAsyncCastManager::MakeBiasStream(SourcePos, ListenerPos, 1);
 
 	TestNotEqual(TEXT("Different ray indices seed different streams"),
-		StreamA.GetInitialSeed(), StreamB.GetInitialSeed());
+	             StreamA.GetInitialSeed(), StreamB.GetInitialSeed());
 	return true;
 }
 
@@ -186,7 +184,7 @@ bool FMakeBiasStream_DifferentPositionDiffers::RunTest(const FString& Parameters
 		FVector(101.f, 200.f, 50.f), FVector(400.f, -150.f, 80.f), 3);
 
 	TestNotEqual(TEXT("Moved source seeds a different stream"),
-		StreamA.GetInitialSeed(), StreamB.GetInitialSeed());
+	             StreamA.GetInitialSeed(), StreamB.GetInitialSeed());
 	return true;
 }
 
@@ -203,7 +201,7 @@ bool FMidAirTurn_ZeroRoughnessZeroBias_TurnsPerpendicular::RunTest(const FString
 		/*bApplyBias*/ false, /*Roughness*/ 0.f, /*ListenerBias*/ 0.f);
 
 	TestTrue(TEXT("Zero-scatter zero-bias turn is exactly perpendicular to the flight direction"),
-		FMath::Abs(FVector::DotProduct(Result, InDir)) < 1e-3f && Result.IsNormalized());
+	         FMath::Abs(FVector::DotProduct(Result, InDir)) < 1e-3f && Result.IsNormalized());
 	return true;
 }
 
@@ -224,12 +222,12 @@ bool FMidAirTurn_ZeroRoughnessZeroBias_IsDeterministic::RunTest(const FString& P
 		InDir, TurnPoint, ListenerPos, false, 0.f, 0.f);
 
 	TestTrue(TEXT("Identical turn point and listener replay the identical direction"),
-		First.Equals(Second, 1e-6f));
+	         First.Equals(Second, 1e-6f));
 
 	const FVector OtherPoint = FAsyncCastManager::ComputeMidAirTurnDirection(
 		InDir, TurnPoint + FVector(50.f, 0.f, 0.f), ListenerPos, false, 0.f, 0.f);
 	TestTrue(TEXT("A different turn point seeds a different direction"),
-		!First.Equals(OtherPoint, 0.01f));
+	         !First.Equals(OtherPoint, 0.01f));
 	return true;
 }
 
@@ -247,7 +245,7 @@ bool FMidAirTurn_FullListenerBias_PointsAtListener::RunTest(const FString& Param
 		/*bApplyBias*/ false, /*Roughness*/ 0.f, /*ListenerBias*/ 1.f);
 
 	TestTrue(TEXT("Full listener bias turns the ray straight at the listener"),
-		Result.Equals((ListenerPos - TurnPoint).GetSafeNormal(), 1e-4f));
+	         Result.Equals((ListenerPos - TurnPoint).GetSafeNormal(), 1e-4f));
 	return true;
 }
 
@@ -293,7 +291,7 @@ bool FSelectCycleDirections_PartitionsTheSet::RunTest(const FString& Parameters)
 		TestEqual(TEXT("Every selected direction carries its index"), Dirs.Num(), Indices.Num());
 		for (int32 i = 0; i < Dirs.Num(); ++i) {
 			TestTrue(TEXT("Index refers to the direction it was taken from"),
-				Dirs[i].Equals(All[Indices[i]]));
+			         Dirs[i].Equals(All[Indices[i]]));
 			Seen.Add(Indices[i]);
 		}
 	}
@@ -342,20 +340,20 @@ bool FCountPrefixAnchorWaypoints_StopsAtTheEdge::RunTest(const FString& Paramete
 	Waypoints.Add({FVector(300.f, 0.f, 0.f), 400.f});
 
 	TestEqual(TEXT("Only waypoints before the LoS origin are anchors"),
-		FAsyncCastManager::CountPrefixAnchorWaypoints(Waypoints, 260.f), 2);
+	          FAsyncCastManager::CountPrefixAnchorWaypoints(Waypoints, 260.f), 2);
 
 	TestEqual(TEXT("A waypoint exactly at the LoS distance is not an anchor"),
-		FAsyncCastManager::CountPrefixAnchorWaypoints(Waypoints, 250.f), 1);
+	          FAsyncCastManager::CountPrefixAnchorWaypoints(Waypoints, 250.f), 1);
 
 	TestEqual(TEXT("An LoS origin before every waypoint leaves no anchors"),
-		FAsyncCastManager::CountPrefixAnchorWaypoints(Waypoints, 50.f), 0);
+	          FAsyncCastManager::CountPrefixAnchorWaypoints(Waypoints, 50.f), 0);
 
 	TestEqual(TEXT("An LoS origin past every waypoint takes them all"),
-		FAsyncCastManager::CountPrefixAnchorWaypoints(Waypoints, 9000.f), 3);
+	          FAsyncCastManager::CountPrefixAnchorWaypoints(Waypoints, 9000.f), 3);
 
 	const TArray<FSpatialRayState::FBounceWaypoint> NoWaypoints;
 	TestEqual(TEXT("A ray that never turned has no anchors"),
-		FAsyncCastManager::CountPrefixAnchorWaypoints(NoWaypoints, 500.f), 0);
+	          FAsyncCastManager::CountPrefixAnchorWaypoints(NoWaypoints, 500.f), 0);
 
 	return true;
 }

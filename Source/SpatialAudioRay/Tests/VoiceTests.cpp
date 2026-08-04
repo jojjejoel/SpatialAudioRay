@@ -5,8 +5,8 @@
 
 namespace {
 	FNPCVoiceRuntimeLine MakeVoiceLine(const TCHAR* Id, ENPCVoiceEffort Effort, ENPCVoiceCategory Category,
-	                              const TCHAR* Group = TEXT(""),
-	                              ENPCVoiceTransitionDir Dir = ENPCVoiceTransitionDir::None) {
+	                                   const TCHAR* Group = TEXT(""),
+	                                   ENPCVoiceTransitionDir Dir = ENPCVoiceTransitionDir::None) {
 		FNPCVoiceRuntimeLine Line;
 		Line.Row.LineId = FName(Id);
 		Line.Row.Bucket = Effort;
@@ -17,8 +17,8 @@ namespace {
 	}
 
 	FNPCVoiceRuntimeLine MakeVoiceTransitionLine(const TCHAR* Id, ENPCVoiceEffort Effort,
-	                                        ENPCVoiceTransitionDir Dir,
-	                                        const TCHAR* Group = TEXT("")) {
+	                                             ENPCVoiceTransitionDir Dir,
+	                                             const TCHAR* Group = TEXT("")) {
 		return MakeVoiceLine(Id, Effort, ENPCVoiceCategory::Transition, Group, Dir);
 	}
 
@@ -36,7 +36,7 @@ namespace {
 	}
 
 	FNPCVoicePlaybackState MakeVoicePlayingState(ENPCVoiceEffort ActiveEffort, float EndTime,
-	                                        bool bIsTransition = false) {
+	                                             bool bIsTransition = false) {
 		FNPCVoicePlaybackState Playback;
 		Playback.bPlaying = true;
 		Playback.ActiveEffort = ActiveEffort;
@@ -46,7 +46,9 @@ namespace {
 	}
 
 	FNPCVoiceBargeInAvailability MakeVoiceFullBank() {
-		return {/*bTransition=*/true, /*bLostSight=*/true, /*bSightRegained=*/true};
+		return {
+			/*bTransition=*/true, /*bLostSight=*/true, /*bSightRegained=*/true
+		};
 	}
 }
 
@@ -177,12 +179,12 @@ bool FVoiceSight_WindowGatesReactionContentOnBothSides::RunTest(const FString& P
 	FNPCVoiceAcousticState Settled = MakeVoiceGenericOccluded();
 	TestFalse(TEXT("A settled hidden listener is offered no LostSight content"),
 	          VoiceLogic::ResolveCategoryPreference(Settled, *S)
-	              .Contains(ENPCVoiceCategory::LostSight));
+	          .Contains(ENPCVoiceCategory::LostSight));
 
 	FNPCVoiceAcousticState SettledVisible = MakeVoiceAcoustic(0.f);
 	TestFalse(TEXT("A settled visible listener is offered no SightRegained content"),
 	          VoiceLogic::ResolveCategoryPreference(SettledVisible, *S)
-	              .Contains(ENPCVoiceCategory::SightRegained));
+	          .Contains(ENPCVoiceCategory::SightRegained));
 
 	Settled.bSightReactionPending = true;
 	TestTrue(TEXT("A pending reaction on the hidden half opens LostSight"),
@@ -357,22 +359,22 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 bool FVoiceFindTransitionLine_DirectionAndEffort::RunTest(const FString& Parameters) {
 	TArray<FNPCVoiceRuntimeLine> Lines;
 	Lines.Add(MakeVoiceTransitionLine(TEXT("T_CloserWhisper"), ENPCVoiceEffort::Whisper,
-	                             ENPCVoiceTransitionDir::Closer));
+	                                  ENPCVoiceTransitionDir::Closer));
 	Lines.Add(MakeVoiceTransitionLine(TEXT("T_FartherRaised"), ENPCVoiceEffort::Raised,
-	                             ENPCVoiceTransitionDir::Farther));
+	                                  ENPCVoiceTransitionDir::Farther));
 	Lines.Add(MakeVoiceTransitionLine(TEXT("T_FartherShout"), ENPCVoiceEffort::Shout,
-	                             ENPCVoiceTransitionDir::Farther));
+	                                  ENPCVoiceTransitionDir::Farther));
 	const TMap<FName, float> NoCooldowns;
 
 	TestEqual(TEXT("Exact target effort wins in its direction"),
 	          VoiceLogic::FindBargeInLine(Lines, ENPCVoiceCategory::Transition, ENPCVoiceTransitionDir::Farther,
-	                                         ENPCVoiceEffort::Shout, 0.f, NoCooldowns), 2);
+	                                      ENPCVoiceEffort::Shout, 0.f, NoCooldowns), 2);
 	TestEqual(TEXT("No exact effort: nearest rendered one in the direction"),
 	          VoiceLogic::FindBargeInLine(Lines, ENPCVoiceCategory::Transition, ENPCVoiceTransitionDir::Farther,
-	                                         ENPCVoiceEffort::Conversational, 0.f, NoCooldowns), 1);
+	                                      ENPCVoiceEffort::Conversational, 0.f, NoCooldowns), 1);
 	TestEqual(TEXT("Direction filters even when efforts fit better elsewhere"),
 	          VoiceLogic::FindBargeInLine(Lines, ENPCVoiceCategory::Transition, ENPCVoiceTransitionDir::Closer,
-	                                         ENPCVoiceEffort::Shout, 0.f, NoCooldowns), 0);
+	                                      ENPCVoiceEffort::Shout, 0.f, NoCooldowns), 0);
 	return true;
 }
 
@@ -385,19 +387,19 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 bool FVoiceFindTransitionLine_CooldownAndEmpty::RunTest(const FString& Parameters) {
 	TArray<FNPCVoiceRuntimeLine> Lines;
 	Lines.Add(MakeVoiceTransitionLine(TEXT("T_A"), ENPCVoiceEffort::Shout,
-	                             ENPCVoiceTransitionDir::Farther, TEXT("trans")));
+	                                  ENPCVoiceTransitionDir::Farther, TEXT("trans")));
 	Lines.Add(MakeVoiceTransitionLine(TEXT("T_B"), ENPCVoiceEffort::Raised,
-	                             ENPCVoiceTransitionDir::Farther));
+	                                  ENPCVoiceTransitionDir::Farther));
 
 	TMap<FName, float> Cooldowns;
 	Cooldowns.Add(FName(TEXT("trans")), 100.f);
 
 	TestEqual(TEXT("Cooldown-blocked exact match yields to the nearest free line"),
 	          VoiceLogic::FindBargeInLine(Lines, ENPCVoiceCategory::Transition, ENPCVoiceTransitionDir::Farther,
-	                                         ENPCVoiceEffort::Shout, /*Now=*/50.f, Cooldowns), 1);
+	                                      ENPCVoiceEffort::Shout, /*Now=*/50.f, Cooldowns), 1);
 	TestEqual(TEXT("No line in the direction: INDEX_NONE"),
 	          VoiceLogic::FindBargeInLine(Lines, ENPCVoiceCategory::Transition, ENPCVoiceTransitionDir::Closer,
-	                                         ENPCVoiceEffort::Whisper, 0.f, Cooldowns),
+	                                      ENPCVoiceEffort::Whisper, 0.f, Cooldowns),
 	          static_cast<int32>(INDEX_NONE));
 	return true;
 }
@@ -460,11 +462,11 @@ bool FVoiceBargeIn_UnserviceableReasonYieldsToOneWithContent::RunTest(const FStr
 	TestTrue(TEXT("The serviceable sight reason still outranks drift"),
 	         VoiceLogic::EvaluateBargeIn(Playing, Fresh, Drifted, ENPCVoiceSightChange::Lost,
 	                                     SightOnly, 0.f, *S)
-	             .Reason == ENPCVoiceBargeInReason::SightLost);
+	         .Reason == ENPCVoiceBargeInReason::SightLost);
 	TestFalse(TEXT("Drift alone stays dormant without transition content"),
 	          VoiceLogic::EvaluateBargeIn(Playing, Fresh, Drifted, ENPCVoiceSightChange::None,
 	                                      SightOnly, 0.f, *S)
-	              .ShouldBargeIn());
+	          .ShouldBargeIn());
 	return true;
 }
 
@@ -481,21 +483,24 @@ bool FVoiceBargeIn_FiresOnDriftWithDirection::RunTest(const FString& Parameters)
 	const FNPCVoicePlaybackState Playing = MakeVoicePlayingState(ENPCVoiceEffort::Whisper, /*EndTime=*/100.f);
 
 	const VoiceLogic::FBargeInDecision Away =
-		VoiceLogic::EvaluateBargeIn(Playing, Fresh, ENPCVoiceEffort::Shout, ENPCVoiceSightChange::None, MakeVoiceFullBank(), 0.f, *S);
+		VoiceLogic::EvaluateBargeIn(Playing, Fresh, ENPCVoiceEffort::Shout, ENPCVoiceSightChange::None,
+		                            MakeVoiceFullBank(), 0.f, *S);
 	TestTrue(TEXT("Effort rising mid-line barges in"), Away.ShouldBargeIn());
 	TestTrue(TEXT("Rising effort means the listener is getting away"),
 	         Away.Dir == ENPCVoiceTransitionDir::Farther);
 
 	const FNPCVoicePlaybackState Shouting = MakeVoicePlayingState(ENPCVoiceEffort::Shout, 100.f);
 	const VoiceLogic::FBargeInDecision Closer =
-		VoiceLogic::EvaluateBargeIn(Shouting, Fresh, ENPCVoiceEffort::Whisper, ENPCVoiceSightChange::None, MakeVoiceFullBank(), 0.f, *S);
+		VoiceLogic::EvaluateBargeIn(Shouting, Fresh, ENPCVoiceEffort::Whisper, ENPCVoiceSightChange::None,
+		                            MakeVoiceFullBank(), 0.f, *S);
 	TestTrue(TEXT("Effort dropping mid-line barges in"), Closer.ShouldBargeIn());
 	TestTrue(TEXT("Falling effort means the listener closed in"),
 	         Closer.Dir == ENPCVoiceTransitionDir::Closer);
 
 	TestFalse(TEXT("No drift, no barge-in"),
-	          VoiceLogic::EvaluateBargeIn(Playing, Fresh, ENPCVoiceEffort::Whisper, ENPCVoiceSightChange::None, MakeVoiceFullBank(), 0.f, *S)
-	              .ShouldBargeIn());
+	          VoiceLogic::EvaluateBargeIn(Playing, Fresh, ENPCVoiceEffort::Whisper, ENPCVoiceSightChange::None,
+	                                      MakeVoiceFullBank(), 0.f, *S)
+	          .ShouldBargeIn());
 	return true;
 }
 
@@ -512,47 +517,54 @@ bool FVoiceBargeIn_Gates::RunTest(const FString& Parameters) {
 	const ENPCVoiceEffort Drifted = ENPCVoiceEffort::Shout;
 
 	TestFalse(TEXT("Nothing playing: nothing to interrupt"),
-	          VoiceLogic::EvaluateBargeIn(FNPCVoicePlaybackState(), Fresh, Drifted, ENPCVoiceSightChange::None, MakeVoiceFullBank(), 0.f, *S)
-	              .ShouldBargeIn());
+	          VoiceLogic::EvaluateBargeIn(FNPCVoicePlaybackState(), Fresh, Drifted, ENPCVoiceSightChange::None,
+	                                      MakeVoiceFullBank(), 0.f, *S)
+	          .ShouldBargeIn());
 
 	const FNPCVoicePlaybackState PlayingTransition =
 		MakeVoicePlayingState(ENPCVoiceEffort::Whisper, 100.f, /*bIsBargeIn=*/true);
 	TestFalse(TEXT("A transition line is never itself interrupted"),
-	          VoiceLogic::EvaluateBargeIn(PlayingTransition, Fresh, Drifted, ENPCVoiceSightChange::None, MakeVoiceFullBank(), 0.f, *S)
-	              .ShouldBargeIn());
+	          VoiceLogic::EvaluateBargeIn(PlayingTransition, Fresh, Drifted, ENPCVoiceSightChange::None,
+	                                      MakeVoiceFullBank(), 0.f, *S)
+	          .ShouldBargeIn());
 
 	TestFalse(TEXT("A bank with no transition content stays dormant"),
-	          VoiceLogic::EvaluateBargeIn(Playing, Fresh, Drifted, ENPCVoiceSightChange::None, FNPCVoiceBargeInAvailability(), 0.f, *S)
-	              .ShouldBargeIn());
+	          VoiceLogic::EvaluateBargeIn(Playing, Fresh, Drifted, ENPCVoiceSightChange::None,
+	                                      FNPCVoiceBargeInAvailability(), 0.f, *S)
+	          .ShouldBargeIn());
 
 	FNPCVoiceTransitionState JustFired;
 	JustFired.LastTime = 0.f;
 	TestFalse(TEXT("Rate limit blocks a second barge-in"),
 	          VoiceLogic::EvaluateBargeIn(Playing, JustFired, Drifted, ENPCVoiceSightChange::None, MakeVoiceFullBank(),
 	                                      S->TransitionCooldownSeconds - 0.1f, *S)
-	              .ShouldBargeIn());
+	          .ShouldBargeIn());
 	TestTrue(TEXT("Rate limit releases after the cooldown"),
 	         VoiceLogic::EvaluateBargeIn(Playing, JustFired, Drifted, ENPCVoiceSightChange::None, MakeVoiceFullBank(),
 	                                     S->TransitionCooldownSeconds, *S)
-	             .ShouldBargeIn());
+	         .ShouldBargeIn());
 
 	const FNPCVoicePlaybackState NearlyDone =
 		MakeVoicePlayingState(ENPCVoiceEffort::Whisper, S->TransitionMinRemainingTime - 0.01f);
 	TestFalse(TEXT("A line about to end is left to finish"),
-	          VoiceLogic::EvaluateBargeIn(NearlyDone, Fresh, Drifted, ENPCVoiceSightChange::None, MakeVoiceFullBank(), 0.f, *S).ShouldBargeIn());
+	          VoiceLogic::EvaluateBargeIn(NearlyDone, Fresh, Drifted, ENPCVoiceSightChange::None, MakeVoiceFullBank(),
+	                                      0.f, *S).ShouldBargeIn());
 
 	S->TransitionEffortDelta = 0;
 	TestFalse(TEXT("Delta 0 disables effort barge-ins"),
-	          VoiceLogic::EvaluateBargeIn(Playing, Fresh, Drifted, ENPCVoiceSightChange::None, MakeVoiceFullBank(), 0.f, *S).ShouldBargeIn());
+	          VoiceLogic::EvaluateBargeIn(Playing, Fresh, Drifted, ENPCVoiceSightChange::None, MakeVoiceFullBank(), 0.f,
+	                                      *S).ShouldBargeIn());
 	TestTrue(TEXT("Delta 0 leaves the sight triggers working"),
-	         VoiceLogic::EvaluateBargeIn(Playing, Fresh, Drifted, ENPCVoiceSightChange::Lost, MakeVoiceFullBank(), 0.f, *S)
-	             .ShouldBargeIn());
+	         VoiceLogic::EvaluateBargeIn(Playing, Fresh, Drifted, ENPCVoiceSightChange::Lost, MakeVoiceFullBank(), 0.f,
+	                                     *S)
+	         .ShouldBargeIn());
 
 	S->TransitionEffortDelta = 2;
 	const FNPCVoicePlaybackState OneStepOff = MakeVoicePlayingState(ENPCVoiceEffort::Conversational, 100.f);
 	TestFalse(TEXT("A one-step drift is below a delta of 2"),
-	          VoiceLogic::EvaluateBargeIn(OneStepOff, Fresh, ENPCVoiceEffort::Raised, ENPCVoiceSightChange::None, MakeVoiceFullBank(), 0.f, *S)
-	              .ShouldBargeIn());
+	          VoiceLogic::EvaluateBargeIn(OneStepOff, Fresh, ENPCVoiceEffort::Raised, ENPCVoiceSightChange::None,
+	                                      MakeVoiceFullBank(), 0.f, *S)
+	          .ShouldBargeIn());
 	return true;
 }
 
@@ -834,8 +846,8 @@ bool FVoiceContext_VisibleHalfSplitsOnObstruction::RunTest(const FString& Parame
 	         ENPCVoiceCategory::PartiallyOccluded);
 	TestTrue(TEXT("At the hidden threshold it crosses to the occluded half"),
 	         !VoiceLogic::ResolveCategoryPreference(
-		          MakeVoiceAcoustic(S->OcclusionShiftThreshold), *S)
-		          .Contains(ENPCVoiceCategory::PartiallyOccluded));
+		         MakeVoiceAcoustic(S->OcclusionShiftThreshold), *S)
+	         .Contains(ENPCVoiceCategory::PartiallyOccluded));
 
 	UNPCVoiceSettings* Off = NewObject<UNPCVoiceSettings>();
 	Off->PartialOcclusionThreshold = 0.f;
@@ -937,7 +949,7 @@ bool FVoiceBargeIn_SightTriggersShareTheCommonGates::RunTest(const FString& Para
 	TestFalse(TEXT("The rate limit covers sight triggers too"),
 	          VoiceLogic::EvaluateBargeIn(Playing, JustFired, Steady, ENPCVoiceSightChange::Lost,
 	                                      MakeVoiceFullBank(), S->TransitionCooldownSeconds - 0.1f, *S)
-	              .ShouldBargeIn());
+	          .ShouldBargeIn());
 
 	const FNPCVoicePlaybackState NearlyDone =
 		MakeVoicePlayingState(ENPCVoiceEffort::Whisper, S->TransitionMinRemainingTime - 0.01f);

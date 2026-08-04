@@ -105,11 +105,12 @@ int32 FAsyncCastManager::ApplyCacheFullnessRayScale(const USpatialAudioComponent
 	return FMath::Max(1, FMath::RoundToInt(RayCount * Scale));
 }
 
-void FAsyncCastManager::ResolveSweepRayBudget(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings) {
+void FAsyncCastManager::ResolveSweepRayBudget(USpatialAudioComponent& Component,
+                                              const USpatialAudioSettings& Settings) {
 	int32 ScaledRayCount;
 	Component.GetEffectiveRayCounts(ScaledRayCount, Component.CurrentPriority);
 	Component.AsyncMaxBounces = FMath::Max(Settings.MinMaxBounces,
-	                                        FMath::RoundToInt(Settings.MaxBounces * Component.CurrentPriority));
+	                                       FMath::RoundToInt(Settings.MaxBounces * Component.CurrentPriority));
 	Component.AsyncTotalRays = ApplyCacheFullnessRayScale(Component, ScaledRayCount, Settings);
 
 	Component.PendingValidCachedPoints.Reset();
@@ -231,8 +232,9 @@ void FAsyncCastManager::StartAsyncFullCast(USpatialAudioComponent& Component, co
 
 	const float FullCastDistance = FVector::Dist(Component.AsyncSteeringSourcePos, Component.AsyncSteeringListenerPos);
 	const FVector ToListenerDir = FullCastDistance > 0.f
-		                               ? (Component.AsyncSteeringListenerPos - Component.AsyncSteeringSourcePos) / FullCastDistance
-		                               : FVector::ForwardVector;
+		                              ? (Component.AsyncSteeringListenerPos - Component.AsyncSteeringSourcePos) /
+		                              FullCastDistance
+		                              : FVector::ForwardVector;
 
 	SubmitSweepRays(Component, Settings, World, ToListenerDir, FullCastDistance, CycleCount);
 
@@ -241,7 +243,8 @@ void FAsyncCastManager::StartAsyncFullCast(USpatialAudioComponent& Component, co
 }
 
 
-bool FAsyncCastManager::TryProcessMidAirTurn(const USpatialAudioComponent& Component, FSpatialRayState& Ray, UWorld* World,
+bool FAsyncCastManager::TryProcessMidAirTurn(const USpatialAudioComponent& Component, FSpatialRayState& Ray,
+                                             UWorld* World,
                                              float Budget, bool bSegMissed, bool& bAllDone,
                                              const USpatialAudioSettings& Settings) {
 	const FVector TurnPoint = Ray.Origin + Ray.Dir * Ray.SegSubmitLen;
@@ -273,20 +276,22 @@ bool FAsyncCastManager::TryProcessMidAirTurn(const USpatialAudioComponent& Compo
 	}
 
 	const float Remain = Math::ComputeNextSegmentLength(Component.MaxRayDistance,
-	                                                   Budget - Ray.CumulativeDistance,
-	                                                   Settings.MaxStraightFlightDistance);
+	                                                    Budget - Ray.CumulativeDistance,
+	                                                    Settings.MaxStraightFlightDistance);
 	SubmitFlightSegment(Component, Ray, World, Remain);
 	bAllDone = false;
 	return true;
 }
 
-void FAsyncCastManager::ProcessRayTermination(const USpatialAudioComponent& Component, FSpatialRayState& Ray, UWorld* World,
+void FAsyncCastManager::ProcessRayTermination(const USpatialAudioComponent& Component, FSpatialRayState& Ray,
+                                              UWorld* World,
                                               const FTraceDatum& SegData, bool bSegMissed, float Budget,
                                               bool& bAllDone, const USpatialAudioSettings& Settings) {
 	if (bSegMissed) {
 		const float RemainingBudget = FMath::Max(0.f, FMath::Min(
-			FMath::Min(Component.MaxRayDistance * Settings.RayLengthMultiplier, Ray.SegSubmitLen),
-			Budget - Ray.CumulativeDistance));
+			                                         FMath::Min(Component.MaxRayDistance * Settings.RayLengthMultiplier,
+			                                                    Ray.SegSubmitLen),
+			                                         Budget - Ray.CumulativeDistance));
 		const FVector TerminalPoint = Ray.Origin + Ray.Dir * RemainingBudget;
 
 		if (ShouldDrawFlightPaths(Component)) {
@@ -347,14 +352,14 @@ bool FAsyncCastManager::TrySetupSurfaceCrawl(USpatialAudioComponent& Component, 
 	int32 CrawlStepCap = Settings.MaxCrawlSteps;
 	if (Settings.MaxStraightFlightDistance > 0.f) {
 		CrawlStepCap = FMath::Clamp(FMath::FloorToInt(
-			Settings.MaxStraightFlightDistance / FMath::Max(Settings.CrawlStepSize, 1.f)),
-			1, Settings.MaxCrawlSteps);
+			                            Settings.MaxStraightFlightDistance / FMath::Max(Settings.CrawlStepSize, 1.f)),
+		                            1, Settings.MaxCrawlSteps);
 	}
 	Ray.CrawlMaxSteps = CrawlStepCap;
 
 	const float MaxCrawlRange = CrawlStepCap * Settings.CrawlStepSize;
 	Ray.CrawlRangeHandle = Component.SubmitAsyncTrace(World, NudgedStart,
-	                                                   NudgedStart + CrawlDir * MaxCrawlRange);
+	                                                  NudgedStart + CrawlDir * MaxCrawlRange);
 
 	Ray.CrawlStepProbes.Reset();
 	Ray.CrawlStepProbes.Reserve(CrawlStepCap);
@@ -377,8 +382,8 @@ bool FAsyncCastManager::TrySetupSurfaceCrawl(USpatialAudioComponent& Component, 
 }
 
 void FAsyncCastManager::ProcessRayBounceContinuation(USpatialAudioComponent& Component, FSpatialRayState& Ray,
-                                                      UWorld* World, const FHitResult& Hit, float Budget,
-                                                      bool& bAllDone, const USpatialAudioSettings& Settings) {
+                                                     UWorld* World, const FHitResult& Hit, float Budget,
+                                                     bool& bAllDone, const USpatialAudioSettings& Settings) {
 	if (FVector::DotProduct(Hit.Normal, Ray.Dir) > 0.f) {
 		if (Component.bDrawDebugRays && Component.bShowSurfaceCrawl) {
 			DrawDebugSphere(World, Hit.Location, 18.f, 8, FColor::Red,
@@ -408,8 +413,8 @@ void FAsyncCastManager::ProcessRayBounceContinuation(USpatialAudioComponent& Com
 	}
 
 	Ray.Dir = Math::ComputeBouncedDirection(Ray.Dir, Hit.Normal, !Ray.bLoSFound,
-	                                  Hit.Location, Component.AsyncSteeringListenerPos, Settings.SurfaceRoughness,
-	                                  Settings.BounceListenerBias);
+	                                        Hit.Location, Component.AsyncSteeringListenerPos, Settings.SurfaceRoughness,
+	                                        Settings.BounceListenerBias);
 	Ray.Origin = Hit.Location + Hit.Normal * Settings.RaySurfaceBias;
 	++Ray.Bounce;
 	Ray.BounceWaypoints.Add({Ray.Origin, Ray.CumulativeDistance});
@@ -421,8 +426,8 @@ void FAsyncCastManager::ProcessRayBounceContinuation(USpatialAudioComponent& Com
 	}
 
 	const float Remain = Math::ComputeNextSegmentLength(Component.MaxRayDistance,
-	                                                   Budget - Ray.CumulativeDistance,
-	                                                   Settings.MaxStraightFlightDistance);
+	                                                    Budget - Ray.CumulativeDistance,
+	                                                    Settings.MaxStraightFlightDistance);
 	if (Remain < 1.f
 		|| !Math::IsWithinPathBudget(Ray.CumulativeDistance, Ray.Origin, Component.AsyncListenerPos, Budget)) {
 		FinishOrDefer(Ray, bAllDone);
@@ -439,7 +444,8 @@ void FAsyncCastManager::TickSingleRay(USpatialAudioComponent& Component, FSpatia
 	const bool bLoSWasFound = Ray.bLoSFound;
 	DrainPendingLoSProbes(Component, Ray, World, Component.AsyncListenerPos);
 	if (!bLoSWasFound && Ray.bLoSFound && ShouldDrawFlightPaths(Component)) {
-		DrawDebugSphere(World, Ray.LoSOrigin, 10.f, 8, FColor::Green, false, Settings.DebugLineDuration, SDPG_Foreground, 2.f);
+		DrawDebugSphere(World, Ray.LoSOrigin, 10.f, 8, FColor::Green, false, Settings.DebugLineDuration,
+		                SDPG_Foreground, 2.f);
 	}
 
 	if (Ray.bLoSFound) {
@@ -507,7 +513,8 @@ void FAsyncCastManager::TickAsyncCast(USpatialAudioComponent& Component, const U
 	}
 }
 
-void FAsyncCastManager::DrainPendingLoSProbes(const USpatialAudioComponent& Component, FSpatialRayState& Ray, UWorld* World, const FVector& ListenerPos) {
+void FAsyncCastManager::DrainPendingLoSProbes(const USpatialAudioComponent& Component, FSpatialRayState& Ray,
+                                              UWorld* World, const FVector& ListenerPos) {
 	if (Ray.PendingLoSProbes.IsEmpty()) {
 		return;
 	}
@@ -561,9 +568,9 @@ bool FAsyncCastManager::AreCrawlTracesReady(UWorld* World, FSpatialRayState& Ray
 }
 
 void FAsyncCastManager::TryConfirmLoSAtCrawlStep(const USpatialAudioComponent& Component, FSpatialRayState& Ray,
-                                                UWorld* World,
-                                                const FSpatialRayState::FAsyncCrawlStepProbe& StepProbe,
-                                                const USpatialAudioSettings& Settings) {
+                                                 UWorld* World,
+                                                 const FSpatialRayState::FAsyncCrawlStepProbe& StepProbe,
+                                                 const USpatialAudioSettings& Settings) {
 	if (Ray.bLoSFound
 		|| FVector::DotProduct(Component.AsyncListenerPos - StepProbe.StepPos, Ray.CrawlHitNormal) <= 0.f) {
 		return;
@@ -653,8 +660,8 @@ FAsyncCastManager::FCrawlStepResult FAsyncCastManager::EvaluateCrawlSteps(
 }
 
 void FAsyncCastManager::DrawCrawlDebugVisualization(const FSpatialRayState& Ray,
-                                                     const UWorld* World, const FCrawlStepResult& Result, int32 Limit,
-                                                     const USpatialAudioSettings& Settings) {
+                                                    const UWorld* World, const FCrawlStepResult& Result, int32 Limit,
+                                                    const USpatialAudioSettings& Settings) {
 	DrawDebugSphere(World, Ray.CrawlNudgedStart, 6.f, 6, FColor::Cyan,
 	                false, Settings.DebugLineDuration, SDPG_Foreground, 1.5f);
 
@@ -664,9 +671,11 @@ void FAsyncCastManager::DrawCrawlDebugVisualization(const FSpatialRayState& Ray,
 		const FSpatialRayState::FAsyncCrawlStepProbe& StepProbe = Ray.CrawlStepProbes[StepIdx];
 
 		const bool bIsEdgeStep = (StepIdx == Result.FoundAtStep);
-		const FColor StepColor = !bIsEdgeStep       ? FColor::White
-		                       : Result.bPerpWallHit ? FColor::Orange
-		                       :                       FColor::Yellow;
+		const FColor StepColor = !bIsEdgeStep
+			                         ? FColor::White
+			                         : Result.bPerpWallHit
+			                         ? FColor::Orange
+			                         : FColor::Yellow;
 		const float Radius = bIsEdgeStep ? 12.f : 4.f;
 
 		DrawDebugSphere(World, StepProbe.StepPos, Radius, 6, StepColor,
@@ -704,8 +713,9 @@ void FAsyncCastManager::ApplyCrawlResult(const USpatialAudioComponent& Component
 	}
 	else {
 		Ray.Dir = Math::ComputeBouncedDirection(Ray.CrawlInDir, Ray.CrawlHitNormal, !Ray.bLoSFound,
-		                                  Ray.CrawlHitLoc, Component.AsyncSteeringListenerPos, Settings.SurfaceRoughness,
-		                                  Settings.BounceListenerBias);
+		                                        Ray.CrawlHitLoc, Component.AsyncSteeringListenerPos,
+		                                        Settings.SurfaceRoughness,
+		                                        Settings.BounceListenerBias);
 		Ray.Origin = Ray.CrawlHitLoc + Ray.CrawlHitNormal * Settings.RaySurfaceBias;
 		++Ray.Bounce;
 	}
@@ -751,8 +761,8 @@ void FAsyncCastManager::ProcessCrawlBatch(const USpatialAudioComponent& Componen
 	}
 
 	const float Remain = Math::ComputeNextSegmentLength(Component.MaxRayDistance,
-	                                                   Budget - Ray.CumulativeDistance,
-	                                                   Settings.MaxStraightFlightDistance);
+	                                                    Budget - Ray.CumulativeDistance,
+	                                                    Settings.MaxStraightFlightDistance);
 	SubmitFlightSegment(Component, Ray, World, Remain);
 	bAllDone = false;
 }
@@ -830,7 +840,7 @@ bool FAsyncCastManager::HasClearShortcut(const USpatialAudioComponent& Component
 }
 
 int32 FAsyncCastManager::CountPrefixAnchorWaypoints(const TArray<FSpatialRayState::FBounceWaypoint>& Waypoints,
-                                                   float LoSCumulativeDistance) {
+                                                    float LoSCumulativeDistance) {
 	int32 Count = 0;
 	while (Count < Waypoints.Num() && Waypoints[Count].CumDist < LoSCumulativeDistance) {
 		++Count;

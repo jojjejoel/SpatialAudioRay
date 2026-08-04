@@ -69,7 +69,8 @@ struct FCachedEdgePoint {
 			return Current;
 		}
 		float Remaining = PullbackDist;
-		auto WalkToward = [&Current, &Remaining](const FVector& Target) -> bool {
+		auto WalkToward = [&Current, &Remaining](const FVector& Target) -> bool
+		{
 			const float SegLen = FVector::Dist(Current, Target);
 			if (SegLen >= Remaining) {
 				Current += (Target - Current) * (Remaining / FMath::Max(SegLen, KINDA_SMALL_NUMBER));
@@ -144,6 +145,7 @@ struct FSpatialRayState {
 		FVector Pos = FVector::ZeroVector;
 		float CumDist = 0.f;
 	};
+
 	TArray<FBounceWaypoint> BounceWaypoints;
 
 	enum class ERayBatchPhase : uint8 { None, CrawlBatch };

@@ -120,7 +120,8 @@ int32 FEdgeCache::ResolveStepsForMergeRadius(const USpatialAudioComponent& Compo
 	return FMath::Clamp(FMath::CeilToInt(FMath::Log2(FMath::Max(Span / Tolerance, 1.f))), 5, 10);
 }
 
-FVector FEdgeCache::BisectListenerLoS(const USpatialAudioComponent& Component, const UWorld* World, const FVector& ListenerPos,
+FVector FEdgeCache::BisectListenerLoS(const USpatialAudioComponent& Component, const UWorld* World,
+                                      const FVector& ListenerPos,
                                       const FVector& BlockedEnd, const FVector& ClearEnd, bool& bOutFoundClear,
                                       const int32 ExplicitSteps) {
 	const USpatialAudioComponent::FTraceBucketScope Bucket(Component, USpatialAudioComponent::ETraceBucket::Bisect);
@@ -129,8 +130,8 @@ FVector FEdgeCache::BisectListenerLoS(const USpatialAudioComponent& Component, c
 	bOutFoundClear = false;
 
 	const int32 Steps = ExplicitSteps > 0
-		                        ? ExplicitSteps
-		                        : ResolveStepsForMergeRadius(Component, FVector::Dist(BlockedPoint, ClearPoint));
+		                    ? ExplicitSteps
+		                    : ResolveStepsForMergeRadius(Component, FVector::Dist(BlockedPoint, ClearPoint));
 
 	for (int32 Step = 0; Step < Steps; ++Step) {
 		const FVector Mid = (BlockedPoint + ClearPoint) * 0.5f;
@@ -145,7 +146,8 @@ FVector FEdgeCache::BisectListenerLoS(const USpatialAudioComponent& Component, c
 	return ClearPoint;
 }
 
-bool FEdgeCache::TryPromoteToInnerAnchor(const USpatialAudioComponent& Component, FCachedEdgePoint& Edge, const UWorld* World,
+bool FEdgeCache::TryPromoteToInnerAnchor(const USpatialAudioComponent& Component, FCachedEdgePoint& Edge,
+                                         const UWorld* World,
                                          const FVector& ListenerPos, const bool bAllowSubSegmentRefine) {
 	if (Edge.ShortestPath.Num() < 2) {
 		return false;
@@ -176,7 +178,8 @@ bool FEdgeCache::TryJumpToPreviousVertex(const USpatialAudioComponent& Component
 	return true;
 }
 
-bool FEdgeCache::TryRefineAlongFinalSegment(const USpatialAudioComponent& Component, FCachedEdgePoint& Edge, const UWorld* World,
+bool FEdgeCache::TryRefineAlongFinalSegment(const USpatialAudioComponent& Component, FCachedEdgePoint& Edge,
+                                            const UWorld* World,
                                             const FVector& ListenerPos, const FVector& InnerAnchor) {
 	const int32 SegIdx = Edge.ShortestPath.Num() - 2;
 	if (!Edge.ShortestPathSegmentVerified.IsValidIndex(SegIdx) || !Edge.ShortestPathSegmentVerified[SegIdx]) {
@@ -276,7 +279,8 @@ bool FEdgeCache::ReadOffsetFanTraces(FCachedEdgePoint& Edge, UWorld* World, bool
 	return true;
 }
 
-void FEdgeCache::DrawOffsetFan(const USpatialAudioComponent& Component, const FCachedEdgePoint& Edge, const UWorld* World,
+void FEdgeCache::DrawOffsetFan(const USpatialAudioComponent& Component, const FCachedEdgePoint& Edge,
+                               const UWorld* World,
                                const bool (&FanClear)[4]) {
 	if (!Component.bDrawDebugRays || !Component.bShowOffsetLoSChecks) {
 		return;
@@ -412,7 +416,8 @@ void FEdgeCache::SubmitRelayCheckTraces(const USpatialAudioComponent& Component,
 	Edge.bRelayCheckPending = true;
 }
 
-void FEdgeCache::ConvertRelayToEdge(const USpatialAudioComponent& Component, FCachedEdgePoint& Edge, const UWorld* World,
+void FEdgeCache::ConvertRelayToEdge(const USpatialAudioComponent& Component, FCachedEdgePoint& Edge,
+                                    const UWorld* World,
                                     const FVector& ListenerPos) {
 	if (Edge.ShortestPath.Num() < 2) {
 		Edge.ShortestPath = {Edge.CapturedSourcePos, Edge.EdgePoint};
@@ -496,7 +501,8 @@ bool FEdgeCache::TickSingleEdge(USpatialAudioComponent& Component, FCachedEdgePo
 	return false;
 }
 
-void FEdgeCache::TickCachedEdgeEviction(USpatialAudioComponent& Component, const float DeltaTime, const USpatialAudioSettings& Settings) {
+void FEdgeCache::TickCachedEdgeEviction(USpatialAudioComponent& Component, const float DeltaTime,
+                                        const USpatialAudioSettings& Settings) {
 	Component.CurrentTraceBucket = USpatialAudioComponent::ETraceBucket::Phase0;
 	if (Component.bHasDirectLoS) {
 		Component.bPhase0HandlesStale = true;
@@ -518,7 +524,8 @@ void FEdgeCache::TickCachedEdgeEviction(USpatialAudioComponent& Component, const
 
 	const int32 SubmitIdx = AdvancePhase0Timer(Component, DeltaTime, Settings)
 		                        ? SelectRoundRobinEdge(Component.CachedEdgePoints, Component.Phase0Cursor,
-		                                               [](const FCachedEdgePoint& Edge) {
+		                                               [](const FCachedEdgePoint& Edge)
+		                                               {
 			                                               return Edge.bEvicting && Edge.bSourceSideEviction;
 		                                               })
 		                        : INDEX_NONE;
@@ -607,8 +614,9 @@ void FEdgeCache::TickShortestPathRecheck(USpatialAudioComponent& Component, UWor
 	if (!bHasStoredPath) {
 		FallbackVerified = {true};
 	}
-	const TArray<bool>& SegmentVerified = bHasStoredPath ? Edge.ShortestPathSegmentVerified
-	                                                     : FallbackVerified;
+	const TArray<bool>& SegmentVerified = bHasStoredPath
+		                                      ? Edge.ShortestPathSegmentVerified
+		                                      : FallbackVerified;
 
 	const bool bSourceLegVerified = SegmentVerified.IsValidIndex(0) && SegmentVerified[0];
 	if (bSourceLegVerified) {
@@ -722,7 +730,10 @@ void FEdgeCache::TickInnerAnchorPromotion(USpatialAudioComponent& Component, con
 	Component.ShortestPathPromotionTimer = 0.f;
 
 	const int32 Idx = SelectRoundRobinEdge(Component.CachedEdgePoints, Component.ShortestPathPromotionCursor,
-	                                       [](const FCachedEdgePoint& Edge) { return Edge.bEvicting || Edge.bRelayed; });
+	                                       [](const FCachedEdgePoint& Edge)
+	                                       {
+		                                       return Edge.bEvicting || Edge.bRelayed;
+	                                       });
 	if (Idx == INDEX_NONE) {
 		return;
 	}

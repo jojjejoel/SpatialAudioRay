@@ -71,7 +71,8 @@ void USpatialAudioDebugSubsystem::HandleCycleKey(const USpatialAudioComponent& F
 	bPrevCycleKeyDown = bDown;
 }
 
-void USpatialAudioDebugSubsystem::HandleActorLabelsToggleAndDraw(const USpatialAudioComponent& First, const APlayerController* PC) {
+void USpatialAudioDebugSubsystem::HandleActorLabelsToggleAndDraw(const USpatialAudioComponent& First,
+                                                                 const APlayerController* PC) {
 	if (PC) {
 		const bool bDown = First.ToggleActorLabelsKey.IsValid()
 			&& PC->IsInputKeyDown(First.ToggleActorLabelsKey);
@@ -88,17 +89,19 @@ void USpatialAudioDebugSubsystem::HandleActorLabelsToggleAndDraw(const USpatialA
 		if (const USpatialAudioComponent* C = Src.Get(); C && C->bDrawDebugRays) {
 			if (AActor* Owner = C->GetOwner()) {
 				DrawDebugString(GetWorld(), Owner->GetActorLocation(), Owner->GetActorNameOrLabel(),
-				                 nullptr, FColor::White, 0.f, true);
+				                nullptr, FColor::White, 0.f, true);
 			}
 		}
 	}
 }
 
-void USpatialAudioDebugSubsystem::HandleSubModeKeyToggles(const USpatialAudioComponent& First, const APlayerController* PC) {
+void USpatialAudioDebugSubsystem::HandleSubModeKeyToggles(const USpatialAudioComponent& First,
+                                                          const APlayerController* PC) {
 	if (!PC) {
 		return;
 	}
-	auto ApplyToggle = [&](const FKey& Key, bool& bPrevDown, bool USpatialAudioComponent::* Flag) {
+	auto ApplyToggle = [&](const FKey& Key, bool& bPrevDown, bool USpatialAudioComponent::* Flag)
+	{
 		const bool bDown = Key.IsValid() && PC->IsInputKeyDown(Key);
 		if (bDown && !bPrevDown) {
 			const bool bNew = !(First.*Flag);
@@ -114,13 +117,15 @@ void USpatialAudioDebugSubsystem::HandleSubModeKeyToggles(const USpatialAudioCom
 	ApplyToggle(First.ToggleVirtualSourceKey, bPrevSubModeKeyDown[0], &USpatialAudioComponent::bShowVirtualSourceRays);
 	ApplyToggle(First.ToggleBounceRaysKey, bPrevSubModeKeyDown[1], &USpatialAudioComponent::bShowBounceRays);
 	ApplyToggle(First.ToggleDebugTextKey, bPrevSubModeKeyDown[2], &USpatialAudioComponent::bShowDebugText);
-	ApplyToggle(First.ToggleDiffractionPathsKey, bPrevSubModeKeyDown[3], &USpatialAudioComponent::bShowDiffractionPaths);
+	ApplyToggle(First.ToggleDiffractionPathsKey, bPrevSubModeKeyDown[3],
+	            &USpatialAudioComponent::bShowDiffractionPaths);
 	ApplyToggle(First.ToggleEdgePointsKey, bPrevSubModeKeyDown[4], &USpatialAudioComponent::bShowEdgePoints);
 	ApplyToggle(First.ToggleSurfaceCrawlKey, bPrevSubModeKeyDown[5], &USpatialAudioComponent::bShowSurfaceCrawl);
 	ApplyToggle(First.ToggleLoSChecksKey, bPrevSubModeKeyDown[6], &USpatialAudioComponent::bShowLoSChecks);
 	ApplyToggle(First.ToggleOffsetLoSChecksKey, bPrevSubModeKeyDown[7], &USpatialAudioComponent::bShowOffsetLoSChecks);
 	ApplyToggle(First.ToggleShortestPathsKey, bPrevSubModeKeyDown[8], &USpatialAudioComponent::bShowShortestPaths);
-	ApplyToggle(First.ToggleSteeringPredictionKey, bPrevSubModeKeyDown[9], &USpatialAudioComponent::bShowSteeringPrediction);
+	ApplyToggle(First.ToggleSteeringPredictionKey, bPrevSubModeKeyDown[9],
+	            &USpatialAudioComponent::bShowSteeringPrediction);
 
 	const bool bDown = First.ToggleGlobalDebugTextKey.IsValid()
 		&& PC->IsInputKeyDown(First.ToggleGlobalDebugTextKey);
@@ -133,7 +138,8 @@ void USpatialAudioDebugSubsystem::HandleSubModeKeyToggles(const USpatialAudioCom
 void USpatialAudioDebugSubsystem::DrawGlobalDebugHUD(const FAggregateTraceStats& Stats) {
 	GEngine->AddOnScreenDebugMessage(1, 0.f, FColor::Yellow,
 	                                 FString::Printf(
-		                                 TEXT("GLOBAL  %d source%s  │  traces 1s=%.0f/s  10s=%.0f/s  60s=%.0f/s  peak=%.0f/s"),
+		                                 TEXT(
+			                                 "GLOBAL  %d source%s  │  traces 1s=%.0f/s  10s=%.0f/s  60s=%.0f/s  peak=%.0f/s"),
 		                                 Stats.NumSources, Stats.NumSources == 1 ? TEXT("") : TEXT("s"),
 		                                 Stats.TracesPerSec, Stats.Avg10Sec, Stats.Avg60Sec,
 		                                 Stats.PeakTracesPerSec));
@@ -144,7 +150,8 @@ void USpatialAudioDebugSubsystem::DrawGlobalDebugHUD(const FAggregateTraceStats&
 			const AActor* Owner = C->GetOwner();
 			GEngine->AddOnScreenDebugMessage(LineKey++, 0.f, FColor(255, 255, 160),
 			                                 FString::Printf(
-				                                 TEXT("  %s  │  traces 1s=%.0f/s  10s=%.0f/s  60s=%.0f/s  peak=%.0f/s  │  moving=%.0f/s  rest=%.0f/s"),
+				                                 TEXT(
+					                                 "  %s  │  traces 1s=%.0f/s  10s=%.0f/s  60s=%.0f/s  peak=%.0f/s  │  moving=%.0f/s  rest=%.0f/s"),
 				                                 Owner ? *Owner->GetActorNameOrLabel() : TEXT("None"),
 				                                 C->TraceDiag.SnapshotTracesPerSec,
 				                                 C->TraceDiag.Avg10Sec,
@@ -228,7 +235,7 @@ bool USpatialAudioDebugSubsystem::CycleDebugRaySource() {
 }
 
 void USpatialAudioDebugSubsystem::ApplyProximityDebugLimit(const USpatialAudioComponent& First,
-                                                            const APlayerController* PC) {
+                                                           const APlayerController* PC) {
 	const int32 MaxSources = First.GetSettings().MaxUncycledDebugSources;
 	if (MaxSources <= 0 || !PC || !PC->GetPawn()) {
 		return;
@@ -242,13 +249,16 @@ void USpatialAudioDebugSubsystem::ApplyProximityDebugLimit(const USpatialAudioCo
 		}
 	}
 
-	EligibleIndices.Sort([this, &ListenerPos](const int32 A, const int32 B) {
+	EligibleIndices.Sort([this, &ListenerPos](const int32 A, const int32 B)
+	{
 		const AActor* OwnerA = Sources[A]->GetOwner();
 		const AActor* OwnerB = Sources[B]->GetOwner();
-		const float DistA = OwnerA ? FVector::DistSquared(OwnerA->GetActorLocation(), ListenerPos)
-		                           : TNumericLimits<float>::Max();
-		const float DistB = OwnerB ? FVector::DistSquared(OwnerB->GetActorLocation(), ListenerPos)
-		                           : TNumericLimits<float>::Max();
+		const float DistA = OwnerA
+			                    ? FVector::DistSquared(OwnerA->GetActorLocation(), ListenerPos)
+			                    : TNumericLimits<float>::Max();
+		const float DistB = OwnerB
+			                    ? FVector::DistSquared(OwnerB->GetActorLocation(), ListenerPos)
+			                    : TNumericLimits<float>::Max();
 		return DistA < DistB;
 	});
 

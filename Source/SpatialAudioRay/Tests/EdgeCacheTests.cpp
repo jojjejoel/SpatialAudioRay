@@ -41,7 +41,7 @@ bool FTravelledFurther_IgnoresBounceCount::RunTest(const FString& Parameters) {
 	Long.LoSBounces = 1;
 
 	TestTrue(TEXT("The longer route loses regardless of bounce count"),
-		FEdgeCache::TravelledFurther(Long, Short));
+	         FEdgeCache::TravelledFurther(Long, Short));
 	TestFalse(TEXT("The shorter route survives"), FEdgeCache::TravelledFurther(Short, Long));
 
 	FCachedEdgePoint Tied = Short;
@@ -51,7 +51,7 @@ bool FTravelledFurther_IgnoresBounceCount::RunTest(const FString& Parameters) {
 	WithRelay.PathDist = 800.f;
 	WithRelay.RelayDist = 5000.f;
 	TestTrue(TEXT("The relay leg counts toward the travelled distance"),
-		FEdgeCache::TravelledFurther(WithRelay, Short));
+	         FEdgeCache::TravelledFurther(WithRelay, Short));
 
 	return true;
 }

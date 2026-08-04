@@ -52,7 +52,8 @@ namespace {
 		}
 		else if (bBothStationary && bStationaryIdleMode) {
 			Info.Label = FString::Printf(TEXT("IDLE (%.0f×  %.2fs  cov=%.0f%%)"),
-			                             StationaryIdleMultiplier, StoredEffFullSweepInterval, CoverageFraction * 100.f);
+			                             StationaryIdleMultiplier, StoredEffFullSweepInterval,
+			                             CoverageFraction * 100.f);
 			Info.Color = FColor::Orange;
 		}
 		else {
@@ -63,7 +64,6 @@ namespace {
 		}
 		return Info;
 	}
-
 }
 
 void USpatialAudioComponent::DrawSteeringPredictionDebug(const USpatialAudioSettings& Settings) const {
@@ -111,8 +111,8 @@ void USpatialAudioComponent::DrawVirtualSourceDebug() {
 		const float SphereRadius = bFadingOut ? 12.f : 20.f;
 		DrawDebugSphere(GetWorld(), SlotPos, SphereRadius, 8, Color, false, -1.f, SDPG_Foreground, 2.f);
 		DrawDebugString(GetWorld(), SlotPos + FVector(0.f, 0.f, SphereRadius + 4.f),
-		                 FString::Printf(TEXT("%s_%02d"), *GetOwner()->GetActorNameOrLabel(), SlotIdx),
-		                 nullptr, FColor::White, 0.f, false, 1.1f);
+		                FString::Printf(TEXT("%s_%02d"), *GetOwner()->GetActorNameOrLabel(), SlotIdx),
+		                nullptr, FColor::White, 0.f, false, 1.1f);
 	}
 }
 
@@ -138,14 +138,14 @@ void USpatialAudioComponent::DrawShortestPathsDebug() {
 	for (const FCachedEdgePoint& EP : CachedEdgePoints) {
 		for (int32 i = 0; i + 1 < EP.ShortestPath.Num(); ++i) {
 			const bool bVerified = EP.ShortestPathSegmentVerified.IsValidIndex(i)
-				                       && EP.ShortestPathSegmentVerified[i];
+				&& EP.ShortestPathSegmentVerified[i];
 			DrawDebugLine(GetWorld(), EP.ShortestPath[i], EP.ShortestPath[i + 1],
 			              bVerified ? FColor::Magenta : FColor(120, 0, 120),
 			              false, -1.f, 0, 2.f);
 		}
 		for (int32 i = 1; i + 1 < EP.ShortestPath.Num(); ++i) {
 			const bool bVerifiedPoint = EP.ShortestPathSegmentVerified.IsValidIndex(i)
-				                            && EP.ShortestPathSegmentVerified[i];
+				&& EP.ShortestPathSegmentVerified[i];
 			DrawDebugSphere(GetWorld(), EP.ShortestPath[i], 8.f, 8,
 			                bVerifiedPoint ? FColor::Magenta : FColor(120, 0, 120),
 			                false, -1.f, SDPG_Foreground, 1.5f);
@@ -250,13 +250,13 @@ void USpatialAudioComponent::DrawEdgeCacheDebugText(const uint64 Base, const USp
 }
 
 void USpatialAudioComponent::DrawSweepPacingDebugText(const uint64 Base, const USpatialAudioSettings& Settings,
-                                                       const int32 ScaledRayCount) const {
+                                                      const int32 ScaledRayCount) const {
 	const bool bBothStationary = VelocityScaling.IsStationary();
 	const float CoverageFraction = (ScaledRayCount > 0)
-		                      ? FMath::Clamp(
-			                      static_cast<float>(CachedEdgePoints.Num()) /
-			                      static_cast<float>(ScaledRayCount), 0.f, 1.f)
-		                      : 0.f;
+		                               ? FMath::Clamp(
+			                               static_cast<float>(CachedEdgePoints.Num()) /
+			                               static_cast<float>(ScaledRayCount), 0.f, 1.f)
+		                               : 0.f;
 
 	const auto [PacingLabel, PacingColor] = ComputePacingDebugInfo(
 		bBothStationary, SweepScheduling.bStationaryIdleMode,
@@ -272,9 +272,10 @@ void USpatialAudioComponent::DrawSweepPacingDebugText(const uint64 Base, const U
 	FString SweepStatus;
 	if (bAsyncCastActive) {
 		SweepStatus = CycleCount > 1
-			? FString::Printf(TEXT("CASTING sub %d/%d"), StaggeredCycleIndex + 1, CycleCount)
-			: TEXT("CASTING");
-	} else {
+			              ? FString::Printf(TEXT("CASTING sub %d/%d"), StaggeredCycleIndex + 1, CycleCount)
+			              : TEXT("CASTING");
+	}
+	else {
 		SweepStatus = TEXT("idle");
 	}
 
@@ -304,15 +305,19 @@ void USpatialAudioComponent::DrawTraceStatsDebugText(const uint64 Base) const {
 	                                 FString::Printf(
 		                                 TEXT(
 			                                 "  Traces  ~%.0f/fr  1s=%.0f/s  10s=%.0f/s  │  Last sweep: %d rays  %d fr  %.0fms/%.0fms%s"),
-		                                 TraceDiag.SnapshotFrameTraces, TraceDiag.SnapshotTracesPerSec, TraceDiag.Avg10Sec,
+		                                 TraceDiag.SnapshotFrameTraces, TraceDiag.SnapshotTracesPerSec,
+		                                 TraceDiag.Avg10Sec,
 		                                 TraceDiag.LastSweepAsyncRays, TraceDiag.LastSweepFrames,
 		                                 TraceDiag.LastSweepDuration * 1000.f, TraceDiag.LastSweepInterval * 1000.f,
-		                                 TraceDiag.LastSweepDuration > TraceDiag.LastSweepInterval ? TEXT("  OVER") : TEXT("")));
+		                                 TraceDiag.LastSweepDuration > TraceDiag.LastSweepInterval
+			                                 ? TEXT("  OVER")
+			                                 : TEXT("")));
 
 	const float* Buckets = TraceDiag.SnapshotBucketTraces;
 	GEngine->AddOnScreenDebugMessage(Base + 9, 0.f, FColor::Cyan,
 	                                 FString::Printf(
-		                                 TEXT("    of which  swp %.1f · occ %.1f · ph0 %.1f · rly %.1f · bis %.1f · pth %.1f · oth %.1f"),
+		                                 TEXT(
+			                                 "    of which  swp %.1f · occ %.1f · ph0 %.1f · rly %.1f · bis %.1f · pth %.1f · oth %.1f"),
 		                                 Buckets[static_cast<int32>(ETraceBucket::Sweep)],
 		                                 Buckets[static_cast<int32>(ETraceBucket::Occlusion)],
 		                                 Buckets[static_cast<int32>(ETraceBucket::Phase0)],
@@ -331,7 +336,8 @@ void USpatialAudioComponent::DrawEdgeTimerDebugText(const uint64 Base, const USp
 	}
 
 	const FString Ph0Activity = Ph0Pending > 0
-		? FString::Printf(TEXT("[CHECKING %d]"), Ph0Pending) : TEXT("idle");
+		                            ? FString::Printf(TEXT("[CHECKING %d]"), Ph0Pending)
+		                            : TEXT("idle");
 
 	const FColor EdgeTimerColor = Ph0Pending > 0 ? FColor::Yellow : FColor(180, 180, 180);
 	GEngine->AddOnScreenDebugMessage(Base + 8, 0.f, EdgeTimerColor,
@@ -362,28 +368,44 @@ void USpatialAudioComponent::DrawDebugTextHUD(const USpatialAudioSettings& Setti
 void USpatialAudioComponent::DrawDebugLegends() const {
 	if (bDrawDebugRays && bShowSurfaceCrawl && GEngine) {
 		const uint64 LegBase = static_cast<uint64>(GetUniqueID()) * 10;
-		GEngine->AddOnScreenDebugMessage(LegBase + 50, 0.f, FColor(220, 220, 220), TEXT("  [7] Surface Crawl Legend ─────────────────────────────────────"));
-		GEngine->AddOnScreenDebugMessage(LegBase + 51, 0.f, FColor::White,         TEXT("  White line + sphere         bounce segment / bounce hit point"));
-		GEngine->AddOnScreenDebugMessage(LegBase + 52, 0.f, FColor::Cyan,          TEXT("  Cyan sphere                 crawl start (nudged off wall)"));
-		GEngine->AddOnScreenDebugMessage(LegBase + 53, 0.f, FColor::White,         TEXT("  White sphere (tiny)         crawl step — wall still continues"));
-		GEngine->AddOnScreenDebugMessage(LegBase + 54, 0.f, FColor::Yellow,        TEXT("  Yellow sphere (large)       edge found — wall ended"));
-		GEngine->AddOnScreenDebugMessage(LegBase + 55, 0.f, FColor::Orange,        TEXT("  Orange sphere (large)       edge found — perpendicular wall"));
-		GEngine->AddOnScreenDebugMessage(LegBase + 56, 0.f, FColor::Red,           TEXT("  Red sphere + red line       back-face hit — ray terminated"));
-		GEngine->AddOnScreenDebugMessage(LegBase + 57, 0.f, FColor(255, 80, 80),   TEXT("  Pink sphere                 crawl failed — no edge found"));
-		GEngine->AddOnScreenDebugMessage(LegBase + 58, 0.f, FColor::Yellow,        TEXT("  Yellow/Orange line arrow    new ray direction after edge"));
-		GEngine->AddOnScreenDebugMessage(LegBase + 59, 0.f, FColor(160, 0, 255),   TEXT("  Purple line  [8]            LoS check attempted (toggle key 8 to show/hide)"));
-		GEngine->AddOnScreenDebugMessage(LegBase + 60, 0.f, FColor::Green,         TEXT("  Green sphere                 LoS confirmed clear — trace came back unblocked"));
+		GEngine->AddOnScreenDebugMessage(LegBase + 50, 0.f, FColor(220, 220, 220),
+		                                 TEXT("  [7] Surface Crawl Legend ─────────────────────────────────────"));
+		GEngine->AddOnScreenDebugMessage(LegBase + 51, 0.f, FColor::White,
+		                                 TEXT("  White line + sphere         bounce segment / bounce hit point"));
+		GEngine->AddOnScreenDebugMessage(LegBase + 52, 0.f, FColor::Cyan,
+		                                 TEXT("  Cyan sphere                 crawl start (nudged off wall)"));
+		GEngine->AddOnScreenDebugMessage(LegBase + 53, 0.f, FColor::White,
+		                                 TEXT("  White sphere (tiny)         crawl step — wall still continues"));
+		GEngine->AddOnScreenDebugMessage(LegBase + 54, 0.f, FColor::Yellow,
+		                                 TEXT("  Yellow sphere (large)       edge found — wall ended"));
+		GEngine->AddOnScreenDebugMessage(LegBase + 55, 0.f, FColor::Orange,
+		                                 TEXT("  Orange sphere (large)       edge found — perpendicular wall"));
+		GEngine->AddOnScreenDebugMessage(LegBase + 56, 0.f, FColor::Red,
+		                                 TEXT("  Red sphere + red line       back-face hit — ray terminated"));
+		GEngine->AddOnScreenDebugMessage(LegBase + 57, 0.f, FColor(255, 80, 80),
+		                                 TEXT("  Pink sphere                 crawl failed — no edge found"));
+		GEngine->AddOnScreenDebugMessage(LegBase + 58, 0.f, FColor::Yellow,
+		                                 TEXT("  Yellow/Orange line arrow    new ray direction after edge"));
+		GEngine->AddOnScreenDebugMessage(LegBase + 59, 0.f, FColor(160, 0, 255),
+		                                 TEXT(
+			                                 "  Purple line  [8]            LoS check attempted (toggle key 8 to show/hide)"));
+		GEngine->AddOnScreenDebugMessage(LegBase + 60, 0.f, FColor::Green,
+		                                 TEXT(
+			                                 "  Green sphere                 LoS confirmed clear — trace came back unblocked"));
 	}
 
 	if (bDrawDebugRays && bShowLoSChecks && GEngine) {
 		const uint64 LegBase = static_cast<uint64>(GetUniqueID()) * 10;
-		GEngine->AddOnScreenDebugMessage(LegBase + 70, 0.f, FColor(160, 0, 255), TEXT("  [8] LoS Checks visible — purple lines = probe submitted toward listener"));
+		GEngine->AddOnScreenDebugMessage(LegBase + 70, 0.f, FColor(160, 0, 255),
+		                                 TEXT(
+			                                 "  [8] LoS Checks visible — purple lines = probe submitted toward listener"));
 	}
 
 	if (bDrawDebugRays && bShowOffsetLoSChecks && GEngine) {
 		const uint64 LegBase = static_cast<uint64>(GetUniqueID()) * 10;
 		GEngine->AddOnScreenDebugMessage(LegBase + 80, 0.f, FColor(0, 200, 200),
-		                                 TEXT("  [9] Offset LoS Checks visible — green/red lines, shown only when one offset ray finds a clear path"));
+		                                 TEXT(
+			                                 "  [9] Offset LoS Checks visible — green/red lines, shown only when one offset ray finds a clear path"));
 	}
 }
 

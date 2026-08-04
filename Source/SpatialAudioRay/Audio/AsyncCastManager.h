@@ -59,8 +59,10 @@ public:
 	                                          float SurfaceRoughness, float BounceListenerBias);
 
 private:
-	static bool TryDiscardStaleSweep(USpatialAudioComponent& Component, UWorld* World, const USpatialAudioSettings& Settings);
-	static void AccumulateRefineProbesIntoCycle(USpatialAudioComponent& Component, const UWorld* World, const USpatialAudioSettings& Settings);
+	static bool TryDiscardStaleSweep(USpatialAudioComponent& Component, UWorld* World,
+	                                 const USpatialAudioSettings& Settings);
+	static void AccumulateRefineProbesIntoCycle(USpatialAudioComponent& Component, const UWorld* World,
+	                                            const USpatialAudioSettings& Settings);
 	static void MergeStoredPathsIntoCache(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings);
 	static void AdvanceSweepCycleAndIdleState(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings);
 	static void PublishSweepAudioTargets(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings);
@@ -69,7 +71,8 @@ private:
 	                       float PathDist, const FVector& Point);
 	static bool OutranksIncumbent(const USpatialAudioComponent& Component, const USpatialAudioSettings& Settings,
 	                              const FStoredLoSPath& Found, const FCachedEdgePoint& Incumbent);
-	static void WriteEntry(const USpatialAudioComponent& Component, FCachedEdgePoint& Edge, const FStoredLoSPath& Found);
+	static void WriteEntry(const USpatialAudioComponent& Component, FCachedEdgePoint& Edge,
+	                       const FStoredLoSPath& Found);
 	static int32 FindMergeCandidate(const USpatialAudioComponent& Component, const FVector& Point, float MergeRadiusSq);
 	static bool IsWorseIncumbent(const USpatialAudioComponent& Component, const USpatialAudioSettings& Settings,
 	                             const FCachedEdgePoint& Candidate, const FCachedEdgePoint& Worst);
@@ -110,7 +113,8 @@ private:
 	static bool TrySetupSurfaceCrawl(USpatialAudioComponent& Component, FSpatialRayState& Ray, UWorld* World,
 	                                 const FHitResult& Hit, const USpatialAudioSettings& Settings);
 
-	static void DrainPendingLoSProbes(const USpatialAudioComponent& Component, FSpatialRayState& Ray, UWorld* World, const FVector& ListenerPos);
+	static void DrainPendingLoSProbes(const USpatialAudioComponent& Component, FSpatialRayState& Ray, UWorld* World,
+	                                  const FVector& ListenerPos);
 
 	static bool ShouldDrawFlightPaths(const USpatialAudioComponent& Component);
 	static void DrawFlightSegment(const USpatialAudioComponent& Component, const UWorld* World, const FVector& From,
@@ -145,10 +149,12 @@ private:
 	                                UWorld* World,
 	                                const FSpatialRayState::FAsyncCrawlStepProbe& StepProbe,
 	                                int32 StepIdx, FCrawlStepResult& OutResult);
-	static FCrawlStepResult EvaluateCrawlSteps(const USpatialAudioComponent& Component, FSpatialRayState& Ray, UWorld* World,
+	static FCrawlStepResult EvaluateCrawlSteps(const USpatialAudioComponent& Component, FSpatialRayState& Ray,
+	                                           UWorld* World,
 	                                           int32 Limit, const USpatialAudioSettings& Settings);
 	static void DrawCrawlDebugVisualization(const FSpatialRayState& Ray, const UWorld* World,
-	                                        const FCrawlStepResult& Result, int32 Limit, const USpatialAudioSettings& Settings);
+	                                        const FCrawlStepResult& Result, int32 Limit,
+	                                        const USpatialAudioSettings& Settings);
 	static void ApplyCrawlResult(const USpatialAudioComponent& Component, FSpatialRayState& Ray,
 	                             const FCrawlStepResult& Result, const USpatialAudioSettings& Settings);
 

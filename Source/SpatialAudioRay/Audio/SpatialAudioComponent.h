@@ -263,9 +263,11 @@ private:
 	bool HasConfirmedLoSLoss() const;
 
 	static constexpr int32 MaxRingRotationSteps = 8;
+
 	int32 ResolveRingRotationSteps() const {
 		return FMath::Clamp(GetSettings().OffsetRingRotationSteps, 1, MaxRingRotationSteps);
 	}
+
 	void TickAsyncPipeline(const USpatialAudioSettings& Settings);
 	void TickNormalSweepDispatch(float DeltaTime, bool bInRange, float SubInterval);
 	float UpdateDirectLoSConfirmationAndBlendSpeed(float DeltaTime);
@@ -390,15 +392,18 @@ private:
 	} AudioDiag;
 
 	enum class ETraceBucket : uint8 { Sweep, Occlusion, Phase0, Relay, Bisect, PathCheck, Other, Count };
+
 	mutable ETraceBucket CurrentTraceBucket = ETraceBucket::Other;
 
 	struct FTraceBucketScope {
 		const USpatialAudioComponent& Comp;
 		const ETraceBucket Previous;
+
 		FTraceBucketScope(const USpatialAudioComponent& InComp, const ETraceBucket Bucket)
 			: Comp(InComp), Previous(InComp.CurrentTraceBucket) {
 			InComp.CurrentTraceBucket = Bucket;
 		}
+
 		~FTraceBucketScope() { Comp.CurrentTraceBucket = Previous; }
 	};
 

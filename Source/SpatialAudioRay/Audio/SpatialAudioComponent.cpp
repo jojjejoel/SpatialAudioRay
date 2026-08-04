@@ -25,7 +25,6 @@ USpatialAudioComponent::USpatialAudioComponent() {
 	PrimaryComponentTick.bCanEverTick = true;
 	CurrentOcclusion = 1.f;
 	TargetOcclusion = 1.f;
-
 }
 
 bool USpatialAudioComponent::TraceLine(const UWorld* World, FHitResult& Hit,
@@ -66,13 +65,17 @@ void USpatialAudioComponent::BeginPlay() {
 	FUpdater::UpdateAudioParameters(*this, 0.0f, GetSettings());
 	FAsyncCastManager::StartAsyncFullCast(*this, GetSettings());
 
-	if (USpatialAudioDebugSubsystem* DebugSub = GetWorld() ? GetWorld()->GetSubsystem<USpatialAudioDebugSubsystem>() : nullptr) {
+	if (USpatialAudioDebugSubsystem* DebugSub = GetWorld()
+		                                            ? GetWorld()->GetSubsystem<USpatialAudioDebugSubsystem>()
+		                                            : nullptr) {
 		DebugSub->Register(this);
 	}
 }
 
 void USpatialAudioComponent::EndPlay(const EEndPlayReason::Type EndPlayReason) {
-	if (USpatialAudioDebugSubsystem* DebugSub = GetWorld() ? GetWorld()->GetSubsystem<USpatialAudioDebugSubsystem>() : nullptr) {
+	if (USpatialAudioDebugSubsystem* DebugSub = GetWorld()
+		                                            ? GetWorld()->GetSubsystem<USpatialAudioDebugSubsystem>()
+		                                            : nullptr) {
 		DebugSub->Unregister(this);
 	}
 	Super::EndPlay(EndPlayReason);
@@ -250,7 +253,8 @@ void USpatialAudioComponent::ReadAttenuationSettings() {
 
 	if (!Widest) {
 		UE_LOG(LogSpatialAudio, Warning,
-		       TEXT("SpatialAudioComponent: no attenuation found on any tagged source. Ray range falls back to %.0f cm."),
+		       TEXT("SpatialAudioComponent: no attenuation found on any tagged source. Ray range falls back to %.0f cm."
+		       ),
 		       MaxRayDistance);
 		return;
 	}
@@ -351,7 +355,8 @@ void USpatialAudioComponent::TickAsyncPipeline(const USpatialAudioSettings& Sett
 	}
 }
 
-void USpatialAudioComponent::TickNormalSweepDispatch(const float DeltaTime, const bool bInRange, const float SubInterval) {
+void USpatialAudioComponent::TickNormalSweepDispatch(const float DeltaTime, const bool bInRange,
+                                                     const float SubInterval) {
 	CurrentTraceBucket = ETraceBucket::Occlusion;
 	FUpdater::TickDirectLoSSampling(*this, DeltaTime, GetSettings());
 	CurrentTraceBucket = ETraceBucket::Sweep;
@@ -432,7 +437,8 @@ void USpatialAudioComponent::UpdateTraceDiagnostics(const float DeltaTime) {
 		return;
 	}
 
-	TraceDiag.SmoothedFrameTraces = FMath::FInterpTo(TraceDiag.SmoothedFrameTraces, static_cast<float>(TraceDiag.FrameCount),
+	TraceDiag.SmoothedFrameTraces = FMath::FInterpTo(TraceDiag.SmoothedFrameTraces,
+	                                                 static_cast<float>(TraceDiag.FrameCount),
 	                                                 DeltaTime, 4.f);
 	for (int32 b = 0; b < FTraceDiagnostics::BucketCount; ++b) {
 		TraceDiag.SmoothedBucketTraces[b] = FMath::FInterpTo(TraceDiag.SmoothedBucketTraces[b],
@@ -586,7 +592,8 @@ void USpatialAudioComponent::TickMovementSweepTrigger(const float DeltaTime, con
 		SweepScheduling.bTriggerPosSet = true;
 		SweepScheduling.LastTriggerListenerPos = LisPos;
 	}
-	else if (SweepScheduling.MovementCooldownTimer >= GetSettings().MovementSweepCooldown * CurrentVelocityIntervalMultiplier &&
+	else if (SweepScheduling.MovementCooldownTimer >= GetSettings().MovementSweepCooldown *
+		CurrentVelocityIntervalMultiplier &&
 		FVector::DistSquared(LisPos, SweepScheduling.LastTriggerListenerPos) > FMath::Square(TriggerDist)) {
 		SweepScheduling.bMovementRequested = true;
 		SweepScheduling.LastTriggerListenerPos = LisPos;
@@ -622,28 +629,41 @@ void USpatialAudioComponent::UpdateVelocityScaling(const float DeltaTime, const 
 		if (VelocityScaling.bPosSet) {
 			const float SrcSpeed = FVector::Dist(SrcPos, VelocityScaling.LastSourcePos) / DeltaTime;
 			const float LisSpeed = FVector::Dist(LisPos, VelocityScaling.LastListenerPos) / DeltaTime;
-			VelocityScaling.SmoothedSourceSpeed = FMath::FInterpTo(VelocityScaling.SmoothedSourceSpeed, SrcSpeed, DeltaTime, 5.f);
-			VelocityScaling.SmoothedListenerSpeed = FMath::FInterpTo(VelocityScaling.SmoothedListenerSpeed, LisSpeed, DeltaTime, 5.f);
-			VelocityScaling.SmoothedCombinedSpeed = VelocityScaling.SmoothedSourceSpeed + VelocityScaling.SmoothedListenerSpeed;
+			VelocityScaling.SmoothedSourceSpeed = FMath::FInterpTo(VelocityScaling.SmoothedSourceSpeed, SrcSpeed,
+			                                                       DeltaTime, 5.f);
+			VelocityScaling.SmoothedListenerSpeed = FMath::FInterpTo(VelocityScaling.SmoothedListenerSpeed, LisSpeed,
+			                                                         DeltaTime, 5.f);
+			VelocityScaling.SmoothedCombinedSpeed = VelocityScaling.SmoothedSourceSpeed + VelocityScaling.
+				SmoothedListenerSpeed;
 			VelocityScaling.SmoothedSourceVelocity = FMath::VInterpTo(
-				VelocityScaling.SmoothedSourceVelocity, (SrcPos - VelocityScaling.LastSourcePos) / DeltaTime, DeltaTime, 5.f);
+				VelocityScaling.SmoothedSourceVelocity, (SrcPos - VelocityScaling.LastSourcePos) / DeltaTime, DeltaTime,
+				5.f);
 			VelocityScaling.SmoothedListenerVelocity = FMath::VInterpTo(
-				VelocityScaling.SmoothedListenerVelocity, (LisPos - VelocityScaling.LastListenerPos) / DeltaTime, DeltaTime, 5.f);
+				VelocityScaling.SmoothedListenerVelocity, (LisPos - VelocityScaling.LastListenerPos) / DeltaTime,
+				DeltaTime, 5.f);
 		}
 		VelocityScaling.bPosSet = true;
 		VelocityScaling.LastSourcePos = SrcPos;
 		VelocityScaling.LastListenerPos = LisPos;
 	}
 	else if (!bInRange) {
-		VelocityScaling.SmoothedSourceSpeed = VelocityScaling.SmoothedListenerSpeed = VelocityScaling.SmoothedCombinedSpeed = 0.f;
+		VelocityScaling.SmoothedSourceSpeed = VelocityScaling.SmoothedListenerSpeed = VelocityScaling.
+			SmoothedCombinedSpeed = 0.f;
 		VelocityScaling.SmoothedSourceVelocity = VelocityScaling.SmoothedListenerVelocity = FVector::ZeroVector;
 	}
 
 	const float MaxSpeed = GetSettings().VelocityScaleMaxSpeed;
 	const float MinScale = FMath::Max(0.05f, GetSettings().VelocityIntervalScale);
-	const float VelocityFraction = MaxSpeed > 0.f ? FMath::Clamp(VelocityScaling.SmoothedCombinedSpeed / MaxSpeed, 0.f, 1.f) : 0.f;
-	const float SourceVelocityFraction = MaxSpeed > 0.f ? FMath::Clamp(VelocityScaling.SmoothedSourceSpeed / MaxSpeed, 0.f, 1.f) : 0.f;
-	const float ListenerVelocityFraction = MaxSpeed > 0.f ? FMath::Clamp(VelocityScaling.SmoothedListenerSpeed / MaxSpeed, 0.f, 1.f) : 0.f;
+	const float VelocityFraction = MaxSpeed > 0.f
+		                               ? FMath::Clamp(VelocityScaling.SmoothedCombinedSpeed / MaxSpeed, 0.f, 1.f)
+		                               : 0.f;
+	const float SourceVelocityFraction = MaxSpeed > 0.f
+		                                     ? FMath::Clamp(VelocityScaling.SmoothedSourceSpeed / MaxSpeed, 0.f, 1.f)
+		                                     : 0.f;
+	const float ListenerVelocityFraction = MaxSpeed > 0.f
+		                                       ? FMath::Clamp(VelocityScaling.SmoothedListenerSpeed / MaxSpeed, 0.f,
+		                                                      1.f)
+		                                       : 0.f;
 	CurrentVelocityIntervalMultiplier = FMath::Lerp(1.f, MinScale, VelocityFraction);
 	VelocityScaling.SweepMultiplier = FMath::Lerp(1.f, MinScale, SourceVelocityFraction);
 	VelocityScaling.EdgeMultiplier = FMath::Lerp(1.f, MinScale, ListenerVelocityFraction);
@@ -654,10 +674,10 @@ void USpatialAudioComponent::UpdateVelocityScaling(const float DeltaTime, const 
 void USpatialAudioComponent::UpdateStationaryIdleState(const bool bInRange, const APawn* Pawn) {
 	if (SweepScheduling.bStationaryIdleMode && bInRange && Pawn && GetOwner()) {
 		const float BreakDistSq = FMath::Square(GetSettings().StationaryIdleBreakDist);
-		if (FVector::DistSquared(GetOwner()->GetActorLocation(), SweepScheduling.StationaryIdleSourcePos) > BreakDistSq ||
+		if (FVector::DistSquared(GetOwner()->GetActorLocation(), SweepScheduling.StationaryIdleSourcePos) > BreakDistSq
+			||
 			FVector::DistSquared(Pawn->GetActorLocation(), SweepScheduling.StationaryIdleListenerPos) > BreakDistSq) {
 			SweepScheduling.bStationaryIdleMode = false;
 		}
 	}
 }
-

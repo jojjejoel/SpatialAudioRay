@@ -12,7 +12,6 @@ class SPATIALAUDIORAY_API UNPCVoiceSettings : public UDataAsset {
 	GENERATED_BODY()
 
 public:
-
 	/** Effective acoustic distance (cm) at or below which the NPC whispers. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice|Effort Bands",
 		meta = (ClampMin = "0.0"))
@@ -45,10 +44,10 @@ public:
 
 	float GetEffortReachDistance(ENPCVoiceEffort Effort) const {
 		switch (Effort) {
-			case ENPCVoiceEffort::Whisper: return WhisperMaxDistance * EffortReachHeadroom;
-			case ENPCVoiceEffort::Conversational: return ConversationalMaxDistance * EffortReachHeadroom;
-			case ENPCVoiceEffort::Raised: return RaisedMaxDistance * EffortReachHeadroom;
-			default: return UseAttenuationAssetRange;
+		case ENPCVoiceEffort::Whisper: return WhisperMaxDistance * EffortReachHeadroom;
+		case ENPCVoiceEffort::Conversational: return ConversationalMaxDistance * EffortReachHeadroom;
+		case ENPCVoiceEffort::Raised: return RaisedMaxDistance * EffortReachHeadroom;
+		default: return UseAttenuationAssetRange;
 		}
 	}
 
@@ -96,10 +95,10 @@ public:
 
 	float GetEffortGainDb(ENPCVoiceEffort Effort) const {
 		switch (Effort) {
-			case ENPCVoiceEffort::Whisper: return WhisperGainDb;
-			case ENPCVoiceEffort::Conversational: return ConversationalGainDb;
-			case ENPCVoiceEffort::Raised: return RaisedGainDb;
-			default: return ShoutGainDb;
+		case ENPCVoiceEffort::Whisper: return WhisperGainDb;
+		case ENPCVoiceEffort::Conversational: return ConversationalGainDb;
+		case ENPCVoiceEffort::Raised: return RaisedGainDb;
+		default: return ShoutGainDb;
 		}
 	}
 
@@ -154,6 +153,5 @@ public:
 	float DebugTextScale = 2.f;
 
 private:
-
 	static constexpr float UseAttenuationAssetRange = 0.f;
 };

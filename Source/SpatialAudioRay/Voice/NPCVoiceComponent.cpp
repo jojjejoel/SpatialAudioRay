@@ -70,7 +70,7 @@ void UNPCVoiceComponent::LoadBank() {
 		                          VoiceLogic::DurationMismatchTolerance)) {
 			UE_LOG(LogSpatialAudio, Warning,
 			       TEXT("NPCVoice: row %s declares %.2fs but its wave is %.2fs — using the wave. "
-			            "Re-export the bank CSV."),
+				       "Re-export the bank CSV."),
 			       *Pair.Key.ToString(), Row->Duration, Line.Row.Duration);
 		}
 	}
