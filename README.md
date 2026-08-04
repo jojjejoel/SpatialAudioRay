@@ -26,7 +26,7 @@ Three loops run at different rates:
 
 A sweep takes several frames, so by the time it lands its answer is slightly out of date. That is why occlusion is sampled on its own short interval and never waits for a sweep, and why found edges are cached and kept alive independently instead of being re-derived each time. Both of the lower two stop entirely while any sightline to the source survives, and that bar is lower than it sounds: one clear sample out of the five is enough, so they can be idle at 80% occlusion. Below that, the only thing still tracing is the occlusion sampler. The sweep gets one exception, running through the near-occluded band as well, so the cache is already warm when the last sliver closes. The sampler and the sweep also idle when the listener is out of the source's audible range.
 
-How much a sweep costs and how often it runs both adapt at runtime. The ray budget scales down with distance and can be split across several frames' worth of cycles. A warm cache thins the budget further: once it is full it can only improve by displacing an entry, so most of a full-budget sweep into it is wasted. All three intervals stretch when nothing is moving and tighten when something is, so a stationary scene settles into cheap upkeep instead of re-surveying itself.
+How much a sweep costs and how often it runs both adapt at runtime. The ray budget scales down with distance. A warm cache thins it further: once it is full it can only improve by displacing an entry, so most of a full-budget sweep into it is wasted. All three intervals stretch when nothing is moving and tighten when something is, so a stationary scene settles into cheap upkeep instead of re-surveying itself.
 
 What all three loops produce is numbers handed to MetaSound graphs: one occlusion value for the source, and a gain and a path-bend value for each diffracted emitter. The graphs derive their own filtering and reverb from those, so the shaping lives in the MetaSound rather than in the C++.
 
@@ -60,21 +60,21 @@ Start with [`Source/SpatialAudioRay/Audio/ReadingGuide.md`](Source/SpatialAudioR
 Source/SpatialAudioRay/
 ├── Audio/     diffraction and occlusion
 ├── Voice/     the NPC voice system built on it
-└── Tests/     100 automation tests
+└── Tests/     95 automation tests
 Tools/VoiceGen/  offline voice bank generation
 ```
 
-`USpatialAudioComponent` owns all the state. `FAsyncCastManager`, `FUpdater` and `FEdgeCache` hold none of their own and are static functions over it, split by which of the three loops they belong to. `Math.h` and `Voice/NPCVoiceLogic.h` sit below both with the pure functions, no engine or component state in either, and 83 of the 100 tests are on those two files. Every tunable lives in one `UDataAsset` instead of as constants in the code.
+`USpatialAudioComponent` owns all the state. `FAsyncCastManager`, `FUpdater` and `FEdgeCache` hold none of their own and are static functions over it, split by which of the three loops they belong to. `Math.h` and `Voice/NPCVoiceLogic.h` sit below both with the pure functions, no engine or component state in either, and 80 of the 95 tests are on those two files. Every tunable lives in one `UDataAsset` instead of as constants in the code.
 
 ## Tests
 
-100 tests, run from Session Frontend, Automation, filtering on `SpatialAudioRay`:
+95 tests, run from Session Frontend, Automation, filtering on `SpatialAudioRay`:
 
 | Suite | Tests | Covers |
 |---|---|---|
-| `SpatialAudioRay.Math.*` | 52 | reflection, attenuation, clustering, path shortening |
+| `SpatialAudioRay.Math.*` | 49 | reflection, attenuation, clustering, path shortening |
 | `SpatialAudioRay.Voice.*` | 31 | efforts, hysteresis, barge-in, content selection |
-| `SpatialAudioRay.Async.*` | 15 | sweep accumulation, ray budget, turn determinism |
+| `SpatialAudioRay.Async.*` | 13 | sweep accumulation, ray budget, turn determinism |
 | `SpatialAudioRay.EdgeCache.*` | 2 | cache merge candidacy |
 
 ## Trying it

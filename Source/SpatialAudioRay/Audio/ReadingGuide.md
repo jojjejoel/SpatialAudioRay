@@ -55,7 +55,7 @@ sight or the listener is out of range, 1 on init and on a blocked centre trace.
 
 ## Stop 1. `SpatialAudioTypes.h`, the vocabulary
 
-Read the whole file, around 230 lines. You are learning the nouns.
+Read the whole file, around 165 lines. You are learning the nouns.
 
 `FSpatialRayState` is one in-flight ray: origin, direction, bounce count, pending trace handles, and `BounceWaypoints`,
 every point where it changed direction. The waypoints matter at Stop 5.
@@ -82,8 +82,9 @@ Read the private section from `AsyncRays` down. Five groups are worth registerin
 Sweep state is `AsyncRays`, `bAsyncCastActive`, `Finalize`, and `AsyncSourcePos` with `AsyncListenerPos`,
 which are positions frozen at sweep start, because "current position" is ambiguous across a multi-frame sweep.
 
-The targets are `TargetOcclusion`, `TargetVirtualSourceLocation` and `TargetPathAttenuation`. Casts write `Target*`,
-`TickComponent` smooths `Current*` toward them, and nothing audible ever snaps.
+The targets are `TargetOcclusion`, `TargetVirtualSourceLocation` and `TargetPathAttenuation`. Casts write `Target*` and
+`TickComponent` smooths `Current*` toward them. Position is the exception: emitters sit exactly on their target, and a
+move too large to make in one step is handled by fading a new voice in rather than by easing.
 
 The cache is `CachedEdgePoints`, and a warm one pays off by shrinking the next sweep's ray budget through
 `FullCacheRayScale`.
@@ -95,7 +96,7 @@ and `LastDirectLoSFraction` smoothed. The distinction matters at Stop 4.
 
 ## Stop 3. `TickComponent`, the frame skeleton
 
-Read `TickComponent`, around 60 lines, and the phase methods it calls in order:
+Read `TickComponent`, around 50 lines, and the phase methods it calls in order:
 
 ```
 TickAsyncPipeline          read back last frame's probes, advance the sweep one step
@@ -106,7 +107,7 @@ ComputeEffectiveSweepInterval        how long until the next sweep is allowed
 TickMovementSweepTrigger   listener moved far, request an early sweep
 TickNormalSweepDispatch    per-frame LoS sampling always, then either start a
                            sweep or run the cheap update cast
-SmoothTowardTargets        interpolate all Current values
+SmoothTowardTargets        interpolate occlusion and path attenuation
 UpdateAudioParameters      write the final numbers to the audio components (Stop 8)
 ```
 
@@ -244,8 +245,14 @@ evaluate steps out of order.
 
 Then `PerformUpdateRayCast`, the cheap per-frame path used when no sweep is running. It casts nothing. It re-weights the
 cache in `AccumulateCachedEdgeWeights`, where the `SrcW` and `PosW` split enforces listener independence, refreshes the
-position target and path attenuation, then clusters edges into voices. Clustering groups by edge point rather than
-emitter point, because pulled-back points converge toward the source and would merge distinct openings.
+position target and path attenuation, then clusters edges into voices.
+
+The clustering radius is not a setting. It is the virtual emitter's own attenuation inner radius, read from the asset,
+and the reason is geometric: a point joins a cluster only if it is within that radius of the centroid, and the emitter
+is placed at the centroid, so the emitter's full-volume sphere covers exactly the openings its voice speaks for. The
+inner radius is the engine's own statement that distance stops mattering inside it, which is the same judgement
+clustering makes when it calls two corners one sound. It also lets a quieter source group its openings more tightly
+than a loud one, which a single shared value could not express. A radius of zero means no grouping, one voice per edge.
 
 Both halves stay active through the pre-sweep band, gated on `bVirtualPathActive` rather than on `!bHasDirectLoS` alone.
 The crossfade starts opening before occlusion is total, so the voices have to already exist and carry real attenuation
@@ -269,7 +276,7 @@ emitter-to-listener leg. `VirtualPathBend` is the detour ratio plus a distance t
 cutoff and reverb from that single value. The slot component is physically moved, which is what lets the engine's
 attenuation do the proximity work.
 
-Finish with `Math.h` end to end, around 300 lines of pure stateless functions.
+Finish with `Math.h` end to end, around 310 lines of pure stateless functions.
 
 ## Stop 9. The voice layer, and seeing it run
 
@@ -282,9 +289,11 @@ in `NPCVoiceLogic.h`.
 `SpatialAudioDebugSubsystem` registers every component and polls the debug keys. With `bDrawDebugRays` set, N cycles
 which source draws, 2 shows bounce rays, 7 crawl steps, 6 edge points, 0 the string-pulled paths with unverified
 segments dimmed, 1 virtual emitters, 3 the per-source HUD and G the global trace counts. Walking behind a wall with 2, 7
-and 0 on makes Stops 5 through 7 concrete faster than reading them again.
+and 0 on makes Stops 5 through 7 concrete faster than reading them again. 6 and 1 together answer the clustering
+question above: each edge draws a line to the emitter it feeds, in that emitter's colour, and an edge with no line is
+one no audible voice speaks for.
 
-Tests live in `Source/SpatialAudioRay/Tests/`, 100 of them under `SpatialAudioRay.Math.*`, `.Async.*`, `.Voice.*` and
+Tests live in `Source/SpatialAudioRay/Tests/`, 95 of them under `SpatialAudioRay.Math.*`, `.Async.*`, `.Voice.*` and
 `.EdgeCache.*` in Session Frontend. They read as a spec for the pure helpers, and `MathTests.cpp` is a good final read.
 
 ---
