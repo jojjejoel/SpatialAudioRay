@@ -99,16 +99,13 @@ void FUpdater::ApplyVoiceAudioParams(const USpatialAudioComponent& Component, co
 		1.f, Voice.CurrentPathAttenuation, Leg1Geom, Voice.PathDist, Component.MaxRayDistance, Settings);
 
 	Slot.FrozenGainScale = VAP.VirtualGain * Voice.CurrentWeightShare;
+	Voice.CurrentPathBend = VAP.VirtualPathBend;
 
 	const float Gain = Slot.FrozenGainScale * Slot.FadeAlpha * VirtualCrossfade;
 	VC->SetFloatParameter(FName("VirtualGain"), Component.bDebugSilenceVirtual ? 0.f : Gain);
 	VC->SetFloatParameter(FName("VirtualPathBend"), VAP.VirtualPathBend);
 
 	OutResult.TotalVirtualGain += Gain;
-	if (Gain > OutResult.PrimaryGain) {
-		OutResult.PrimaryGain = Gain;
-		OutResult.PrimaryPathBend = VAP.VirtualPathBend;
-	}
 }
 
 FUpdater::FVirtualVoiceUpdateResult FUpdater::UpdateVirtualVoiceSlots(USpatialAudioComponent& Component,
@@ -172,5 +169,4 @@ void FUpdater::UpdateDualModeAudio(USpatialAudioComponent& Component, const floa
 		Component, Settings, DeltaTime, VirtualCrossfade, OwnerActor->GetActorLocation());
 
 	Component.AudioDiag.VirtualGain = Result.TotalVirtualGain;
-	Component.AudioDiag.VirtualPathBend = Result.PrimaryPathBend;
 }

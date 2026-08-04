@@ -50,8 +50,6 @@ private:
 
 	struct FVirtualVoiceUpdateResult {
 		float TotalVirtualGain = 0.f;
-		float PrimaryGain = -1.f;
-		float PrimaryPathBend = 0.f;
 	};
 
 	struct FVoiceBlendRates {

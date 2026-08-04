@@ -76,6 +76,7 @@ struct FVirtualVoice {
 	float PathDist = 0.f;
 	float TargetPathAttenuation = 0.f;
 	float CurrentPathAttenuation = 0.f;
+	float CurrentPathBend = 0.f;
 	float TargetWeightShare = 1.f;
 	float CurrentWeightShare = 1.f;
 	int32 SlotIndex = INDEX_NONE;

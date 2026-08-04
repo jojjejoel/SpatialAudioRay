@@ -199,13 +199,6 @@ void USpatialAudioComponent::DrawDiffractionPathsDebug() {
 	}
 }
 
-void USpatialAudioComponent::DrawSourceAudioDebugText(const uint64 Base) const {
-	const FColor SrcColor = SelectThresholdColor(1.f - AudioDiag.CurvedOcclusion, 0.7f, 0.3f);
-	GEngine->AddOnScreenDebugMessage(Base + 1, 0.f, SrcColor,
-	                                 FString::Printf(TEXT("  SRC  occ_param=%3.0f%%"),
-	                                                 AudioDiag.CurvedOcclusion * 100.f));
-}
-
 void USpatialAudioComponent::DrawVirtualAudioDebugText(const uint64 Base) const {
 	FString VoiceStr;
 	int32 NumActive = 0;
@@ -223,12 +216,13 @@ void USpatialAudioComponent::DrawVirtualAudioDebugText(const uint64 Base) const 
 		else if (VirtualVoices.IsValidIndex(Slot.VoiceIndex)) {
 			++NumActive;
 			const FVirtualVoice& Voice = VirtualVoices[Slot.VoiceIndex];
-			VoiceStr += FString::Printf(TEXT(" [%s %s g=%.0f%% shr=%.0f%% atn=%.0f%%]"),
+			VoiceStr += FString::Printf(TEXT(" [%s %s g=%.0f%% shr=%.0f%% atn=%.0f%% bend=%.0f%%]"),
 			                            VirtualVoiceDebugColorNames[SlotIdx % NumVirtualVoiceDebugColors],
 			                            Slot.State == FVirtualSlot::EState::FadingIn ? TEXT("in") : TEXT("on"),
 			                            SlotGain * 100.f,
 			                            Voice.CurrentWeightShare * 100.f,
-			                            Voice.CurrentPathAttenuation * 100.f);
+			                            Voice.CurrentPathAttenuation * 100.f,
+			                            Voice.CurrentPathBend * 100.f);
 		}
 	}
 
@@ -239,9 +233,8 @@ void USpatialAudioComponent::DrawVirtualAudioDebugText(const uint64 Base) const 
 	const FColor VrtColor = SelectThresholdColor(AudioDiag.VirtualGain, 0.4f, 0.15f);
 	GEngine->AddOnScreenDebugMessage(Base + 2, 0.f, VrtColor,
 	                                 FString::Printf(
-		                                 TEXT("  VRT  gain=%3.0f%%  xfade=%3.0f%%  bend=%3.0f%%  │  voices=%s%s"),
+		                                 TEXT("  VRT  gain=%3.0f%%  xfade=%3.0f%%  │  voices=%s%s"),
 		                                 AudioDiag.VirtualGain * 100.f, CurrentVirtualCrossfade * 100.f,
-		                                 AudioDiag.VirtualPathBend * 100.f,
 		                                 *VoiceCount, *VoiceStr));
 }
 
@@ -251,8 +244,9 @@ void USpatialAudioComponent::DrawOcclusionDebugText(const uint64 Base) const {
 	GEngine->AddOnScreenDebugMessage(Base + 3, 0.f, OccColor,
 	                                 FString::Printf(
 		                                 TEXT(
-			                                 "  Occ %s  cur=%3.0f%%  tgt=%3.0f%%  │  LoS:%s  frac inst=%.0f%% avg=%.0f%% smooth=%.0f%%"),
-		                                 *Bar, CurrentOcclusion * 100.f, TargetOcclusion * 100.f,
+			                                 "  Occ %s  cur=%3.0f%% -> param=%3.0f%%  tgt=%3.0f%%  │  LoS:%s  frac inst=%.0f%% avg=%.0f%% smooth=%.0f%%"),
+		                                 *Bar, CurrentOcclusion * 100.f, AudioDiag.CurvedOcclusion * 100.f,
+		                                 TargetOcclusion * 100.f,
 		                                 bHasDirectLoS ? TEXT("YES") : TEXT("NO"),
 		                                 LastOffsetLoSFraction * 100.f,
 		                                 WindowedLoSFraction * 100.f,
@@ -369,7 +363,6 @@ void USpatialAudioComponent::DrawDebugTextHUD(const USpatialAudioSettings& Setti
 	float Prio;
 	GetEffectiveRayCounts(ScaledRayCount, Prio);
 
-	DrawSourceAudioDebugText(Base);
 	DrawVirtualAudioDebugText(Base);
 	DrawOcclusionDebugText(Base);
 	DrawEdgeCacheDebugText(Base, Settings);

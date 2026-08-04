@@ -294,7 +294,6 @@ private:
 	void DrawDebugTextHUD(const USpatialAudioSettings& Settings) const;
 	void DrawDebugLegends() const;
 
-	void DrawSourceAudioDebugText(uint64 Base) const;
 	void DrawVirtualAudioDebugText(uint64 Base) const;
 	void DrawOcclusionDebugText(uint64 Base) const;
 	void DrawEdgeCacheDebugText(uint64 Base, const USpatialAudioSettings& Settings) const;
@@ -376,7 +375,6 @@ private:
 	struct FAudioDiagnostics {
 		float CurvedOcclusion = 0.f;
 		float VirtualGain = 0.f;
-		float VirtualPathBend = 0.f;
 	} AudioDiag;
 
 	enum class ETraceBucket : uint8 { Sweep, Occlusion, Phase0, Relay, Bisect, PathCheck, Other, Count };
