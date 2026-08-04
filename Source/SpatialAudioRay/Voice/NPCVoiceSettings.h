@@ -5,22 +5,13 @@
 #include "NPCVoiceTypes.h"
 #include "NPCVoiceSettings.generated.h"
 
-/**
- * Shared, designer-tunable settings for UNPCVoiceComponent. Create one asset in the Content
- * Browser and assign it to every voice component; if none is assigned, the class defaults are used.
- */
+/** Shared, designer-tunable settings for UNPCVoiceComponent. Assign one asset to every voice
+ *  component; if none is assigned, the class defaults are used. */
 UCLASS(BlueprintType)
 class SPATIALAUDIORAY_API UNPCVoiceSettings : public UDataAsset {
 	GENERATED_BODY()
 
 public:
-
-	// ── Effort Bands ──────────────────────────────────────────────────────────
-	// Bands over the EFFECTIVE acoustic distance, so a bent path is simply a longer one and
-	// occlusion never shifts the effort directly. OcclusionShiftThreshold gates both halves of
-	// that: it switches content to the occluded set, and holds effort on the straight line until
-	// it is crossed, since routes are cached well before the source is actually hidden and
-	// charging for the long way round makes the NPC strain at a listener it can plainly see.
 
 	/** Effective acoustic distance (cm) at or below which the NPC whispers. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice|Effort Bands",
@@ -47,33 +38,19 @@ public:
 		meta = (ClampMin = "0.0"))
 	float EffortDwellTime = 0.5f;
 
-	// ── Effort Reach ──────────────────────────────────────────────────────────
-	// Derived from the bands above rather than authored separately: an effort exists to be heard
-	// across its own band. Headroom covers the lag between the two, since effort commits only after
-	// EffortDwellTime and a line already playing finishes at the effort it started at. Applied per
-	// line via SetAttenuationOuterRadius; the wavs stay at one LUFS.
-
 	/** Reach = the effort's own band max × this, reach being where the sound falls to silence. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice|Effort Reach",
 		meta = (ClampMin = "1.0"))
 	float EffortReachHeadroom = 5.f;
 
-	/** Shout returns 0 = the attenuation asset's own range, anchoring what the rest scale down from. */
 	float GetEffortReachDistance(ENPCVoiceEffort Effort) const {
 		switch (Effort) {
 			case ENPCVoiceEffort::Whisper: return WhisperMaxDistance * EffortReachHeadroom;
 			case ENPCVoiceEffort::Conversational: return ConversationalMaxDistance * EffortReachHeadroom;
 			case ENPCVoiceEffort::Raised: return RaisedMaxDistance * EffortReachHeadroom;
-			default: return 0.f;
+			default: return UseAttenuationAssetRange;
 		}
 	}
-
-	// ── Content Contexts ──────────────────────────────────────────────────────
-	// Which acoustic situation the listener is in, so the bank can carry a line for it. Content
-	// selection only; a context with no line falls back to the generic entry for its half.
-	// PartialOcclusionThreshold sits far below OcclusionShiftThreshold on purpose: that one asks
-	// whether the listener can see the NPC at all, this one whether the path is unobstructed, which
-	// turns false as soon as any offset sample blocks.
 
 	/** Occlusion at or above which a visible listener selects PartiallyOccluded over Clear. 0 = off. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice|Content Contexts",
@@ -99,11 +76,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice|Content Contexts",
 		meta = (ClampMin = "0.0"))
 	float SightChangeReactionWindow = 6.f;
-
-	// ── Effort Gain ───────────────────────────────────────────────────────────
-	// How much louder the effort is AT THE SOURCE, orthogonal to reach: a shout is louder AND
-	// carries further. Shout anchors at 0 and everything scales DOWN, because the sources share one
-	// bus and boosting above 0 risks clipping it when several sum.
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice|Effort Gain",
 		meta = (ClampMax = "0.0"))
@@ -131,10 +103,6 @@ public:
 		}
 	}
 
-	// ── Transitions ───────────────────────────────────────────────────────────
-	// A playing line is normally never modified mid-flight. The exceptions are sight breaking,
-	// sight returning, and committed effort drifting far from what the line was rendered at.
-
 	/** Minimum effort-step jump that triggers a barge-in. 0 disables the effort trigger only. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice|Transitions",
 		meta = (ClampMin = "0", ClampMax = "3"))
@@ -160,8 +128,6 @@ public:
 		meta = (ClampMin = "0.0"))
 	float PostTransitionLineDelay = 0.272f;
 
-	// ── Line Scheduling ───────────────────────────────────────────────────────
-
 	/** Minimum silence (seconds) between the end of one line and the start of the next. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice|Line Scheduling",
 		meta = (ClampMin = "0.0"))
@@ -182,10 +148,12 @@ public:
 		meta = (ClampMin = "0.0"))
 	float LineEndPadding = 0.2f;
 
-	// ── Debug ─────────────────────────────────────────────────────────────────
-
 	/** Size multiplier for the voice component's on-screen debug lines. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice|Debug",
 		meta = (ClampMin = "0.5", ClampMax = "4.0"))
 	float DebugTextScale = 2.f;
+
+private:
+
+	static constexpr float UseAttenuationAssetRange = 0.f;
 };

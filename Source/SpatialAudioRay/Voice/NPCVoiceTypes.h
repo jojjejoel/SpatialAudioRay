@@ -6,7 +6,7 @@
 
 class USoundWave;
 
-/** Vocal effort, ordered quiet → loud so drift between two of them is an integer step. */
+/** Vocal effort, ordered quiet to loud. */
 UENUM(BlueprintType)
 enum class ENPCVoiceEffort : uint8 {
 	Whisper,
@@ -15,7 +15,7 @@ enum class ENPCVoiceEffort : uint8 {
 	Shout
 };
 
-/** Content class for a line, picked by VoiceLogic::ResolveCategoryPreference. Append only. */
+/** Content class for a line. Append only. */
 UENUM(BlueprintType)
 enum class ENPCVoiceCategory : uint8 {
 	/** Visible fallback. */
@@ -28,15 +28,15 @@ enum class ENPCVoiceCategory : uint8 {
 	AroundCorner,
 	/** Occluded and physically close, yet the sound travels far to arrive. */
 	BehindWall,
-	/** Direct sight just broke. Outranks the spatial contexts briefly. */
+	/** Direct sight just broke. */
 	LostSight,
 	/** Direct sight just came back. */
 	SightRegained,
-	/** Visible but partly obstructed, while the sound still arrives nearly intact. */
+	/** Visible but partly obstructed. */
 	PartiallyOccluded
 };
 
-/** Why a playing line was cut short. Each reason has its own category, see BargeInCategory. */
+/** Why a playing line was cut short. */
 UENUM(BlueprintType)
 enum class ENPCVoiceBargeInReason : uint8 {
 	None,
@@ -53,7 +53,7 @@ enum class ENPCVoiceSightChange : uint8 {
 	Gained
 };
 
-/** Which way the effort jumped for a Transition-category line. None on normal lines. */
+/** Which way the effort jumped for a Transition line. None on normal lines. */
 UENUM(BlueprintType)
 enum class ENPCVoiceTransitionDir : uint8 {
 	None,
@@ -71,7 +71,7 @@ struct FNPCVoiceLineRow : public FTableRowBase {
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice")
 	FName LineId;
 
-	/** The line's effort. Named for the CSV column it imports from; renaming means re-exporting. */
+	/** The line's effort. Named for the CSV column it imports from. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice")
 	ENPCVoiceEffort Bucket = ENPCVoiceEffort::Conversational;
 
@@ -82,7 +82,7 @@ struct FNPCVoiceLineRow : public FTableRowBase {
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice")
 	ENPCVoiceTransitionDir Direction = ENPCVoiceTransitionDir::None;
 
-	/** Lines sharing a group go on cooldown together after one of them plays. None = no group. */
+	/** Lines sharing a group go on cooldown together. None = no group. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice")
 	FName CooldownGroup;
 
@@ -93,7 +93,7 @@ struct FNPCVoiceLineRow : public FTableRowBase {
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice")
 	TSoftObjectPtr<USoundWave> Sound;
 
-	/** Transcript for the debug HUD and future subtitles. */
+	/** Transcript for the debug HUD and subtitles. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NPC Voice")
 	FString Text;
 };

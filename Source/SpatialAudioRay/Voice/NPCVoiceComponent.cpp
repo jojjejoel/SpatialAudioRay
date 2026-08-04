@@ -50,7 +50,6 @@ void UNPCVoiceComponent::LoadBank() {
 	if (!VoiceBank) {
 		return;
 	}
-	// Rows without a wave are dropped here so the scheduler never null-checks mid-selection.
 	for (const TPair<FName, uint8*>& Pair : VoiceBank->GetRowMap()) {
 		const FNPCVoiceLineRow* Row = reinterpret_cast<const FNPCVoiceLineRow*>(Pair.Value);
 		if (!Row) {
@@ -103,9 +102,6 @@ void UNPCVoiceComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 	                                    VoiceLogic::MapToEffort(Acoustic.EffectiveDistanceCm, Settings),
 	                                    Now, Settings.EffortDwellTime);
 
-	// Deliberately not dwelled: a delayed reaction misses the moment it reacts to, and the
-	// occlusion behind it is already smoothed. Stamped before the pending flag reads the timer,
-	// so a crossing this tick opens its own window.
 	const ENPCVoiceSightChange SightChange = VoiceLogic::AdvanceSightState(
 		SightState, VoiceLogic::IsListenerHidden(Acoustic, Settings), Now);
 	Acoustic.bSightReactionPending = VoiceLogic::IsSightReactionPending(SightState, Now, Settings);
@@ -124,8 +120,6 @@ FNPCVoiceAcousticState UNPCVoiceComponent::SampleAcousticState(const USpatialAud
 	Acoustic.Occlusion = Spatial.CurrentOcclusion;
 	Acoustic.DirectDistanceCm =
 		static_cast<float>(FVector::Dist(GetOwner()->GetActorLocation(), ListenerPos));
-	// The threshold that calls the listener hidden also gates the detour, so effort and content
-	// never disagree about whether the long way round is real.
 	Acoustic.EffectiveDistanceCm =
 		Spatial.GetEffectiveAcousticDistance(ListenerPos, GetSettings().OcclusionShiftThreshold);
 	return Acoustic;
@@ -164,8 +158,6 @@ void UNPCVoiceComponent::TickScheduler(float Now, const FNPCVoiceAcousticState& 
 	if (Playback.bPlaying && Now >= Playback.EndTime) {
 		VoiceLogic::EndLine(Playback, Now, GetSettings());
 	}
-	// The pending check keeps a cut line's stale NextLineTime, already in the past, from racing a
-	// normal line in ahead of the barge-in it was cut for.
 	if (!Playback.bPlaying && !Transition.bPending && Now >= Playback.NextLineTime) {
 		SelectAndPlayLine(Now, Acoustic);
 	}
@@ -188,20 +180,24 @@ void UNPCVoiceComponent::PlayLine(const FNPCVoiceRuntimeLine& Line, float Now, b
 		return;
 	}
 	const UNPCVoiceSettings& Settings = GetSettings();
-	// Everything below has to land before Play: the reach would otherwise hold the previous
-	// effort's for a frame, and MetaSound initialization only reads its inputs once.
-	if (USpatialAudioComponent* Spatial = SpatialAudio.Get()) {
-		Spatial->SetAttenuationOuterRadius(Settings.GetEffortReachDistance(Line.Row.Bucket));
-	}
-	Audio->SetWaveParameter(WaveParameterName, Line.Wave);
-	Audio->SetFloatParameter(EffortGainParameterName, Settings.GetEffortGainDb(Line.Row.Bucket));
+	ApplyEffortParametersBeforePlay(*Audio, Line.Row.Bucket, Line.Wave);
 	Audio->Play();
 
 	VoiceLogic::BeginLine(Playback, Line.Row, Now, Settings.LineEndPadding, bAsBargeIn);
 	VoiceLogic::StampCooldown(CooldownUntil, Line.Row.CooldownGroup, Now,
 	                          Settings.CooldownGroupSeconds);
-	// Both scheduling paths land here, so the NPC remarks on a crossing exactly once.
 	VoiceLogic::MarkSightReactionDelivered(SightState, Line.Row.Category);
+}
+
+void UNPCVoiceComponent::ApplyEffortParametersBeforePlay(UAudioComponent& Audio,
+                                                         ENPCVoiceEffort Effort,
+                                                         USoundWave* Wave) {
+	const UNPCVoiceSettings& Settings = GetSettings();
+	if (USpatialAudioComponent* Spatial = SpatialAudio.Get()) {
+		Spatial->SetAttenuationOuterRadius(Settings.GetEffortReachDistance(Effort));
+	}
+	Audio.SetWaveParameter(WaveParameterName, Wave);
+	Audio.SetFloatParameter(EffortGainParameterName, Settings.GetEffortGainDb(Effort));
 }
 
 void UNPCVoiceComponent::DrawDebugText(const FNPCVoiceAcousticState& Acoustic, float Now) const {
@@ -215,7 +211,6 @@ void UNPCVoiceComponent::DrawDebugText(const FNPCVoiceAcousticState& Acoustic, f
 	                                 /*bNewerOnTop=*/true, TextScale);
 	GEngine->AddOnScreenDebugMessage(Key + 1, 0.f, FColor::Cyan, BuildDebugStateLine(Now),
 	                                 /*bNewerOnTop=*/true, TextScale);
-	// Own row: inlining the longest field pushed the numbers off screen at video-readable scales.
 	if (Playback.bPlaying && !Playback.ActiveText.IsEmpty()) {
 		GEngine->AddOnScreenDebugMessage(Key + 2, 0.f, FColor::White,
 		                                 FString::Printf(TEXT("  \"%s\""), *Playback.ActiveText),
@@ -242,7 +237,6 @@ FString UNPCVoiceComponent::BuildDebugInputsLine(const FNPCVoiceAcousticState& A
 			*EffortEnum->GetNameStringByValue(static_cast<int64>(EffortState.Candidate)),
 			Now - EffortState.CandidateSince, GetSettings().EffortDwellTime);
 	}
-	// "spent" is what the ladder actually reads. Raw age alone would explain the wrong thing.
 	const float SinceChange = Now - SightState.LastChangeTime;
 	if (SinceChange <= GetSettings().SightChangeReactionWindow) {
 		Line += FString::Printf(TEXT(" (%s %.1fs ago%s)"),
@@ -261,8 +255,6 @@ FString UNPCVoiceComponent::BuildDebugStateLine(float Now) const {
 		                       FMath::Max(0.f, Playback.NextLineTime - Now));
 	}
 	const UEnum* EffortEnum = StaticEnum<ENPCVoiceEffort>();
-	// Post-clamp reach from the component, not the settings band: a mis-tuned band needs the
-	// distance the sound actually dies at.
 	const USpatialAudioComponent* Spatial = SpatialAudio.Get();
 	return FString::Printf(
 		TEXT("  playing %s @%s%s reach %.1fm %+.0fdB (%.1fs left)"),

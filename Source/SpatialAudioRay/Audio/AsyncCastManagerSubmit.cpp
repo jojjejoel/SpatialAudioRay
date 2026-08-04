@@ -69,7 +69,6 @@ void FAsyncCastManager::DrawFlightSegment(const USpatialAudioComponent& Componen
 	DrawDebugSphere(World, To, 5.f, 6, FColor::White, false, Settings.DebugLineDuration, SDPG_Foreground, 1.f);
 }
 
-// ── StartAsyncFullCast phases ────────────────────────────────────────────────
 
 void FAsyncCastManager::CaptureSweepPositions(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings,
                                               const AActor& Owner, const APawn& Pawn) {
@@ -77,16 +76,12 @@ void FAsyncCastManager::CaptureSweepPositions(USpatialAudioComponent& Component,
 	Component.bPreSweepCast = Component.IsPreSweepActive();
 	Component.AsyncSourcePos = Owner.GetActorLocation();
 	Component.AsyncListenerPos = Pawn.GetActorLocation();
-	// Steering aims rays where the source and listener are heading, or where they came from just
-	// after losing LoS. Probes and gates keep verifying against the actual positions.
 	Component.AsyncSteeringSourcePos = Component.AsyncSourcePos
 		+ Component.ComputeSteeringLead(Component.VelocityScaling.SmoothedSourceVelocity, Settings);
 	Component.AsyncSteeringListenerPos = Component.AsyncListenerPos
 		+ Component.ComputeSteeringLead(Component.VelocityScaling.SmoothedListenerVelocity, Settings);
 }
 
-// Only counts entries the sweep would actually be re-finding. A relay is an audible stopgap
-// rather than a found path, so it must not throttle the search that replaces it.
 int32 FAsyncCastManager::CountHeldEdges(const TArray<FCachedEdgePoint>& Points) {
 	int32 Count = 0;
 	for (const FCachedEdgePoint& Edge : Points) {
@@ -106,10 +101,6 @@ int32 FAsyncCastManager::ApplyCacheFullnessRayScale(const USpatialAudioComponent
 		static_cast<float>(CountHeldEdges(Component.CachedEdgePoints))
 		/ FMath::Max(1, Settings.CachedEdgeMaxCount), 0.f, 1.f);
 
-	// Floored at one ray, not at MinFullSweepRayCount. That setting is the floor for distance
-	// scaling, and reusing it here would cap this scale at whatever a distant source needs,
-	// which for a small budget is the whole reduction. FullCacheRayScale is itself the dial for
-	// how far to throttle, so it needs no second knob under it.
 	const float Scale = FMath::Lerp(1.f, Settings.FullCacheRayScale, Fullness);
 	return FMath::Max(1, FMath::RoundToInt(RayCount * Scale));
 }
@@ -119,9 +110,6 @@ void FAsyncCastManager::ResolveSweepRayBudget(USpatialAudioComponent& Component,
 	Component.GetEffectiveRayCounts(ScaledRayCount, Component.CurrentPriority);
 	Component.AsyncMaxBounces = FMath::Max(Settings.MinMaxBounces,
 	                                        FMath::RoundToInt(Settings.MaxBounces * Component.CurrentPriority));
-	// Applied here rather than in GetEffectiveRayCounts, which the HUD's coverage fraction also
-	// reads: folding cache fullness into that denominator would make coverage climb as the cache
-	// filled purely because the number it divides by shrank.
 	Component.AsyncTotalRays = ApplyCacheFullnessRayScale(Component, ScaledRayCount, Settings);
 
 	Component.PendingValidCachedPoints.Reset();
@@ -158,8 +146,6 @@ FRandomStream FAsyncCastManager::MakeBiasStream(const FVector& SourcePos, const 
 	return FRandomStream(static_cast<int32>(Seed));
 }
 
-// Concentrates the sweep in the lateral band around the listener without hard-excluding any
-// direction.
 FVector FAsyncCastManager::ApplyLateralBandBias(const USpatialAudioComponent& Component, const FVector& Dir,
                                                 const FVector& ToListenerDir, float FullCastDistance,
                                                 int32 DirectionIndex, const USpatialAudioSettings& Settings) {
@@ -207,7 +193,6 @@ void FAsyncCastManager::SubmitSweepRays(USpatialAudioComponent& Component, const
 		Ray.LoSOrigin = Component.AsyncSourcePos;
 		Ray.bNextHitCrawls = i % 2 == 0;
 
-		// Nothing travelled yet, so the launch segment answers only to reach and the flight cap.
 		const float SegLen = Math::ComputeNextSegmentLength(
 			Component.MaxRayDistance * Settings.RayLengthMultiplier,
 			TNumericLimits<float>::Max(), Settings.MaxStraightFlightDistance);
@@ -255,15 +240,12 @@ void FAsyncCastManager::StartAsyncFullCast(USpatialAudioComponent& Component, co
 	Component.bAsyncCastActive = true;
 }
 
-// ── TickAsyncCast per-ray phases ─────────────────────────────────────────────
 
 bool FAsyncCastManager::TryProcessMidAirTurn(const USpatialAudioComponent& Component, FSpatialRayState& Ray, UWorld* World,
                                              float Budget, bool bSegMissed, bool& bAllDone,
                                              const USpatialAudioSettings& Settings) {
 	const FVector TurnPoint = Ray.Origin + Ray.Dir * Ray.SegSubmitLen;
 
-	// The last guard sends a miss that can no longer reach the listener to the terminal branch
-	// rather than spending a bounce on a turn that cannot pay off.
 	if (!bSegMissed || Settings.MaxStraightFlightDistance <= 0.f
 		|| Ray.Bounce >= Component.AsyncMaxBounces
 		|| Budget - (Ray.CumulativeDistance + Ray.SegSubmitLen) < 1.f
@@ -302,8 +284,6 @@ void FAsyncCastManager::ProcessRayTermination(const USpatialAudioComponent& Comp
                                               const FTraceDatum& SegData, bool bSegMissed, float Budget,
                                               bool& bAllDone, const USpatialAudioSettings& Settings) {
 	if (bSegMissed) {
-		// Capped to the distance actually traced. A budget recompute alone would overshoot when
-		// MaxStraightFlightDistance clamped the segment, putting probes in unverified space.
 		const float RemainingBudget = FMath::Max(0.f, FMath::Min(
 			FMath::Min(Component.MaxRayDistance * Settings.RayLengthMultiplier, Ray.SegSubmitLen),
 			Budget - Ray.CumulativeDistance));
@@ -378,7 +358,6 @@ bool FAsyncCastManager::TrySetupSurfaceCrawl(USpatialAudioComponent& Component, 
 
 	Ray.CrawlStepProbes.Reset();
 	Ray.CrawlStepProbes.Reserve(CrawlStepCap);
-	// One batch up front, so the whole crawl costs one frame of latency instead of one per step.
 	for (int32 Step = 1; Step <= CrawlStepCap; ++Step) {
 		const FVector StepPos = NudgedStart + Step * Settings.CrawlStepSize * CrawlDir;
 		const FVector BackEnd = StepPos + BackDir * BackProbeLen;
@@ -546,8 +525,6 @@ void FAsyncCastManager::DrainPendingLoSProbes(const USpatialAudioComponent& Comp
 		}
 
 		if (!Ray.bLoSFound && IsTraceClear(LoSData) && Probe.CumDist < BestCumDist) {
-			// A probe origin inside geometry exits silently forward, but the reverse trace hits the
-			// outer face and rejects it.
 			FHitResult SanityHit;
 			if (!Component.TraceLine(World, SanityHit, ListenerPos, Probe.SamplePos)) {
 				BestCumDist = Probe.CumDist;
@@ -563,13 +540,10 @@ void FAsyncCastManager::DrainPendingLoSProbes(const USpatialAudioComponent& Comp
 		Ray.bLoSFound = true;
 		Ray.LoSBounces = FMath::Max(1, BestBounce);
 		Ray.LoSOrigin = BestLoSPos;
-		// Stops at the edge point. The edge to listener leg is Leg2, not part of the travelled
-		// source to edge path this value represents.
 		Ray.LoSCumulativeDistance = BestCumDist;
 	}
 }
 
-// ── ProcessCrawlBatch phases ─────────────────────────────────────────────────
 
 bool FAsyncCastManager::AreCrawlTracesReady(UWorld* World, FSpatialRayState& Ray, FTraceDatum& OutRangeData) {
 	if (!World->QueryTraceData(Ray.CrawlRangeHandle, OutRangeData)) {
@@ -605,7 +579,6 @@ void FAsyncCastManager::TryConfirmLoSAtCrawlStep(const USpatialAudioComponent& C
 	if (!IsTraceClear(LoSData)) {
 		return;
 	}
-	// Reverse sanity trace, same reasoning as DrainPendingLoSProbes.
 	if (FHitResult SanityHit; Component.TraceLine(World, SanityHit, Component.AsyncListenerPos, StepProbe.StepPos)) {
 		return;
 	}
@@ -648,7 +621,6 @@ bool FAsyncCastManager::TryTakeFreeEdgeExit(const USpatialAudioComponent& Compon
                                             const int32 StepIdx, FCrawlStepResult& OutResult) {
 	FTraceDatum BackData;
 	World->QueryTraceData(StepProbe.BackHandle, BackData);
-	// Clear means nothing is behind this step any more, so the crawl has walked off the edge.
 	if (!IsTraceClear(BackData)) {
 		return false;
 	}
@@ -699,7 +671,6 @@ void FAsyncCastManager::DrawCrawlDebugVisualization(const FSpatialRayState& Ray,
 
 		DrawDebugSphere(World, StepProbe.StepPos, Radius, 6, StepColor,
 		                false, Settings.DebugLineDuration, SDPG_Foreground, 1.f);
-		// Cyan marks crawl movement, flight segments stay white.
 		DrawDebugLine(World, PrevStepPos, StepProbe.StepPos, FColor(0, 220, 255),
 		              false, Settings.DebugLineDuration, 0, 1.5f);
 		PrevStepPos = StepProbe.StepPos;
@@ -725,8 +696,6 @@ void FAsyncCastManager::ApplyCrawlResult(const USpatialAudioComponent& Component
 	if (Result.bSucceeded) {
 		Ray.CumulativeDistance += Result.CrawlDist;
 		Ray.Dir = Result.EdgeDir;
-		// A perp-wall exit reflects off the wall it ran into, so it needs bias off that wall. A
-		// free-edge exit carries on from a step point already held clear.
 		Ray.Origin = Result.bPerpWallHit
 			             ? Result.EdgePoint + Result.PerpNormal * Settings.RaySurfaceBias
 			             : Result.EdgePoint;
@@ -751,7 +720,6 @@ void FAsyncCastManager::ProcessCrawlBatch(const USpatialAudioComponent& Componen
 		return;
 	}
 
-	// Anything past where the range trace hit is inside geometry, so those probes go unevaluated.
 	const int32 NumSteps = Ray.CrawlStepProbes.Num();
 	int32 EffMaxSteps = Ray.CrawlMaxSteps;
 	if (!IsTraceClear(RangeData)) {
@@ -793,8 +761,6 @@ FVector FAsyncCastManager::ComputeMidAirTurnDirection(const FVector& InDir, cons
                                                       const FVector& ListenerPos, bool bApplyBias,
                                                       float SurfaceRoughness, float BounceListenerBias) {
 	if (SurfaceRoughness <= 0.f && BounceListenerBias <= 0.f) {
-		// With no scatter and no bias the lerp below returns InDir unchanged and the ray would burn
-		// a bounce flying straight. Seeded from the turn point so a stationary scene replays it.
 		const uint32 Seed = HashCombine(GetTypeHash(TurnPoint), GetTypeHash(ListenerPos));
 		const FRandomStream Stream(static_cast<int32>(Seed));
 		FVector AxisU, AxisV;
@@ -842,7 +808,6 @@ void FAsyncCastManager::SubmitSegmentLoSProbes(const USpatialAudioComponent& Com
 		}
 		++SampleCount;
 
-		// The budget sum only grows along the segment, so the first rejection ends the walk.
 		if (!TryAddListenerLoSProbe(Component, Ray, World, SegOrigin + SegDir * T,
 		                            Ray.CumulativeDistance + T, Budget, Settings)) {
 			break;
@@ -856,10 +821,7 @@ void FAsyncCastManager::SubmitSegmentLoSProbes(const USpatialAudioComponent& Com
 	}
 }
 
-// ── SubmitFinalizeBatch phases ───────────────────────────────────────────────
 
-// The reverse trace catches an endpoint sitting inside a mesh (traces that start inside
-// geometry exit without a blocking hit).
 bool FAsyncCastManager::HasClearShortcut(const USpatialAudioComponent& Component, const UWorld* World,
                                          const FVector& Edge, const FVector& Anchor) {
 	FHitResult Hit;
@@ -880,7 +842,6 @@ int32 FAsyncCastManager::FindFirstVisibleAnchor(const USpatialAudioComponent& Co
                                                 const FVector& FromPoint,
                                                 const TArray<FSpatialRayState::FBounceWaypoint>& Waypoints,
                                                 int32 SearchLimit) {
-	// Earliest first: the further back a shortcut reaches, the more detour it replaces.
 	for (int32 AnchorIdx = 0; AnchorIdx < SearchLimit; ++AnchorIdx) {
 		if (HasClearShortcut(Component, World, FromPoint, Waypoints[AnchorIdx].Pos)) {
 			return AnchorIdx;
@@ -889,11 +850,6 @@ int32 FAsyncCastManager::FindFirstVisibleAnchor(const USpatialAudioComponent& Co
 	return INDEX_NONE;
 }
 
-// Leg1 is the source to edge leg. The route a ray actually flew overstates it, since crawl steps
-// hug walls and bounces detour, so the travelled route is pulled taut first.
-// When nothing is visible, exactly one raw hop is consumed rather than the whole remaining prefix,
-// so one blocked corner cannot also swallow a shortcut available beyond it. A false in
-// OutSegmentVerified is often blocked by design rather than by a geometry change.
 float FAsyncCastManager::ComputeStringPulledLeg1(const USpatialAudioComponent& Component, const UWorld* World,
                                                  const FSpatialRayState& Ray, const FVector& SourcePos,
                                                  TArray<FVector>& OutPath, TArray<bool>& OutSegmentVerified) {
@@ -901,13 +857,11 @@ float FAsyncCastManager::ComputeStringPulledLeg1(const USpatialAudioComponent& C
 	TArray<bool> ReverseSegmentVerified;
 	ReversePath.Add(Ray.LoSOrigin);
 
-	// RemainingAnchors bounds the waypoints still on the source side of PullPoint.
 	FVector PullPoint = Ray.LoSOrigin;
 	float PullPointCumDist = Ray.LoSCumulativeDistance;
 	int32 RemainingAnchors = CountPrefixAnchorWaypoints(Ray.BounceWaypoints, Ray.LoSCumulativeDistance);
 	float PulledDist = 0.f;
 
-	// RemainingAnchors strictly decreases (or the loop exits) every iteration, so this terminates.
 	while (true) {
 		if (HasClearShortcut(Component, World, PullPoint, SourcePos)) {
 			PulledDist += FVector::Dist(PullPoint, SourcePos);
@@ -929,14 +883,12 @@ float FAsyncCastManager::ComputeStringPulledLeg1(const USpatialAudioComponent& C
 		}
 
 		if (RemainingAnchors == 0) {
-			// Nothing left to try, so close the final gap with the travelled distance.
 			PulledDist += PullPointCumDist;
 			ReverseSegmentVerified.Add(false);
 			ReversePath.Add(SourcePos);
 			break;
 		}
 
-		// Not even the preceding waypoint is visible, so consume that hop unverified and continue.
 		const FSpatialRayState::FBounceWaypoint& Preceding = Ray.BounceWaypoints[RemainingAnchors - 1];
 		PulledDist += PullPointCumDist - Preceding.CumDist;
 		ReverseSegmentVerified.Add(false);
@@ -948,7 +900,6 @@ float FAsyncCastManager::ComputeStringPulledLeg1(const USpatialAudioComponent& C
 
 	PulledDist = FMath::Min(PulledDist, Ray.LoSCumulativeDistance);
 
-	// Built walking backwards from the edge; callers want it source-first.
 	OutPath = MoveTemp(ReversePath);
 	Algo::Reverse(OutPath);
 	OutSegmentVerified = MoveTemp(ReverseSegmentVerified);
@@ -959,14 +910,11 @@ float FAsyncCastManager::ComputeStringPulledLeg1(const USpatialAudioComponent& C
 void FAsyncCastManager::SubmitFinalizeBatch(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings) {
 	const UWorld* World = Component.GetWorld();
 
-	// Pre-warm casts fire while the source is still partly visible, so direct hits are expected.
-	// Masking keeps the refine probes and stops readback wiping the freshly warmed cache.
 	const bool bDirectLoSFound = !Component.bPreSweepCast && Math::HasAnyDirectLoS(Component.AsyncRays);
 
 	const FCachedPointAccum Accum = AccumulateCachedPoints(
 		Component.PendingValidCachedPoints, Component.MaxRayDistance, Settings);
 
-	// Only these two take a further contribution from the rays below.
 	int32 RaysReached = Accum.RaysReached;
 	float MinLoSDist = Accum.MinLoSDist;
 

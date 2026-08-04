@@ -33,9 +33,6 @@ void ASpatialAudioSourceActor::BeginPlay() {
 		AudioCompSource->SetWaveParameter(WaveParameterName, SoundWaveOverride);
 	}
 
-	// AudioCompVirtual is deliberately not played: it is the config template the
-	// USpatialAudioComponent voice pool clones its MetaSound + attenuation from. The virtual
-	// graph reads the audio bus, so it needs no wave parameter either.
 	AudioCompSource->Play();
 }
 

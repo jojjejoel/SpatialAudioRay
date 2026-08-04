@@ -10,10 +10,6 @@ namespace Math {
 		return Dir - 2.f * FVector::DotProduct(Dir, Normal) * Normal;
 	}
 
-	// Reflects, then blends toward a random hemisphere sample by SurfaceRoughness. With bApplyBias,
-	// rejection-samples up to 20 candidates toward the listener: the bias lives in the acceptance
-	// probability rather than a lerp, so roughness keeps controlling spread. Shared by the async
-	// bounce and crawl-bounce-out paths, which must scatter identically.
 	inline FVector ComputeBouncedDirection(const FVector& InDir, const FVector& SurfaceNormal,
 	                                       bool bApplyBias, const FVector& HitLocation,
 	                                       const FVector& ListenerPos, float SurfaceRoughness,
@@ -60,16 +56,11 @@ namespace Math {
 		return Distance / FMath::Sqrt(Distance * Distance + Radius * Radius);
 	}
 
-	// Every LoS probe is gated on this sum, and it only grows: moving distance D closes the gap by
-	// at most D, so once past the budget it can never dip back under. A ray failing here can never
-	// produce a passing probe, so flying it on is pure trace waste.
 	inline bool IsWithinPathBudget(float CumulativeDistance, const FVector& Point,
 	                               const FVector& ListenerPos, float Budget) {
 		return CumulativeDistance + FVector::Dist(Point, ListenerPos) <= Budget;
 	}
 
-	// The ray's own reach, capped by remaining budget and then by MaxStraightFlightDistance (0 = off).
-	// Callers with no budget to spend pass an unbounded RemainingBudget.
 	inline float ComputeNextSegmentLength(float MaxRayDistance, float RemainingBudget,
 	                                      float MaxStraightFlightDistance) {
 		float Length = FMath::Min(MaxRayDistance, RemainingBudget);
@@ -122,12 +113,8 @@ namespace Math {
 		return FMath::Max(0.f, LateralWeight - ForwardPenalty);
 	}
 
-	/** A zero-length falloff would cut straight from full volume to silence at the inner radius. */
 	constexpr float MinFalloffScale = 0.05f;
 
-	// Two clamps, both load-bearing: InnerRadius is a hard floor on reach, since the engine plays at
-	// full volume inside it; and the scale never exceeds 1 because the ray and LoS ranges are captured
-	// at base scale, so a sound must never be audible past where the system searches for paths.
 	inline float ComputeFalloffScaleForOuterRadius(float TargetOuterCm, float InnerRadius,
 	                                               float BaseFalloffDistance) {
 		if (TargetOuterCm <= 0.f || BaseFalloffDistance <= 0.f) {
@@ -136,11 +123,6 @@ namespace Math {
 		return FMath::Clamp((TargetOuterCm - InnerRadius) / BaseFalloffDistance, MinFalloffScale, 1.f);
 	}
 
-	// The straight line while clear, the diffraction path while occluded, blended by smoothed
-	// occlusion so partial LoS interpolates instead of switching. Selection input only, never gain
-	// math. Floored at DirectDist: the two legs smooth independently and can momentarily sum below
-	// the straight line. OcclusionFloor holds the result at the straight line until the listener is
-	// genuinely hidden, since the pre-sweep band caches routes around corners they can still see past.
 	inline float ComputeEffectiveAcousticDistance(float DirectDist, float PathDist, float Occlusion,
 	                                              float OcclusionFloor = 0.f) {
 		const float Floor = FMath::Clamp(OcclusionFloor, 0.f, 0.99f);
@@ -148,12 +130,6 @@ namespace Math {
 		return FMath::Lerp(DirectDist, FMath::Max(PathDist, DirectDist), Alpha);
 	}
 
-	// Two weights per point. The source-side weight drives the PathDist average and the per-voice
-	// gain share, and must never depend on listener position. The rank weight adds listener-distance
-	// decay and drives only centroids and which clusters win voice slots: proximity may steer WHERE
-	// emitters sit, never how loud they are. Grouping stays keyed on the edge points themselves;
-	// EmitterPullback moves only the output centroid, since pulled-back points converge toward the
-	// source and would merge voices at clearly distinct openings.
 	inline void ClusterEdgePoints(const TArray<FCachedEdgePoint>& Points, float ClusterRadius,
 	                              float CandidateDistanceFalloff, const FVector& ListenerPos,
 	                              float ListenerDistanceFalloff, float MaxRayDistance,
@@ -205,7 +181,6 @@ namespace Math {
 			A.Centroid = A.PosSum / A.RankWeight;
 		}
 
-		// Centroids drift as points join, so greedy assignment alone can leave two within the radius.
 		bool bMerged = true;
 		while (bMerged) {
 			bMerged = false;
@@ -253,6 +228,17 @@ namespace Math {
 		float VirtualPathBend;
 	};
 
+	inline float ComputeVirtualPathBend(float Leg1Geom, float Leg1Traveled, float MaxRayDistance,
+	                                    const USpatialAudioSettings& Settings)
+	{
+		const float Leg1ExcessRatio = Leg1Geom > 0.f
+			? FMath::Max(0.f, Leg1Traveled / Leg1Geom - 1.f) : 0.f;
+		const float FullExcess = FMath::Max(Settings.VirtualPathBendFullExcess, KINDA_SMALL_NUMBER);
+		const float DistanceBend = Settings.VirtualPathBendDistanceStrength
+			* Leg1Traveled / FMath::Max(MaxRayDistance, 1.f);
+		return FMath::Clamp(Leg1ExcessRatio / FullExcess + DistanceBend, 0.f, 1.f);
+	}
+
 	inline FVirtualAudioParams ComputeVirtualAudioParams(
 		float VirtualCrossfade,
 		float PathAttenuation,
@@ -262,27 +248,12 @@ namespace Math {
 		const USpatialAudioSettings& Settings)
 	{
 		FVirtualAudioParams Out;
-		// Purely the gate times how much the travelled path attenuates: no distance curve here. The
-		// Virtual cue's own SoundAttenuation asset is the sole control of loudness by proximity.
 		Out.VirtualGain = VirtualCrossfade * (1.f - PathAttenuation);
-
-		// How much longer the travelled path is than a straight line to the same point, normalized so
-		// bend reaches 1 at VirtualPathBendFullExcess, plus a travelled-distance term so far edges
-		// sound duller even on straight single-corner paths. One combined parameter: the MetaSound
-		// derives both HPF cutoff and reverb wetness from it. Listener-independent.
-		const float Leg1ExcessRatio = Leg1Geom > 0.f
-			? FMath::Max(0.f, Leg1Traveled / Leg1Geom - 1.f) : 0.f;
-		const float FullExcess = FMath::Max(Settings.VirtualPathBendFullExcess, KINDA_SMALL_NUMBER);
-		const float DistanceBend = Settings.VirtualPathBendDistanceStrength
-			* Leg1Traveled / FMath::Max(MaxRayDistance, 1.f);
-		Out.VirtualPathBend = FMath::Clamp(Leg1ExcessRatio / FullExcess + DistanceBend, 0.f, 1.f);
-
+		Out.VirtualPathBend =
+			ComputeVirtualPathBend(Leg1Geom, Leg1Traveled, MaxRayDistance, Settings);
 		return Out;
 	}
 
-	// Maps smoothed occlusion in [StartOcclusion, 1] onto a [0, 1] gate, so the diffracted sound
-	// bleeds in through the pre-sweep band while the voices are already positioned. StartOcclusion
-	// >= 1 disables it. Amplifies input wobble by 1/(1-Start), so the caller low-passes the result.
 	inline float ComputeVirtualCrossfadeRamp(float CurrentOcclusion, float StartOcclusion)
 	{
 		if (StartOcclusion >= 1.f) {
@@ -291,17 +262,12 @@ namespace Math {
 		return FMath::Clamp((CurrentOcclusion - StartOcclusion) / (1.f - StartOcclusion), 0.f, 1.f);
 	}
 
-	// LoS loss (a completed blank ring cycle, not a single sample) forces a hard 1, since occlusion
-	// smoothing lags the break. bSuppressHardGate drops that term for a stationary scene with the
-	// ramp on, where a marginal pinhole can blank a full rotation and pump the gate. A genuine
-	// stationary loss still reaches full gate as smoothed occlusion rises and the ramp follows.
 	inline float ComputeVirtualCrossfadeTarget(bool bHasLoS, bool bSuppressHardGate, float SmoothedRamp)
 	{
 		const float HardGate = (bHasLoS || bSuppressHardGate) ? 0.f : 1.f;
 		return FMath::Max(HardGate, SmoothedRamp);
 	}
 
-	// Slews rather than snapping, so VirtualGain ramps over FadeInTime/FadeOutTime.
 	inline float ComputeVirtualCrossfadeSlew(
 		float CurrentCrossfade, float TargetCrossfade, float FadeInTime, float FadeOutTime, float DeltaTime)
 	{

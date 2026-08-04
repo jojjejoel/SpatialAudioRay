@@ -13,27 +13,19 @@ public:
 	static void TickCachedEdgeEviction(USpatialAudioComponent& Component, float DeltaTime, const USpatialAudioSettings& Settings);
 
 private:
-	// Divided by cache size, so a setting means the period per edge rather than per cache.
 	static float PerEdgeInterval(const USpatialAudioComponent& Component, float Interval);
-	// INDEX_NONE if every entry is skipped.
 	static int32 SelectRoundRobinEdge(const TArray<FCachedEdgePoint>& Points, int32& Cursor,
 	                                  const TFunctionRef<bool(const FCachedEdgePoint&)>& ShouldSkip);
-	// Unverified segments are skipped: they were blocked at discovery, so tracing them would evict
-	// every multi-corner edge. Segments shorter than 2*EndInset+1 are skipped too.
 	static void SubmitPolylineRecheckTraces(USpatialAudioComponent& Component, UWorld* World,
 	                                        const TArray<FVector>& Path, const TArray<bool>& SegmentVerified,
 	                                        float EndInset);
-	// Moves the entry's source anchor to the live position and re-measures PathDist/GeomDist.
 	static void ApplyRecheckReanchor(FCachedEdgePoint& Edge, const FVector& LiveSourcePos);
 	static void TickShortestPathReadback(USpatialAudioComponent& Component, UWorld* World,
 	                                     const FVector& SourcePos, const USpatialAudioSettings& Settings);
 
-	// A handle from before a pipeline reset is meaningless, so drop the whole generation unread.
 	static void ClearStalePendingChecks(USpatialAudioComponent& Component);
-	// True on an interval boundary. Scaled by speed, so a moving player re-validates more often.
 	static bool AdvancePhase0Timer(USpatialAudioComponent& Component, float DeltaTime,
 	                               const USpatialAudioSettings& Settings);
-	// True means the entry has faded out and the caller should drop it.
 	static bool TickSingleEdge(USpatialAudioComponent& Component, FCachedEdgePoint& Edge, UWorld* World,
 	                           const FVector& SourcePos, const FVector& ListenerPos, float DeltaTime,
 	                           bool bIntervalFired, const USpatialAudioSettings& Settings);
@@ -46,11 +38,9 @@ private:
 	                                  const FVector& ListenerPos, float OffsetRadius);
 	static void TickPhase0OffsetReadback(USpatialAudioComponent& Component, FCachedEdgePoint& Edge, UWorld* World,
 	                                     const FVector& SourcePos, const FVector& ListenerPos);
-	// False while any fan trace is in flight. World stays non-const: QueryTraceData is not const.
 	static bool ReadOffsetFanTraces(FCachedEdgePoint& Edge, UWorld* World, bool (&OutFanClear)[4]);
 	static void DrawOffsetFan(const USpatialAudioComponent& Component, const FCachedEdgePoint& Edge, const UWorld* World,
 	                          const bool (&FanClear)[4]);
-	// A source-side eviction is left alone, since this check cannot speak for that side.
 	static void RestoreFromListenerSideEviction(FCachedEdgePoint& Edge, const FVector& SourcePos,
 	                                            const FVector& ListenerPos);
 	static void RescueOrEvict(USpatialAudioComponent& Component, FCachedEdgePoint& Edge, UWorld* World,
@@ -59,7 +49,6 @@ private:
 	                                 const FVector& ListenerPos, bool bIntervalFired);
 	static void StartEviction(USpatialAudioComponent& Component, FCachedEdgePoint& Edge, const FVector& SourcePos,
 	                          bool bSourceSide = false);
-	// False when no rescue is possible, the caller's cue to evict now. True means traces are flying.
 	static bool SubmitRelayRescueTraces(const USpatialAudioComponent& Component, FCachedEdgePoint& Edge,
 	                                    UWorld* World, const FVector& ListenerPos);
 	static void TickRelayRescueReadback(USpatialAudioComponent& Component, FCachedEdgePoint& Edge, UWorld* World,
@@ -69,14 +58,11 @@ private:
 	static void DrawProbeResult(const USpatialAudioComponent& Component, const UWorld* World,
 	                            const FVector& Point, bool bClear);
 	static int32 ResolveStepsForMergeRadius(const USpatialAudioComponent& Component, float Span);
-	// Returns ClearEnd when no midpoint cleared. ExplicitSteps 0 derives the count from the bracket.
 	static FVector BisectListenerLoS(const USpatialAudioComponent& Component, const UWorld* World, const FVector& ListenerPos,
 	                                 const FVector& BlockedEnd, const FVector& ClearEnd, bool& bOutFoundClear,
 	                                 int32 ExplicitSteps = 0);
-	// Only the slow round-robin passes bAllowSubSegmentRefine; the Phase 0 site must not pay it.
 	static bool TryPromoteToInnerAnchor(const USpatialAudioComponent& Component, FCachedEdgePoint& Edge, const UWorld* World,
 	                                    const FVector& ListenerPos, bool bAllowSubSegmentRefine);
-	// Converges the emitter onto the real corner, so it slides along the wall as the listener moves.
 	static bool TryJumpToPreviousVertex(const USpatialAudioComponent& Component, FCachedEdgePoint& Edge,
 	                                    const UWorld* World, const FVector& ListenerPos,
 	                                    const FVector& InnerAnchor);
@@ -84,17 +70,13 @@ private:
 	                                       const FVector& ListenerPos, const FVector& InnerAnchor);
 	static void TickRelayMaintenance(USpatialAudioComponent& Component, FCachedEdgePoint& Edge, UWorld* World,
 	                                 const FVector& SourcePos, const FVector& ListenerPos, bool bIntervalFired);
-	// [0..1] listener to edge, [2..3] edge to relay, each forward and reverse.
 	static bool ReadRelayCheckTraces(FCachedEdgePoint& Edge, UWorld* World, FTraceDatum (&OutData)[4]);
 	static void SubmitRelayCheckTraces(const USpatialAudioComponent& Component, FCachedEdgePoint& Edge,
 	                                   UWorld* World, const FVector& ListenerPos);
-	// Leaves bRelayed a transitional state rather than somewhere an entry rests.
 	static void ConvertRelayToEdge(const USpatialAudioComponent& Component, FCachedEdgePoint& Edge, const UWorld* World,
 	                               const FVector& ListenerPos);
-	// Promotion pops a vertex per jump, so an entry can be left without a usable polyline.
 	static TArray<FVector> ResolveRecheckPath(const FCachedEdgePoint& Edge);
 	static int32 FindFirstBlockedSegment(const TArray<FTraceDatum>& Data);
-	// Null when the entry was rewritten or removed since its recheck was submitted.
 	static FCachedEdgePoint* FindEntryByExactEdgePoint(USpatialAudioComponent& Component,
 	                                                   const FVector& EdgePoint);
 	static void TickShortestPathRecheck(USpatialAudioComponent& Component, UWorld* World,
@@ -107,9 +89,6 @@ private:
 	                                 const USpatialAudioSettings& Settings);
 
 public:
-	// A relay is a stopgap and an evicting entry is already leaving, so neither may be merged into.
 	static bool IsMergeCandidate(const FCachedEdgePoint& Edge);
-	// Bounce count deliberately stays out, unlike the sweep's admission test: a 3-bounce 8m route
-	// beats a 1-bounce 40m one. Ties keep the incumbent.
 	static bool TravelledFurther(const FCachedEdgePoint& Edge, const FCachedEdgePoint& Other);
 };

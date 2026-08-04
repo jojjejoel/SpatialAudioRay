@@ -46,34 +46,25 @@ public:
 
 	static FRayAccumulatorOutput ComputeAudioFromRayAccumulator(const FRayAccumulatorInput& In);
 
-	// Seeded per (source, listener, ray index) so bias resampling replays while both are stationary.
 	static FRandomStream MakeBiasStream(const FVector& SourcePos, const FVector& ListenerPos, int32 RayIndex);
 
-	// The cycles of a full sweep sequence partition the sphere with no direction cast twice.
-	// OutIndices must stay the whole-set index, since MakeBiasStream seeds off it.
 	static void SelectCycleDirections(const TArray<FVector>& AllDirections, int32 StartIndex, int32 CycleCount,
 	                                  TArray<FVector>& OutDirections, TArray<int32>& OutIndices);
 
-	// Anything at or past the LoS origin's travelled distance lies beyond the edge, so it cannot anchor.
 	static int32 CountPrefixAnchorWaypoints(const TArray<FSpatialRayState::FBounceWaypoint>& Waypoints,
 	                                        float LoSCumulativeDistance);
 
-	// Mid-air counterpart of ComputeBouncedDirection: no normal, so the current direction takes the
-	// reflected role and scatter uses the full sphere. At zero roughness and bias it turns 90 degrees.
 	static FVector ComputeMidAirTurnDirection(const FVector& InDir, const FVector& TurnPoint,
 	                                          const FVector& ListenerPos, bool bApplyBias,
 	                                          float SurfaceRoughness, float BounceListenerBias);
 
 private:
-	// ── ReadbackFinalizeBatch phases ─────────────────────────────────────────
 	static bool TryDiscardStaleSweep(USpatialAudioComponent& Component, UWorld* World, const USpatialAudioSettings& Settings);
 	static void AccumulateRefineProbesIntoCycle(USpatialAudioComponent& Component, const UWorld* World, const USpatialAudioSettings& Settings);
 	static void MergeStoredPathsIntoCache(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings);
 	static void AdvanceSweepCycleAndIdleState(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings);
 	static void PublishSweepAudioTargets(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings);
 
-	// ── MergeStoredPathsIntoCache phases ─────────────────────────────────────
-	// Mirrors the cluster priority: source-path falloff over listener-proximity falloff.
 	static float RankScore(const USpatialAudioComponent& Component, const USpatialAudioSettings& Settings,
 	                       float PathDist, const FVector& Point);
 	static bool OutranksIncumbent(const USpatialAudioComponent& Component, const USpatialAudioSettings& Settings,
@@ -89,15 +80,12 @@ private:
 	static bool TryDisplaceWorstIncumbent(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings,
 	                                      const FStoredLoSPath& Found, TArray<bool>& bMatchedThisCycle);
 
-	// A ray with probes still in flight waits one more tick, picked up via bTerminalLoSPending.
 	static void FinishOrDefer(FSpatialRayState& Ray, bool& bAllDone);
 
-	// ── StartAsyncFullCast phases ────────────────────────────────────────────
 	static void CaptureSweepPositions(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings,
 	                                  const AActor& Owner, const APawn& Pawn);
 	static void ResolveSweepRayBudget(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings);
 	static int32 CountHeldEdges(const TArray<FCachedEdgePoint>& Points);
-	// Scales the sweep budget down as the cache fills, floored at one ray.
 	static int32 ApplyCacheFullnessRayScale(const USpatialAudioComponent& Component, int32 RayCount,
 	                                        const USpatialAudioSettings& Settings);
 	static void ResetCycleAccumulator(USpatialAudioComponent& Component);
@@ -108,7 +96,6 @@ private:
 	                                    const FVector& ToListenerDir, float FullCastDistance, int32 DirectionIndex,
 	                                    const USpatialAudioSettings& Settings);
 
-	// ── TickAsyncCast per-ray phases ─────────────────────────────────────────
 	static void TickSingleRay(USpatialAudioComponent& Component, FSpatialRayState& Ray, UWorld* World,
 	                          float Budget, bool& bAllDone, const USpatialAudioSettings& Settings);
 	static bool TryProcessMidAirTurn(const USpatialAudioComponent& Component, FSpatialRayState& Ray, UWorld* World,
@@ -125,12 +112,10 @@ private:
 
 	static void DrainPendingLoSProbes(const USpatialAudioComponent& Component, FSpatialRayState& Ray, UWorld* World, const FVector& ListenerPos);
 
-	// A crawl's incoming and outgoing legs are flight, so the crawl view needs them too.
 	static bool ShouldDrawFlightPaths(const USpatialAudioComponent& Component);
 	static void DrawFlightSegment(const USpatialAudioComponent& Component, const UWorld* World, const FVector& From,
 	                              const FVector& To, const USpatialAudioSettings& Settings);
 
-	// False when the budget gate rejected it, which also means every later point is out of budget.
 	static bool TryAddListenerLoSProbe(const USpatialAudioComponent& Component, FSpatialRayState& Ray,
 	                                   UWorld* World, const FVector& SamplePos, float CumDist, float Budget,
 	                                   const USpatialAudioSettings& Settings);
@@ -138,7 +123,6 @@ private:
 	static void SubmitFlightSegment(const USpatialAudioComponent& Component, FSpatialRayState& Ray,
 	                                UWorld* World, float SegmentLength);
 
-	// ── ProcessCrawlBatch phases ─────────────────────────────────────────────
 	struct FCrawlStepResult {
 		bool bSucceeded = false;
 		bool bPerpWallHit = false;
@@ -150,7 +134,6 @@ private:
 	};
 
 	static bool AreCrawlTracesReady(UWorld* World, FSpatialRayState& Ray, FTraceDatum& OutRangeData);
-	// The three questions each crawl step asks: listener in view, wall closed off, surface fallen away.
 	static void TryConfirmLoSAtCrawlStep(const USpatialAudioComponent& Component, FSpatialRayState& Ray,
 	                                     UWorld* World,
 	                                     const FSpatialRayState::FAsyncCrawlStepProbe& StepProbe,

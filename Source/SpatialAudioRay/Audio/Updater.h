@@ -12,24 +12,19 @@ struct FVirtualSlot;
 
 class FUpdater {
 public:
-	/** Runs every frame, including mid-sweep, so occlusion keeps draining instead of stalling. */
 	static void TickDirectLoSSampling(USpatialAudioComponent& Component, float DeltaTime, const USpatialAudioSettings& Settings);
 	static void PerformUpdateRayCast(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings);
 	static void UpdateAudioParameters(USpatialAudioComponent& Component, float DeltaTime, const USpatialAudioSettings& Settings);
 
-	// A blocked candidate is clamped to the hit and nudged back, not discarded.
 	static FVector ResolveOffsetPoint(const USpatialAudioComponent& Component, const UWorld* World,
 	                                  const FVector& ListenerPos, const FVector& CandidatePoint);
 
-	/** Source-visibility fraction over 5 samples: listener centre plus a 4-point ring, each paired
-	 *  with a point on the source sphere. Both radii <= 0 runs the centre trace only. */
 	static float SyncOffsetLoSFraction(USpatialAudioComponent& Component, UWorld* World,
 	                                   const FVector& SourcePos, const FVector& ListenerPos,
 	                                   float OffsetR, float SourceR, float SourceRingR,
 	                                   float RingStepRad);
 
 private:
-	// Source and listener positions plus the world, resolved once per cast entry point.
 	struct FCastContext {
 		UWorld* World = nullptr;
 		FVector SourcePos = FVector::ZeroVector;
@@ -43,12 +38,9 @@ private:
 	static void UpdateDualModeAudio(USpatialAudioComponent& Component, float DeltaTime, const USpatialAudioSettings& Settings,
 	                                float CurvedOcclusion);
 
-	// ── UpdateDualModeAudio phases ────────────────────────────────────────────
-	// Advances the smoothed crossfade ramp/gate and returns the current VirtualCrossfade value.
 	static float UpdateVirtualCrossfadeGate(USpatialAudioComponent& Component, float DeltaTime, const USpatialAudioSettings& Settings);
 	static void ApplySourceOcclusionParams(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings, float CurvedOcclusion);
 
-	// PrimaryGain only selects which slot's bend the HUD shows; the audible gain is the sum.
 	struct FVirtualVoiceUpdateResult {
 		float TotalVirtualGain = 0.f;
 		float PrimaryGain = -1.f;
@@ -71,14 +63,12 @@ private:
 	static FVirtualVoiceUpdateResult UpdateVirtualVoiceSlots(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings,
 	                                                         float DeltaTime, float VirtualCrossfade, const FVector& ActorPos);
 
-	// ── TickDirectLoSSampling phases ─────────────────────────────────────────
 	static void TrySampleOffsetLoS(USpatialAudioComponent& Component, UWorld* World, const USpatialAudioSettings& Settings,
 	                               float DeltaTime, const FVector& SourcePos, const FVector& ListenerPos,
 	                               int32 RotationSteps);
 	static void UpdateSmoothedOcclusionFromSamples(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings,
 	                                               float DeltaTime, int32 RotationSteps);
 
-	// ── PerformUpdateRayCast phases ──────────────────────────────────────────
 	struct FEdgeWeightAccum {
 		FVector WeightedPos = FVector::ZeroVector;
 		float PosWeightTotal = 0.f;
@@ -94,12 +84,10 @@ private:
 	                                        const USpatialAudioSettings& Settings, const FVector& SourcePos,
 	                                        bool bVirtualPathActive);
 
-	/** Within-glide-range matches keep their slot and glide; everything else fades out in place. */
 	static void SyncVirtualVoicesToClusters(USpatialAudioComponent& Component,
 	                                        const TArray<FEdgeCluster>& Clusters,
 	                                        const USpatialAudioSettings& Settings);
 
-	// ── SyncVirtualVoicesToClusters phases ───────────────────────────────────
 	struct FDesired {
 		FVector Position;
 		float PathDist;

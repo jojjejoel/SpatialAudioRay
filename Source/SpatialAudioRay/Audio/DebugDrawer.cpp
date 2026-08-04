@@ -9,7 +9,6 @@
 #include "GameFramework/Pawn.h"
 
 namespace {
-	// Shared with the VRT text line so the colour words always name the sphere you are looking at.
 	constexpr int32 NumVirtualVoiceDebugColors = 4;
 	const FColor VirtualVoiceDebugColors[NumVirtualVoiceDebugColors] = {
 		FColor::Cyan, FColor::Purple, FColor::Emerald, FColor::Silver
@@ -65,14 +64,12 @@ namespace {
 		return Info;
 	}
 
-} // namespace
+}
 
 void USpatialAudioComponent::DrawSteeringPredictionDebug(const USpatialAudioSettings& Settings) const {
 	if (!bShowSteeringPrediction || Settings.SteeringPredictionLeadTime <= 0.f) {
 		return;
 	}
-	// Only drawn while the lead is meaningful, so stationary scenes stay clean. One sphere per
-	// mover at the signed aim point, blue leading forward and orange in the retro window.
 	const bool bRetroSteer = TimeSinceHadDirectLoS <= Settings.SteeringPredictionLeadTime;
 	const FColor SteerColor = bRetroSteer ? FColor(255, 140, 0) : FColor(0, 128, 255);
 	const APlayerController* PredPC = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr;
@@ -101,7 +98,6 @@ void USpatialAudioComponent::DrawVirtualSourceDebug() {
 	const FVector ActorLoc = GetOwner()->GetActorLocation();
 	DrawDebugSphere(GetWorld(), ActorLoc, 20.f, 8, FColor::Magenta, false, -1.f, SDPG_Foreground, 1.f);
 
-	// One sphere per audible emitter (pool slot); fading-out slots draw small and grey.
 	for (int32 SlotIdx = 0; SlotIdx < VirtualSlots.Num(); ++SlotIdx) {
 		const FVirtualSlot& Slot = VirtualSlots[SlotIdx];
 		if (Slot.State == FVirtualSlot::EState::Idle || !Slot.bOffsetInit) {
@@ -126,7 +122,6 @@ void USpatialAudioComponent::DrawEdgePointsDebug() {
 	}
 	for (const FCachedEdgePoint& EP : CachedEdgePoints) {
 		DrawDebugSphere(GetWorld(), EP.EdgePoint, 18.f, 8, FColor::Yellow, false, -1.f, SDPG_Foreground, 2.f);
-		// Settings-duration: a relay is transitional now, so a one-frame draw would flash and vanish.
 		if (EP.bRelayed) {
 			DrawDebugSphere(GetWorld(), EP.RelayPoint, 14.f, 8, FColor::Yellow, false,
 			                GetSettings().DebugLineDuration, SDPG_Foreground, 1.f);
@@ -142,7 +137,6 @@ void USpatialAudioComponent::DrawShortestPathsDebug() {
 	}
 	for (const FCachedEdgePoint& EP : CachedEdgePoints) {
 		for (int32 i = 0; i + 1 < EP.ShortestPath.Num(); ++i) {
-			// Dim marks an unverified traveled hop, which the recheck skips too. They can interleave.
 			const bool bVerified = EP.ShortestPathSegmentVerified.IsValidIndex(i)
 				                       && EP.ShortestPathSegmentVerified[i];
 			DrawDebugLine(GetWorld(), EP.ShortestPath[i], EP.ShortestPath[i + 1],
@@ -156,8 +150,6 @@ void USpatialAudioComponent::DrawShortestPathsDebug() {
 			                bVerifiedPoint ? FColor::Magenta : FColor(120, 0, 120),
 			                false, -1.f, SDPG_Foreground, 1.5f);
 		}
-		// The relay leg extends the stored path by exactly RelayDist. Settings-duration for the
-		// same reason as the key-6 draw.
 		if (EP.bRelayed && !EP.ShortestPath.IsEmpty()) {
 			DrawDebugLine(GetWorld(), EP.ShortestPath.Last(), EP.RelayPoint, FColor::Magenta,
 			              false, GetSettings().DebugLineDuration, 0, 2.f);
@@ -183,9 +175,6 @@ void USpatialAudioComponent::DrawDiffractionPathsDebug() {
 }
 
 void USpatialAudioComponent::DrawSourceAudioDebugText(const uint64 Base) const {
-	// ── Slot 1: Source audio output ──────────────────────────────────────
-	// occ_param is what the MetaSound shapes its own volume and filtering from. No gain reading
-	// beside it: that shaping happens in the graph, so no value here would describe what you hear.
 	const FColor SrcColor = SelectThresholdColor(1.f - AudioDiag.CurvedOcclusion, 0.7f, 0.3f);
 	GEngine->AddOnScreenDebugMessage(Base + 1, 0.f, SrcColor,
 	                                 FString::Printf(TEXT("  SRC  occ_param=%3.0f%%"),
@@ -193,9 +182,6 @@ void USpatialAudioComponent::DrawSourceAudioDebugText(const uint64 Base) const {
 }
 
 void USpatialAudioComponent::DrawVirtualAudioDebugText(const uint64 Base) const {
-	// ── Slot 2: Virtual audio output ─────────────────────────────────────
-	// gain = sum of slot gains, each (1-atn) x shr x fade x xfade. bend = loudest VirtualPathBend.
-	// voices = active (+N fading out); per slot [color state g= shr= atn=], colour naming its sphere.
 	FString VoiceStr;
 	int32 NumActive = 0;
 	int32 NumFadingOut = 0;
@@ -235,7 +221,6 @@ void USpatialAudioComponent::DrawVirtualAudioDebugText(const uint64 Base) const 
 }
 
 void USpatialAudioComponent::DrawOcclusionDebugText(const uint64 Base) const {
-	// ── Slot 3: Occlusion state ───────────────────────────────────────────
 	const FString Bar = BuildProgressBar(CurrentOcclusion);
 	const FColor OccColor = SelectThresholdColor(1.f - CurrentOcclusion, 0.7f, 0.3f);
 	GEngine->AddOnScreenDebugMessage(Base + 3, 0.f, OccColor,
@@ -250,7 +235,6 @@ void USpatialAudioComponent::DrawOcclusionDebugText(const uint64 Base) const {
 }
 
 void USpatialAudioComponent::DrawEdgeCacheDebugText(const uint64 Base, const USpatialAudioSettings& Settings) const {
-	// ── Slot 5: Edge cache + path attenuation ─────────────────────────────
 	int32 NumEvicting = 0, NumPhase0 = 0;
 	for (const FCachedEdgePoint& EP : CachedEdgePoints) {
 		if (EP.bEvicting) ++NumEvicting;
@@ -267,7 +251,6 @@ void USpatialAudioComponent::DrawEdgeCacheDebugText(const uint64 Base, const USp
 
 void USpatialAudioComponent::DrawSweepPacingDebugText(const uint64 Base, const USpatialAudioSettings& Settings,
                                                        const int32 ScaledRayCount) const {
-	// ── Slot 6: Sweep pacing + timer ──────────────────────────────────────
 	const bool bBothStationary = VelocityScaling.IsStationary();
 	const float CoverageFraction = (ScaledRayCount > 0)
 		                      ? FMath::Clamp(
@@ -295,7 +278,6 @@ void USpatialAudioComponent::DrawSweepPacingDebugText(const uint64 Base, const U
 		SweepStatus = TEXT("idle");
 	}
 
-	// Mirrors TickComponent's timer pin. Without the pre-sweep term it read SUSPENDED in the band.
 	const bool bPreSweepBand = IsPreSweepActive();
 	const bool bSweepSuspended = bHasDirectLoS && !bPreSweepBand && !bAsyncCastActive;
 	FString SweepLine;
@@ -310,7 +292,6 @@ void USpatialAudioComponent::DrawSweepPacingDebugText(const uint64 Base, const U
 		                            TimeSinceFullCast, SubInterval);
 	}
 	else {
-		// Naming the band explains why sweeps run while LoS still exists.
 		SweepLine = FString::Printf(TEXT("  Sweep  %s%s  │  timer=%.2f/%.2fs  [%s]"),
 		                            bPreSweepBand ? TEXT("PRE-SWEEP ") : TEXT(""),
 		                            *PacingLabel, TimeSinceFullCast, SubInterval, *SweepStatus);
@@ -319,7 +300,6 @@ void USpatialAudioComponent::DrawSweepPacingDebugText(const uint64 Base, const U
 }
 
 void USpatialAudioComponent::DrawTraceStatsDebugText(const uint64 Base) const {
-	// ── Slot 7: Traces + last sweep ───────────────────────────────────────
 	GEngine->AddOnScreenDebugMessage(Base + 7, 0.f, FColor::Cyan,
 	                                 FString::Printf(
 		                                 TEXT(
@@ -329,8 +309,6 @@ void USpatialAudioComponent::DrawTraceStatsDebugText(const uint64 Base) const {
 		                                 TraceDiag.LastSweepDuration * 1000.f, TraceDiag.LastSweepInterval * 1000.f,
 		                                 TraceDiag.LastSweepDuration > TraceDiag.LastSweepInterval ? TEXT("  OVER") : TEXT("")));
 
-	// ── Slot 9: what those per-frame traces were spent on ─────────────────
-	// Smoothed and snapshotted like the total above, so the parts sum to it.
 	const float* Buckets = TraceDiag.SnapshotBucketTraces;
 	GEngine->AddOnScreenDebugMessage(Base + 9, 0.f, FColor::Cyan,
 	                                 FString::Printf(
@@ -345,7 +323,6 @@ void USpatialAudioComponent::DrawTraceStatsDebugText(const uint64 Base) const {
 }
 
 void USpatialAudioComponent::DrawEdgeTimerDebugText(const uint64 Base, const USpatialAudioSettings& Settings) const {
-	// ── Slot 8: Edge timer activity ───────────────────────────────────────
 	const float Ph0Interval = Settings.Phase0CheckInterval * VelocityScaling.EdgeMultiplier;
 
 	int32 Ph0Pending = 0;

@@ -131,7 +131,6 @@ bool FComputeAudio_DirectLoS_NoVirtualSource::RunTest(const FString& Parameters)
 	return true;
 }
 
-// ─── MakeBiasStream ────────────────────────────────────────────────────────────
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMakeBiasStream_SameInputsSameSequence,
@@ -140,8 +139,6 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 )
 
 bool FMakeBiasStream_SameInputsSameSequence::RunTest(const FString& Parameters) {
-	// A stationary source/listener re-derives the same stream every sweep; it must draw
-	// the same sequence of values both times, not just share a seed.
 	const FVector SourcePos(100.f, 200.f, 50.f);
 	const FVector ListenerPos(400.f, -150.f, 80.f);
 
@@ -183,8 +180,6 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 )
 
 bool FMakeBiasStream_DifferentPositionDiffers::RunTest(const FString& Parameters) {
-	// If the source or listener moves, the bias resampling should no longer replay
-	// the exact same sequence — otherwise "deterministic" would mean "frozen forever".
 	FRandomStream StreamA = FAsyncCastManager::MakeBiasStream(
 		FVector(100.f, 200.f, 50.f), FVector(400.f, -150.f, 80.f), 3);
 	FRandomStream StreamB = FAsyncCastManager::MakeBiasStream(
@@ -281,8 +276,6 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 )
 
 bool FSelectCycleDirections_PartitionsTheSet::RunTest(const FString& Parameters) {
-	// Staggering a sweep across cycles is only lossless if the cycles together hit every
-	// direction exactly once — a gap is a blind spot, an overlap is a wasted ray.
 	constexpr int32 Total = 10;
 	constexpr int32 CycleCount = 3;
 
@@ -330,7 +323,6 @@ bool FSelectCycleDirections_ResetsOutputs::RunTest(const FString& Parameters) {
 	TestEqual(TEXT("Leftover directions from a previous cycle are cleared"), Dirs.Num(), 2);
 	TestEqual(TEXT("Leftover indices from a previous cycle are cleared"), Indices.Num(), 2);
 
-	// A start index past the end is a legal empty slice, not a read off the end.
 	FAsyncCastManager::SelectCycleDirections(All, 5, 1, Dirs, Indices);
 	TestEqual(TEXT("A start index past the end selects nothing"), Dirs.Num(), 0);
 
@@ -352,8 +344,6 @@ bool FCountPrefixAnchorWaypoints_StopsAtTheEdge::RunTest(const FString& Paramete
 	TestEqual(TEXT("Only waypoints before the LoS origin are anchors"),
 		FAsyncCastManager::CountPrefixAnchorWaypoints(Waypoints, 260.f), 2);
 
-	// A waypoint sitting exactly at the LoS origin is the edge point itself, not a step on the
-	// source side of it, so string pulling must not try to shortcut to it.
 	TestEqual(TEXT("A waypoint exactly at the LoS distance is not an anchor"),
 		FAsyncCastManager::CountPrefixAnchorWaypoints(Waypoints, 250.f), 1);
 
