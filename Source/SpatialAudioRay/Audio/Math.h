@@ -165,7 +165,7 @@ namespace Math {
 
 		for (int32 PointIdx = 0; PointIdx < Points.Num(); ++PointIdx) {
 			const FCachedEdgePoint& Ep = Points[PointIdx];
-			const FVector EpPos = Ep.EffectivePoint();
+			const FVector EpPos = Ep.OutputPoint();
 			const float SrcW = 1.f / (1.f + CandidateDistanceFalloff
 				* Ep.GeomDist / FMath::Max(MaxRayDistance, 1.f));
 			const float RankW = SrcW / (1.f + ListenerDistanceFalloff
@@ -191,7 +191,7 @@ namespace Math {
 			}
 			FAccum& A = Accums[Best];
 			A.PosSum += EpPos * RankW;
-			A.PathSum += Ep.EffectivePathDist() * SrcW;
+			A.PathSum += Ep.OutputPathDist() * SrcW;
 			A.SrcWeight += SrcW;
 			A.RankWeight += RankW;
 			A.Centroid = A.PosSum / A.RankWeight;
@@ -234,7 +234,7 @@ namespace Math {
 			if ((*OutPointToCluster)[PointIdx] != PointAwaitingCluster) {
 				continue;
 			}
-			const FVector EpPos = Points[PointIdx].EffectivePoint();
+			const FVector EpPos = Points[PointIdx].OutputPoint();
 			int32 Best = INDEX_NONE;
 			float BestDistSq = GroupRadiusSq;
 			for (int32 i = 0; i < OutClusters.Num(); ++i) {
@@ -248,11 +248,54 @@ namespace Math {
 		}
 	}
 
-	/** Distance-scaled budget for a count: it follows priority down but never past the floor that
-	 *  MaxDistanceEffortScale sets for a source at maximum range. */
+	inline float ScaleIntervalByDistancePriority(float Interval, float Priority, float MaxDistanceScale) {
+		const float Scale = FMath::Max(MaxDistanceScale, KINDA_SMALL_NUMBER);
+		return FMath::Lerp(Interval / Scale, Interval, FMath::Clamp(Priority, 0.f, 1.f));
+	}
+
 	inline int32 ScaleCountByDistancePriority(int32 FullValue, float Priority, float MaxDistanceScale) {
 		const int32 Floor = FMath::RoundToInt(FullValue * MaxDistanceScale);
 		return FMath::Clamp(FMath::Max(FMath::RoundToInt(FullValue * Priority), Floor), 0, FullValue);
+	}
+
+	/** Past this a too-low budget would silence the system rather than degrade it. */
+	constexpr float MaxTraceBudgetStretch = 8.f;
+
+	/** Carries the current stretch forward so measuring AT budget holds it. Recomputing from the
+	 *  error alone would release the stretch, go straight back over, and oscillate. */
+	inline float ComputeTraceBudgetStretch(float CurrentStretch, float MeasuredTracesPerSec,
+	                                       float MaxTracesPerSec) {
+		if (MaxTracesPerSec <= 0.f) {
+			return 1.f;
+		}
+		const float Error = MeasuredTracesPerSec / MaxTracesPerSec;
+		return FMath::Clamp(CurrentStretch * Error, 1.f, MaxTraceBudgetStretch);
+	}
+
+	/** Exponents, ordered by what a late result costs: a delayed sweep only postpones a new edge, a
+	 *  stale edge keeps an emitter playing, and late sampling delays occlusion itself. None is zero,
+	 *  or the resting floor could never be reduced. */
+	constexpr float SweepBudgetShare = 1.f;
+	constexpr float EdgeCheckBudgetShare = 0.5f;
+	constexpr float DirectLoSBudgetShare = 0.25f;
+
+	inline float ShareOfBudgetStretch(float Stretch, float Share) {
+		return Stretch <= 1.f ? 1.f : FMath::Pow(Stretch, Share);
+	}
+
+	constexpr float TraceBudgetDistanceBias = 3.f;
+
+	inline float ComputeSourceThrottleWeight(float Priority) {
+		return 1.f + TraceBudgetDistanceBias * (1.f - FMath::Clamp(Priority, 0.f, 1.f));
+	}
+
+	/** Dividing by the mean keeps the average source on the global figure, so redistribution only
+	 *  has to be directionally right; the outer loop corrects the magnitude. */
+	inline float ComputeSourceTraceStretch(float GlobalStretch, float SourceWeight, float MeanWeight) {
+		if (MeanWeight <= KINDA_SMALL_NUMBER) {
+			return GlobalStretch;
+		}
+		return FMath::Clamp(GlobalStretch * SourceWeight / MeanWeight, 1.f, MaxTraceBudgetStretch);
 	}
 
 	struct FSweepPacingState {
@@ -262,24 +305,26 @@ namespace Math {
 		bool bStationary = false;
 		bool bCacheFillPending = false;
 		bool bStationaryIdleMode = false;
+		float TraceBudgetStretch = 1.f;
 	};
 
-	/** The three cases are exclusive rather than multiplied. A cache fill outstanding while stopped
-	 *  wins first, so an unfilled burst cannot idle-crawl. Idle wins next and REPLACES velocity
-	 *  scaling: they are opposite answers to the same question, and applying both lands back near
-	 *  the base interval. */
+	/** Exclusive, not multiplied. Idle REPLACES velocity scaling: they answer the same question in
+	 *  opposite directions, and applying both lands back near the base interval. */
 	inline float ComputeSweepInterval(const FSweepPacingState& State, const USpatialAudioSettings& Settings) {
-		const float EffortScale = FMath::Max(Settings.MaxDistanceEffortScale, KINDA_SMALL_NUMBER);
-		const float BaseInterval = FMath::Lerp(
-			Settings.FullSweepInterval / EffortScale, Settings.FullSweepInterval, State.CurrentPriority);
+		const float BaseInterval = ScaleIntervalByDistancePriority(
+			Settings.FullSweepInterval, State.CurrentPriority, Settings.MaxDistanceEffortScale);
 
+		float Interval;
 		if (State.bStationary && State.bCacheFillPending) {
-			return BaseInterval * Settings.MinSweepIntervalScale;
+			Interval = BaseInterval * Settings.MinSweepIntervalScale;
 		}
-		if (State.bStationaryIdleMode) {
-			return BaseInterval * Settings.StationaryIdleMultiplier;
+		else if (State.bStationaryIdleMode) {
+			Interval = BaseInterval * Settings.StationaryIdleMultiplier;
 		}
-		return BaseInterval * FMath::Min(State.SweepMultiplier, State.EdgeMultiplier);
+		else {
+			Interval = BaseInterval * FMath::Min(State.SweepMultiplier, State.EdgeMultiplier);
+		}
+		return Interval * ShareOfBudgetStretch(State.TraceBudgetStretch, SweepBudgetShare);
 	}
 
 	struct FSweepDispatchState {
@@ -293,9 +338,6 @@ namespace Math {
 		float SweepInterval = 0.f;
 	};
 
-	/** The pre-sweep band is a second way in besides confirmed sight loss, and an early request is a
-	 *  second way past the timer. Both were added later, and both are easy to break by tightening
-	 *  the wrong clause. */
 	inline bool ShouldDispatchSweep(const FSweepDispatchState& State) {
 		if (State.bAsyncCastActive || State.bFinalizePending || !State.bInRange) {
 			return false;

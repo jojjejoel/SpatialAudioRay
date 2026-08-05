@@ -58,14 +58,20 @@ struct FCachedEdgePoint {
 
 	FVector EffectivePoint() const { return bRelayed ? RelayPoint : EdgePoint; }
 	float EffectivePathDist() const { return PathDist + RelayDist; }
+
+	/** A relay point is somewhere the edge can be SEEN from, never somewhere sound comes from, so
+	 *  emitters read these and validation reads EffectivePoint. */
+	FVector OutputPoint() const { return EdgePoint; }
+	float OutputPathDist() const { return PathDist; }
 };
 
-/** Everything the cache admission policy reads from the component, so that policy is a pure function
- *  over data: no world, no traces, and testable by constructing the inputs directly. */
+/** Everything the cache admission policy reads from the component. */
 struct FCacheMergeContext {
 	FVector SourcePos = FVector::ZeroVector;
 	FVector ListenerPos = FVector::ZeroVector;
 	float MaxRayDistance = 1.f;
+	/** The distance-scaled cap, not the authored one. */
+	int32 MaxEdgeCount = 1;
 };
 
 struct FEdgeCluster {

@@ -2,12 +2,12 @@
 
 #include "CoreMinimal.h"
 #include "Subsystems/WorldSubsystem.h"
-#include "SpatialAudioDebugSubsystem.generated.h"
+#include "SpatialAudioSubsystem.generated.h"
 
 class USpatialAudioComponent;
 
 UCLASS()
-class SPATIALAUDIORAY_API USpatialAudioDebugSubsystem : public UTickableWorldSubsystem {
+class SPATIALAUDIORAY_API USpatialAudioSubsystem : public UTickableWorldSubsystem {
 	GENERATED_BODY()
 
 public:
@@ -31,6 +31,8 @@ private:
 	};
 
 	FAggregateTraceStats AggregateSourceTraceStats();
+	void ApplyTraceBudget(const FAggregateTraceStats& Stats, float DeltaTime);
+	static FColor ThrottleTint(float Stretch);
 	bool ComputeAnyDebugRaysActive() const;
 	void HandleCycleKey(const USpatialAudioComponent& First, const APlayerController* PC);
 	void HandleActorLabelsToggleAndDraw(const USpatialAudioComponent& First, const APlayerController* PC);
@@ -52,4 +54,9 @@ private:
 	bool bPrevActorLabelsKeyDown = false;
 
 	float PeakTracesPerSec = 0.f;
+
+	float GlobalTraceStretch = 1.f;
+	float BudgetTracesPerSec = 0.f;
+
+	int32 PrevSourceLineCount = 0;
 };

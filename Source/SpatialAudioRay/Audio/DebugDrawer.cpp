@@ -152,7 +152,7 @@ void USpatialAudioComponent::DrawEdgePointsDebug() {
 		if (!VirtualSlots.IsValidIndex(SlotIdx) || !VirtualSlots[SlotIdx].bOffsetInit) {
 			continue;
 		}
-		DrawDebugLine(GetWorld(), EP.EffectivePoint(), ActorLoc + VirtualSlots[SlotIdx].WorldOffset,
+		DrawDebugLine(GetWorld(), EP.OutputPoint(), ActorLoc + VirtualSlots[SlotIdx].WorldOffset,
 		              VirtualVoiceDebugColors[SlotIdx % NumVirtualVoiceDebugColors], false, -1.f, 0, 2.f);
 	}
 }
@@ -263,7 +263,7 @@ void USpatialAudioComponent::DrawEdgeCacheDebugText(const uint64 Base, const USp
 	                                 FString::Printf(
 		                                 TEXT(
 			                                 "  Edges  %d/%d cached  (evict=%d  ph0=%d)  │  PathAtten  cur=%3.0f%%  tgt=%3.0f%%"),
-		                                 CachedEdgePoints.Num(), Settings.CachedEdgeMaxCount,
+		                                 CachedEdgePoints.Num(), GetEffectiveCachedEdgeMaxCount(),
 		                                 NumEvicting, NumPhase0,
 		                                 CurrentPathAttenuation * 100.f, TargetPathAttenuation * 100.f));
 }

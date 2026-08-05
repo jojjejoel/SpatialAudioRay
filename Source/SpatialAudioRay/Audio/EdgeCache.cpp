@@ -11,7 +11,8 @@ float FEdgeCache::PerEdgeInterval(const USpatialAudioComponent& Component, const
 
 float FEdgeCache::EdgeCheckSlice(const USpatialAudioComponent& Component,
                                  const USpatialAudioSettings& Settings) {
-	return PerEdgeInterval(Component, Settings.CachedEdgeCheckInterval);
+	return PerEdgeInterval(Component, Settings.CachedEdgeCheckInterval
+	                       * Math::ShareOfBudgetStretch(Component.TraceBudgetStretch, Math::EdgeCheckBudgetShare));
 }
 
 int32 FEdgeCache::SelectRoundRobinEdge(const TArray<FCachedEdgePoint>& Points, int32& Cursor,
@@ -475,7 +476,8 @@ bool FEdgeCache::TickSingleEdge(USpatialAudioComponent& Component, FCachedEdgePo
 void FEdgeCache::TickCachedEdgeEviction(USpatialAudioComponent& Component, const float DeltaTime,
                                         const USpatialAudioSettings& Settings) {
 	Component.CurrentTraceBucket = USpatialAudioComponent::ETraceBucket::Phase0;
-	if (Component.bHasDirectLoS) {
+	/** Entries are kept, not cleared, so returning restores the diffraction rather than rebuilding it. */
+	if (Component.bHasDirectLoS || !Component.bInAudibleRange) {
 		Component.bPhase0HandlesStale = true;
 		return;
 	}
@@ -510,6 +512,7 @@ void FEdgeCache::TickCachedEdgeEviction(USpatialAudioComponent& Component, const
 	TickInnerAnchorPromotion(Component, World, ListenerPos, DeltaTime, Settings);
 
 	MergeCoincidentEdges(Component, Settings);
+	TrimToEffectiveCap(Component);
 }
 
 void FEdgeCache::MergeCoincidentEdges(USpatialAudioComponent& Component,
@@ -542,6 +545,20 @@ void FEdgeCache::MergeCoincidentEdges(USpatialAudioComponent& Component,
 			Component.CachedEdgePoints.RemoveAt(i);
 			break;
 		}
+	}
+}
+
+/** Retreating shrinks the cap below a cache filled up close. Longest route goes first. */
+void FEdgeCache::TrimToEffectiveCap(USpatialAudioComponent& Component) {
+	const int32 Cap = Component.GetEffectiveCachedEdgeMaxCount();
+	while (Component.CachedEdgePoints.Num() > Cap) {
+		int32 WorstIdx = 0;
+		for (int32 i = 1; i < Component.CachedEdgePoints.Num(); ++i) {
+			if (TravelledFurther(Component.CachedEdgePoints[i], Component.CachedEdgePoints[WorstIdx])) {
+				WorstIdx = i;
+			}
+		}
+		Component.CachedEdgePoints.RemoveAt(WorstIdx);
 	}
 }
 

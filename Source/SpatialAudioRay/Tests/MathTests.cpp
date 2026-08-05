@@ -1,4 +1,4 @@
-#include "CoreMinimal.h"
+﻿#include "CoreMinimal.h"
 #include "SpatialAudioTypes.h"
 #include "Misc/AutomationTest.h"
 #include "Audio/Math.h"
@@ -386,6 +386,109 @@ bool FSweepInterval_CacheFillOutranksIdle::RunTest(const FString& Parameters) {
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FTraceBudget_StretchSettlesAtTheBudget,
+	"SpatialAudioRay.Math.TraceBudget.StretchSettlesAtTheBudget",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FTraceBudget_StretchSettlesAtTheBudget::RunTest(const FString& Parameters) {
+	TestTrue(TEXT("A budget of 0 disables the governor"),
+	         FMath::IsNearlyEqual(Math::ComputeTraceBudgetStretch(4.f, 9000.f, 0.f), 1.f));
+	TestTrue(TEXT("Under budget never speeds the system up past normal"),
+	         FMath::IsNearlyEqual(Math::ComputeTraceBudgetStretch(1.f, 500.f, 1000.f), 1.f));
+	TestTrue(TEXT("Twice the budget asks for twice the interval"),
+	         FMath::IsNearlyEqual(Math::ComputeTraceBudgetStretch(1.f, 2000.f, 1000.f), 2.f));
+
+	TestTrue(TEXT("At budget the current stretch is held, not released"),
+	         FMath::IsNearlyEqual(Math::ComputeTraceBudgetStretch(2.f, 1000.f, 1000.f), 2.f));
+	TestTrue(TEXT("Falling below budget relaxes the stretch"),
+	         FMath::IsNearlyEqual(Math::ComputeTraceBudgetStretch(2.f, 500.f, 1000.f), 1.f));
+	TestTrue(TEXT("The stretch is capped so a tiny budget cannot silence the system"),
+	         FMath::IsNearlyEqual(Math::ComputeTraceBudgetStretch(8.f, 100000.f, 1.f),
+	                              Math::MaxTraceBudgetStretch));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FTraceBudget_SweepsGiveWayBeforeValidationAndSight,
+	"SpatialAudioRay.Math.TraceBudget.SweepsGiveWayBeforeValidationAndSight",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FTraceBudget_SweepsGiveWayBeforeValidationAndSight::RunTest(const FString& Parameters) {
+	constexpr float Stretch = 16.f;
+	const float Sweep = Math::ShareOfBudgetStretch(Stretch, Math::SweepBudgetShare);
+	const float EdgeCheck = Math::ShareOfBudgetStretch(Stretch, Math::EdgeCheckBudgetShare);
+	const float DirectLoS = Math::ShareOfBudgetStretch(Stretch, Math::DirectLoSBudgetShare);
+
+	TestTrue(TEXT("Sweeps absorb the stretch in full"), FMath::IsNearlyEqual(Sweep, 16.f, 0.001f));
+	TestTrue(TEXT("Edge validation gives way less than sweeps"), EdgeCheck < Sweep);
+	TestTrue(TEXT("Direct sight gives way least of all"), DirectLoS < EdgeCheck);
+	TestTrue(TEXT("but none of them is exempt, or the resting floor could never be reduced"),
+	         DirectLoS > 1.f);
+
+	TestTrue(TEXT("No stretch leaves every loop at its authored pace"),
+	         FMath::IsNearlyEqual(Math::ShareOfBudgetStretch(1.f, Math::SweepBudgetShare), 1.f)
+	         && FMath::IsNearlyEqual(Math::ShareOfBudgetStretch(1.f, Math::DirectLoSBudgetShare), 1.f));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FTraceBudget_DistantSourcesAbsorbMoreOfTheThrottle,
+	"SpatialAudioRay.Math.TraceBudget.DistantSourcesAbsorbMoreOfTheThrottle",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FTraceBudget_DistantSourcesAbsorbMoreOfTheThrottle::RunTest(const FString& Parameters) {
+	const float NearWeight = Math::ComputeSourceThrottleWeight(1.f);
+	const float FarWeight = Math::ComputeSourceThrottleWeight(0.f);
+	TestTrue(TEXT("A distant source carries the heavier weight"), FarWeight > NearWeight);
+
+	const float MeanWeight = (NearWeight + FarWeight) * 0.5f;
+	const float NearStretch = Math::ComputeSourceTraceStretch(4.f, NearWeight, MeanWeight);
+	const float FarStretch = Math::ComputeSourceTraceStretch(4.f, FarWeight, MeanWeight);
+
+	TestTrue(TEXT("The near source is throttled less than the global figure"), NearStretch < 4.f);
+	TestTrue(TEXT("The far source is throttled more"), FarStretch > 4.f);
+	TestTrue(TEXT("Neither is ever sped up past normal pacing"), NearStretch >= 1.f);
+	TestTrue(TEXT("and the far one respects the ceiling"), FarStretch <= Math::MaxTraceBudgetStretch);
+
+	const float Uniform = Math::ComputeSourceTraceStretch(3.f, FarWeight, FarWeight);
+	TestTrue(TEXT("Equidistant sources all take the global stretch"),
+	         FMath::IsNearlyEqual(Uniform, 3.f, 0.0001f));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSweepInterval_TraceBudgetStretchesEveryBranch,
+	"SpatialAudioRay.Math.SweepInterval.TraceBudgetStretchesEveryBranch",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FSweepInterval_TraceBudgetStretchesEveryBranch::RunTest(const FString& Parameters) {
+	const auto Settings = MakePacingSettings();
+
+	Math::FSweepPacingState Fill;
+	Fill.bStationary = true;
+	Fill.bCacheFillPending = true;
+	Fill.TraceBudgetStretch = 3.f;
+	TestTrue(TEXT("A cache fill burst is still throttled by the budget"),
+	         FMath::IsNearlyEqual(Math::ComputeSweepInterval(Fill, *Settings), 0.75f, 0.0001f));
+
+	Math::FSweepPacingState Idle;
+	Idle.bStationaryIdleMode = true;
+	Idle.TraceBudgetStretch = 3.f;
+	TestTrue(TEXT("Idle pacing is throttled too"),
+	         FMath::IsNearlyEqual(Math::ComputeSweepInterval(Idle, *Settings), 30.f, 0.0001f));
+
+	Math::FSweepPacingState Moving = MakeMovingState();
+	Moving.TraceBudgetStretch = 3.f;
+	TestTrue(TEXT("and so is the moving case"),
+	         FMath::IsNearlyEqual(Math::ComputeSweepInterval(Moving, *Settings), 0.75f, 0.0001f));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FSweepDispatch_RequiresBandOrConfirmedLoss,
 	"SpatialAudioRay.Math.SweepDispatch.RequiresBandOrConfirmedLoss",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
@@ -454,6 +557,30 @@ bool FSweepDispatch_BlockedWhileBusyOrOutOfRange::RunTest(const FString& Paramet
 	OutOfRange.bInRange = false;
 	TestFalse(TEXT("Out of audible range never sweeps, even on an early request"),
 	          Math::ShouldDispatchSweep(OutOfRange));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FScaleIntervalByDistancePriority_StretchesWithRange,
+	"SpatialAudioRay.Math.ScaleIntervalByDistancePriority.StretchesWithRange",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FScaleIntervalByDistancePriority_StretchesWithRange::RunTest(const FString& Parameters) {
+	constexpr float Interval = 0.2f;
+	constexpr float Scale = 0.25f;
+
+	TestTrue(TEXT("At the listener the authored interval is used unchanged"),
+	         FMath::IsNearlyEqual(Math::ScaleIntervalByDistancePriority(Interval, 1.f, Scale), 0.2f, 0.0001f));
+	TestTrue(TEXT("At maximum range it is divided by the effort scale"),
+	         FMath::IsNearlyEqual(Math::ScaleIntervalByDistancePriority(Interval, 0.f, Scale), 0.8f, 0.0001f));
+	TestTrue(TEXT("Mid range lands between the two"),
+	         FMath::IsNearlyEqual(Math::ScaleIntervalByDistancePriority(Interval, 0.5f, Scale), 0.5f, 0.0001f));
+	TestTrue(TEXT("A scale of 1 disables distance stretching"),
+	         FMath::IsNearlyEqual(Math::ScaleIntervalByDistancePriority(Interval, 0.f, 1.f), 0.2f, 0.0001f));
+
+	TestTrue(TEXT("An interval of 0 stays every-frame at any distance"),
+	         FMath::IsNearlyEqual(Math::ScaleIntervalByDistancePriority(0.f, 0.f, Scale), 0.f));
 	return true;
 }
 
@@ -877,6 +1004,36 @@ bool FClusterEdgePoints_ListenerFalloff_RanksWithoutTouchingGain::RunTest(const 
 		TestTrue(TEXT("PathDist average ignores listener distance"),
 		         FMath::IsNearlyEqual(Clusters[0].PathDist, Clusters[1].PathDist, 0.1f));
 	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FClusterEdgePoints_RelayedPointsPresentTheirOwnCorner,
+	"SpatialAudioRay.Math.ClusterEdgePoints.RelayedPointsPresentTheirOwnCorner",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FClusterEdgePoints_RelayedPointsPresentTheirOwnCorner::RunTest(const FString& Parameters) {
+	TArray<FCachedEdgePoint> Points;
+	Points.Add(MakeEdgePoint(FVector(0, 0, 0), /*PathDist=*/500.f));
+
+	// Relay sits on top of the other edge: following it would collapse them into one voice.
+	FCachedEdgePoint Relayed = MakeEdgePoint(FVector(4000, 0, 0), /*PathDist=*/500.f);
+	Relayed.bRelayed = true;
+	Relayed.RelayPoint = FVector(0, 0, 0);
+	Relayed.RelayDist = 4000.f;
+	Points.Add(Relayed);
+
+	TArray<FEdgeCluster> Clusters;
+	Math::ClusterEdgePoints(Points, 250.f, 0.f, FVector::ZeroVector, 0.f, 5000.f, 4, Clusters);
+
+	TestEqual(TEXT("A rescued entry still forms its own voice"), Clusters.Num(), 2);
+	TestTrue(TEXT("Positioned at its corner, not at the relay anchor"),
+	         Clusters[0].Centroid.Equals(FVector(4000, 0, 0), 0.1f)
+	         || Clusters[1].Centroid.Equals(FVector(4000, 0, 0), 0.1f));
+	TestTrue(TEXT("and charged for its own path, not the relay leg"),
+	         FMath::IsNearlyEqual(Clusters[0].PathDist, 500.f, 0.1f)
+	         && FMath::IsNearlyEqual(Clusters[1].PathDist, 500.f, 0.1f));
 	return true;
 }
 

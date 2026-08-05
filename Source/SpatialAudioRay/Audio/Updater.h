@@ -82,7 +82,7 @@ private:
 		float WeightedDistSum = 0.f;
 	};
 
-	static FEdgeWeightAccum AccumulateCachedEdgeWeights(USpatialAudioComponent& Component, const UWorld* World,
+	static FEdgeWeightAccum AccumulateCachedEdgeWeights(USpatialAudioComponent& Component,
 	                                                    const USpatialAudioSettings& Settings,
 	                                                    const FVector& ListenerPos);
 	static void ClearCacheOnConfirmedDirectLoS(USpatialAudioComponent& Component,

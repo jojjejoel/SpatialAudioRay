@@ -88,6 +88,7 @@ private:
 	                                     const USpatialAudioSettings& Settings);
 	static void MergeCoincidentEdges(USpatialAudioComponent& Component,
 	                                 const USpatialAudioSettings& Settings);
+	static void TrimToEffectiveCap(USpatialAudioComponent& Component);
 
 public:
 	static bool IsMergeCandidate(const FCachedEdgePoint& Edge);

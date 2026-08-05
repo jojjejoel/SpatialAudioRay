@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "Math/RandomStream.h"
@@ -52,8 +52,7 @@ public:
 	static int32 CountPrefixAnchorWaypoints(const TArray<FSpatialRayState::FBounceWaypoint>& Waypoints,
 	                                        float LoSCumulativeDistance);
 
-	/** Answers "is this straight segment unobstructed". Injected so string pulling, which is only
-	 *  geometry, can run against synthetic visibility in tests instead of a world. */
+	/** Injected so string pulling, which is only geometry, needs no world. */
 	using FVisibilityPredicate = TFunctionRef<bool(const FVector&, const FVector&)>;
 
 	static int32 FindFirstVisibleAnchor(const FVisibilityPredicate& IsClear, const FVector& FromPoint,
@@ -67,8 +66,7 @@ public:
 	                                          const FVector& ListenerPos, bool bApplyBias,
 	                                          float SurfaceRoughness, float ListenerBias);
 
-	/** Cache admission policy. Pure over the arrays and FCacheMergeContext, so the rules that decide
-	 *  which diffraction edges survive a sweep can be exercised without a component or a world. */
+	/** Cache admission policy, pure over the arrays and FCacheMergeContext. */
 	static float RankScore(const FCacheMergeContext& Ctx, const USpatialAudioSettings& Settings,
 	                       float PathDist, const FVector& Point);
 	static bool OutranksIncumbent(const FCacheMergeContext& Ctx, const USpatialAudioSettings& Settings,

@@ -99,7 +99,7 @@ int32 FAsyncCastManager::ApplyCacheFullnessRayScale(const USpatialAudioComponent
 	}
 	const float Fullness = FMath::Clamp(
 		static_cast<float>(CountHeldEdges(Component.CachedEdgePoints))
-		/ FMath::Max(1, Settings.CachedEdgeMaxCount), 0.f, 1.f);
+		/ FMath::Max(1, Component.GetEffectiveCachedEdgeMaxCount()), 0.f, 1.f);
 
 	const float Scale = FMath::Lerp(1.f, Settings.FullCacheRayScale, Fullness);
 	return FMath::Max(1, FMath::RoundToInt(RayCount * Scale));

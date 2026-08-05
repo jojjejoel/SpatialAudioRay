@@ -194,7 +194,7 @@ void FAsyncCastManager::MergeStoredPaths(TArray<FCachedEdgePoint>& Edges, const 
 			continue;
 		}
 
-		if (Edges.Num() < Settings.CachedEdgeMaxCount) {
+		if (Edges.Num() < Ctx.MaxEdgeCount) {
 			FCachedEdgePoint NewEdge;
 			WriteEntry(Ctx, NewEdge, Path);
 			NewEdge.bNewSinceFillArm = true;
@@ -215,6 +215,7 @@ void FAsyncCastManager::MergeStoredPathsIntoCache(USpatialAudioComponent& Compon
 	Ctx.SourcePos = Component.AsyncSourcePos;
 	Ctx.ListenerPos = Component.AsyncListenerPos;
 	Ctx.MaxRayDistance = Component.MaxRayDistance;
+	Ctx.MaxEdgeCount = Component.GetEffectiveCachedEdgeMaxCount();
 
 	MergeStoredPaths(Component.CachedEdgePoints, Component.StoredLoSPaths, Ctx, Settings);
 	Component.StoredLoSPaths.Reset();
@@ -310,11 +311,11 @@ FAsyncCastManager::FCachedPointAccum FAsyncCastManager::AccumulateCachedPoints(
 	FCachedPointAccum Out;
 	for (const FCachedEdgePoint& Edge : Points) {
 		++Out.RaysReached;
-		Out.MinLoSDist = FMath::Min(Out.MinLoSDist, Edge.EffectivePathDist());
+		Out.MinLoSDist = FMath::Min(Out.MinLoSDist, Edge.OutputPathDist());
 		const float DistW = 1.f / (1.f + Settings.CandidateDistanceFalloff
 			* Edge.GeomDist / FMath::Max(MaxRayDistance, 1.f));
-		Out.WeightedPos += Edge.EffectivePoint() * DistW;
-		Out.WeightedDist += Edge.EffectivePathDist() * DistW;
+		Out.WeightedPos += Edge.OutputPoint() * DistW;
+		Out.WeightedDist += Edge.OutputPathDist() * DistW;
 		Out.TotalWeight += DistW;
 	}
 	return Out;

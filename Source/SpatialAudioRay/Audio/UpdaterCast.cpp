@@ -123,7 +123,10 @@ void FUpdater::TrySampleOffsetLoS(USpatialAudioComponent& Component, UWorld* Wor
                                   float DeltaTime, const FVector& SourcePos, const FVector& ListenerPos,
                                   int32 RotationSteps) {
 	Component.OffsetLoSCheckTimer += DeltaTime;
-	const float CheckInterval = Settings.OffsetLoSCheckInterval * Component.VelocityScaling.OffsetLoSMultiplier;
+	const float CheckInterval = Math::ScaleIntervalByDistancePriority(
+			Settings.OffsetLoSCheckInterval, Component.CurrentPriority, Settings.MaxDistanceEffortScale)
+		* Component.VelocityScaling.OffsetLoSMultiplier
+		* Math::ShareOfBudgetStretch(Component.TraceBudgetStretch, Math::DirectLoSBudgetShare);
 	if (Component.OffsetLoSCheckTimer < CheckInterval) {
 		return;
 	}
@@ -194,7 +197,7 @@ void FUpdater::TickDirectLoSSampling(USpatialAudioComponent& Component, const fl
 	}
 }
 
-FUpdater::FEdgeWeightAccum FUpdater::AccumulateCachedEdgeWeights(USpatialAudioComponent& Component, const UWorld* World,
+FUpdater::FEdgeWeightAccum FUpdater::AccumulateCachedEdgeWeights(USpatialAudioComponent& Component,
                                                                  const USpatialAudioSettings& Settings,
                                                                  const FVector& ListenerPos) {
 	FEdgeWeightAccum Accum;
@@ -204,16 +207,11 @@ FUpdater::FEdgeWeightAccum FUpdater::AccumulateCachedEdgeWeights(USpatialAudioCo
 		const float SrcW = 1.f / (1.f + Settings.CandidateDistanceFalloff
 			* Ep.GeomDist / FMath::Max(Component.MaxRayDistance, 1.f));
 		const float PosW = SrcW / (1.f + Settings.ListenerDistanceFalloff
-			* FVector::Dist(ListenerPos, Ep.EffectivePoint()) / FMath::Max(Component.MaxRayDistance, 1.f));
-		Accum.WeightedPos += Ep.EffectivePoint() * PosW;
+			* FVector::Dist(ListenerPos, Ep.OutputPoint()) / FMath::Max(Component.MaxRayDistance, 1.f));
+		Accum.WeightedPos += Ep.OutputPoint() * PosW;
 		Accum.PosWeightTotal += PosW;
-		Accum.WeightedDistSum += Ep.EffectivePathDist() * SrcW;
+		Accum.WeightedDistSum += Ep.OutputPathDist() * SrcW;
 		Accum.SrcWeightTotal += SrcW;
-
-		if (Component.bDrawDebugRays && Component.bShowEdgePoints) {
-			DrawDebugLine(World, Ep.EffectivePoint(), ListenerPos, FColor::Cyan, false, Settings.DebugLineDuration, 0,
-			              1.f);
-		}
 	}
 	return Accum;
 }
@@ -257,7 +255,6 @@ void FUpdater::PerformUpdateRayCast(USpatialAudioComponent& Component, const USp
 	if (!TryResolveCastContext(Component, Context) || IsOutOfRange(Context, Component.MaxRayDistance)) {
 		return;
 	}
-	UWorld* World = Context.World;
 	const FVector SourcePos = Context.SourcePos;
 	const FVector ListenerPos = Context.ListenerPos;
 
@@ -267,7 +264,7 @@ void FUpdater::PerformUpdateRayCast(USpatialAudioComponent& Component, const USp
 
 	FEdgeWeightAccum Accum;
 	if (bVirtualPathActive) {
-		Accum = AccumulateCachedEdgeWeights(Component, World, Settings, ListenerPos);
+		Accum = AccumulateCachedEdgeWeights(Component, Settings, ListenerPos);
 	}
 
 	UpdateVirtualSourceTarget(Component, Accum, SourcePos);
@@ -278,7 +275,7 @@ void FUpdater::PerformUpdateRayCast(USpatialAudioComponent& Component, const USp
 		Math::ClusterEdgePoints(Component.CachedEdgePoints, Component.GetVoiceClusterRadius(),
 		                        Settings.CandidateDistanceFalloff, ListenerPos,
 		                        Settings.ListenerDistanceFalloff, Component.MaxRayDistance,
-		                        Settings.MaxVirtualVoices, VoiceClusters,
+		                        Component.GetEffectiveMaxVirtualVoices(), VoiceClusters,
 		                        &Component.EdgeClusterIndices);
 	}
 	else {

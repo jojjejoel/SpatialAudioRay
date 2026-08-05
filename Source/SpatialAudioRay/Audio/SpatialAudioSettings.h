@@ -1,4 +1,4 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+﻿// Copyright Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -83,12 +83,18 @@ public:
 	float DistancePriorityExponent = 2.0f;
 
 	/** How much effort a source at maximum distance gets, as a fraction of what it gets up close.
-	 *  One value floors all three distance-scaled budgets: ray count and bounce count multiply by
-	 *  it, and the sweep interval divides by it, so 0.25 means a quarter of the rays and bounces
-	 *  and a four times longer interval. 1 = no distance scaling at all. */
+	 *  Ray and bounce counts multiply by it; the sweep and line-of-sight intervals divide by it.
+	 *  1 = no distance scaling. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Ray Budget",
 		meta = (ClampMin = "0.05", ClampMax = "1.0"))
 	float MaxDistanceEffortScale = 0.65f;
+
+	/** Trace budget for ALL sources combined. Over it, intervals stretch until the rate settles back,
+	 *  sweeps giving way first and direct sight last, and distant sources absorbing more.
+	 *  0 = unlimited. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Ray Budget",
+		meta = (ClampMin = "0.0"))
+	float MaxTracesPerSecond = 0.f;
 
 	/** Ray-count multiplier once the edge cache is full, interpolated by how full it is. A saturated
 	 *  cache can only improve by displacement, so searching into one is worth less. Floors at one
@@ -164,8 +170,9 @@ public:
 		meta = (ClampMin = "0.0", ClampMax = "4.0"))
 	float OffsetRingRadiusExponent = 0.5f;
 
-	/** Seconds between direct LoS samples. Scaled down with speed by OffsetLoSVelocityScale.
-	 *  0 = every frame. */
+	/** Seconds between direct LoS samples, which is what the resting cost mostly is. Shortened with
+	 *  speed by OffsetLoSVelocityScale, stretched with distance by MaxDistanceEffortScale.
+	 *  0 = every frame, at any distance. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Line Of Sight Sampling",
 		meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float OffsetLoSCheckInterval = 0.f;
@@ -184,7 +191,8 @@ public:
 	float OcclusionBlendTime = 0.25f;
 
 
-	/** Maximum number of edge points cached simultaneously. */
+	/** Maximum edge points cached at once, at closest range. Scaled down by MaxDistanceEffortScale;
+	 *  retreating drops the longest-route entries until the cache fits. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Edge Cache",
 		meta = (ClampMin = "1", ClampMax = "32"))
 	int32 CachedEdgeMaxCount = 4;
@@ -214,8 +222,8 @@ public:
 	int32 ShortestPathPromotionBisectSteps = 0;
 
 
-	/** Maximum simultaneously audible virtual voices. The component pool is 2x this so a voice
-	 *  fading out during a handoff can coexist with its replacement. */
+	/** Maximum audible virtual voices, at closest range. Scaled down by MaxDistanceEffortScale. The
+	 *  component pool stays at 2x the authored value, so distance costs no reallocation. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Virtual Voices",
 		meta = (ClampMin = "1", ClampMax = "8"))
 	int32 MaxVirtualVoices = 3;

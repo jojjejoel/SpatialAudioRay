@@ -1,20 +1,21 @@
-#include "CoreMinimal.h"
+﻿#include "CoreMinimal.h"
 #include "SpatialAudioTypes.h"
 #include "Misc/AutomationTest.h"
 #include "Audio/AsyncCastManager.h"
 
 namespace {
-	FCacheMergeContext MakeMergeContext(const FVector& ListenerPos = FVector::ZeroVector) {
+	FCacheMergeContext MakeMergeContext(int32 MaxEdgeCount = 4,
+	                                    const FVector& ListenerPos = FVector::ZeroVector) {
 		FCacheMergeContext Ctx;
 		Ctx.SourcePos = FVector::ZeroVector;
 		Ctx.ListenerPos = ListenerPos;
 		Ctx.MaxRayDistance = 5000.f;
+		Ctx.MaxEdgeCount = MaxEdgeCount;
 		return Ctx;
 	}
 
-	USpatialAudioSettings* MakeMergeSettings(int32 MaxCount = 4, float MergeRadius = 100.f) {
+	USpatialAudioSettings* MakeMergeSettings(float MergeRadius = 100.f) {
 		USpatialAudioSettings* Settings = NewObject<USpatialAudioSettings>();
-		Settings->CachedEdgeMaxCount = MaxCount;
 		Settings->CachedEdgeMergeRadius = MergeRadius;
 		Settings->CandidateDistanceFalloff = 1.f;
 		Settings->ListenerDistanceFalloff = 0.f;
@@ -44,8 +45,7 @@ namespace {
 	const FVector PullWaypoint1(1000, 1000, 0);
 	const FVector PullEdge(1000, 2000, 0);
 
-	/** A ray that travelled 5000cm to reach an edge only 2236cm away in a straight line, turning at
-	 *  two waypoints on the way. String pulling should recover whatever the visibility allows. */
+	/** Travelled 5000cm to reach an edge 2236cm away in a straight line, turning at two waypoints. */
 	FSpatialRayState MakePulledRay() {
 		FSpatialRayState Ray;
 		Ray.LoSOrigin = PullEdge;
@@ -87,7 +87,6 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 )
 
 bool FStringPull_HopsThroughTheFirstVisibleAnchor::RunTest(const FString& Parameters) {
-	// The source is hidden from the edge, but both legs through waypoint 0 are open.
 	auto CornerBlocked = [](const FVector& From, const FVector& To) {
 		const bool bEdgeToSource = From.Equals(PullEdge, 0.1f) && To.Equals(PullSource, 0.1f);
 		return !bEdgeToSource;
@@ -182,8 +181,8 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 )
 
 bool FCacheMerge_FillsToCapacityBeforeDisplacing::RunTest(const FString& Parameters) {
-	const FCacheMergeContext Ctx = MakeMergeContext();
-	const auto Settings = MakeMergeSettings(/*MaxCount=*/2);
+	const FCacheMergeContext Ctx = MakeMergeContext(/*MaxEdgeCount=*/2);
+	const auto Settings = MakeMergeSettings();
 
 	TArray<FCachedEdgePoint> Edges;
 	const TArray<FStoredLoSPath> Found{
@@ -206,8 +205,8 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 )
 
 bool FCacheMerge_DisplacesAtMostOnePerSweep::RunTest(const FString& Parameters) {
-	const FCacheMergeContext Ctx = MakeMergeContext();
-	const auto Settings = MakeMergeSettings(/*MaxCount=*/2);
+	const FCacheMergeContext Ctx = MakeMergeContext(/*MaxEdgeCount=*/2);
+	const auto Settings = MakeMergeSettings();
 
 	TArray<FCachedEdgePoint> Edges{
 		MakeCached(FVector(1000, 0, 0), 4000.f),

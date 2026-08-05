@@ -1,5 +1,6 @@
-#include "Audio/SpatialAudioDebugSubsystem.h"
+﻿#include "Audio/SpatialAudioSubsystem.h"
 
+#include "Audio/Math.h"
 #include "Audio/SpatialAudioComponent.h"
 
 #include "DrawDebugHelpers.h"
@@ -8,31 +9,31 @@
 #include "Framework/Application/SlateApplication.h"
 #include "GameFramework/PlayerController.h"
 
-void USpatialAudioDebugSubsystem::Register(USpatialAudioComponent* Component) {
+void USpatialAudioSubsystem::Register(USpatialAudioComponent* Component) {
 	if (!Sources.Contains(Component)) {
 		Sources.Add(Component);
 		bEligibleForDebugRays.Add(Component->bDrawDebugRays);
 	}
-	UE_LOG(LogTemp, Log, TEXT("SpatialAudioDebugSubsystem: +%s on %s (%d registered)"),
+	UE_LOG(LogTemp, Log, TEXT("SpatialAudioSubsystem: +%s on %s (%d registered)"),
 	       *Component->GetName(), *GetNameSafe(Component->GetOwner()), Sources.Num());
 }
 
-void USpatialAudioDebugSubsystem::Unregister(USpatialAudioComponent* Component) {
+void USpatialAudioSubsystem::Unregister(USpatialAudioComponent* Component) {
 	const int32 Index = Sources.IndexOfByPredicate(
 		[Component](const TWeakObjectPtr<USpatialAudioComponent>& Src) { return Src.Get() == Component; });
 	if (Index != INDEX_NONE) {
 		Sources.RemoveAt(Index);
 		bEligibleForDebugRays.RemoveAt(Index);
 	}
-	UE_LOG(LogTemp, Log, TEXT("SpatialAudioDebugSubsystem: -%s on %s (%d registered)"),
+	UE_LOG(LogTemp, Log, TEXT("SpatialAudioSubsystem: -%s on %s (%d registered)"),
 	       *Component->GetName(), *GetNameSafe(Component->GetOwner()), Sources.Num());
 }
 
-TStatId USpatialAudioDebugSubsystem::GetStatId() const {
-	RETURN_QUICK_DECLARE_CYCLE_STAT(USpatialAudioDebugSubsystem, STATGROUP_Tickables);
+TStatId USpatialAudioSubsystem::GetStatId() const {
+	RETURN_QUICK_DECLARE_CYCLE_STAT(USpatialAudioSubsystem, STATGROUP_Tickables);
 }
 
-USpatialAudioDebugSubsystem::FAggregateTraceStats USpatialAudioDebugSubsystem::AggregateSourceTraceStats() {
+USpatialAudioSubsystem::FAggregateTraceStats USpatialAudioSubsystem::AggregateSourceTraceStats() {
 	FAggregateTraceStats Stats;
 	for (int32 i = Sources.Num() - 1; i >= 0; --i) {
 		const USpatialAudioComponent* C = Sources[i].Get();
@@ -51,7 +52,41 @@ USpatialAudioDebugSubsystem::FAggregateTraceStats USpatialAudioDebugSubsystem::A
 	return Stats;
 }
 
-bool USpatialAudioDebugSubsystem::ComputeAnyDebugRaysActive() const {
+/** Tickable subsystems run after every component, so the measurement is complete and the stretch
+ *  lands next frame, which is what stops the loop chasing itself. */
+void USpatialAudioSubsystem::ApplyTraceBudget(const FAggregateTraceStats& Stats, const float DeltaTime) {
+	USpatialAudioComponent* First = Sources.Num() > 0 ? Sources[0].Get() : nullptr;
+	BudgetTracesPerSec = First ? First->GetSettings().MaxTracesPerSecond : 0.f;
+
+	const float Target = Math::ComputeTraceBudgetStretch(GlobalTraceStretch, Stats.TracesPerSec,
+	                                                     BudgetTracesPerSec);
+	GlobalTraceStretch = BudgetTracesPerSec > 0.f
+		                     ? FMath::FInterpTo(GlobalTraceStretch, Target, DeltaTime, 1.f)
+		                     : 1.f;
+
+	/** Idle sources would dilute the mean and hand throttling back to the ones doing the work. */
+	float WeightSum = 0.f;
+	int32 WeightCount = 0;
+	for (const TWeakObjectPtr<USpatialAudioComponent>& Src : Sources) {
+		if (const USpatialAudioComponent* C = Src.Get(); C && C->bInAudibleRange) {
+			WeightSum += Math::ComputeSourceThrottleWeight(C->CurrentPriority);
+			++WeightCount;
+		}
+	}
+	const float MeanWeight = WeightCount > 0 ? WeightSum / WeightCount : 1.f;
+
+	for (const TWeakObjectPtr<USpatialAudioComponent>& Src : Sources) {
+		if (USpatialAudioComponent* C = Src.Get()) {
+			C->TraceBudgetStretch = C->bInAudibleRange
+				                        ? Math::ComputeSourceTraceStretch(
+					                        GlobalTraceStretch,
+					                        Math::ComputeSourceThrottleWeight(C->CurrentPriority), MeanWeight)
+				                        : 1.f;
+		}
+	}
+}
+
+bool USpatialAudioSubsystem::ComputeAnyDebugRaysActive() const {
 	for (const TWeakObjectPtr<USpatialAudioComponent>& Src : Sources) {
 		if (const USpatialAudioComponent* C = Src.Get(); C && C->bDrawDebugRays) {
 			return true;
@@ -60,7 +95,7 @@ bool USpatialAudioDebugSubsystem::ComputeAnyDebugRaysActive() const {
 	return false;
 }
 
-void USpatialAudioDebugSubsystem::HandleCycleKey(const USpatialAudioComponent& First, const APlayerController* PC) {
+void USpatialAudioSubsystem::HandleCycleKey(const USpatialAudioComponent& First, const APlayerController* PC) {
 	if (!PC) {
 		return;
 	}
@@ -71,7 +106,7 @@ void USpatialAudioDebugSubsystem::HandleCycleKey(const USpatialAudioComponent& F
 	bPrevCycleKeyDown = bDown;
 }
 
-void USpatialAudioDebugSubsystem::HandleActorLabelsToggleAndDraw(const USpatialAudioComponent& First,
+void USpatialAudioSubsystem::HandleActorLabelsToggleAndDraw(const USpatialAudioComponent& First,
                                                                  const APlayerController* PC) {
 	if (PC) {
 		const bool bDown = First.ToggleActorLabelsKey.IsValid()
@@ -95,7 +130,7 @@ void USpatialAudioDebugSubsystem::HandleActorLabelsToggleAndDraw(const USpatialA
 	}
 }
 
-void USpatialAudioDebugSubsystem::HandleSubModeKeyToggles(const USpatialAudioComponent& First,
+void USpatialAudioSubsystem::HandleSubModeKeyToggles(const USpatialAudioComponent& First,
                                                           const APlayerController* PC) {
 	if (!PC) {
 		return;
@@ -135,44 +170,88 @@ void USpatialAudioDebugSubsystem::HandleSubModeKeyToggles(const USpatialAudioCom
 	bPrevToggleKeyDown = bDown;
 }
 
-void USpatialAudioDebugSubsystem::DrawGlobalDebugHUD(const FAggregateTraceStats& Stats) {
-	GEngine->AddOnScreenDebugMessage(1, 0.f, FColor::Yellow,
-	                                 FString::Printf(
-		                                 TEXT(
-			                                 "GLOBAL  %d source%s  │  traces 1s=%.0f/s  10s=%.0f/s  60s=%.0f/s  peak=%.0f/s"),
-		                                 Stats.NumSources, Stats.NumSources == 1 ? TEXT("") : TEXT("s"),
-		                                 Stats.TracesPerSec, Stats.Avg10Sec, Stats.Avg60Sec,
-		                                 Stats.PeakTracesPerSec));
-
-	int32 LineKey = 2;
-	for (const TWeakObjectPtr<USpatialAudioComponent>& Src : Sources) {
-		if (const USpatialAudioComponent* C = Src.Get()) {
-			const AActor* Owner = C->GetOwner();
-			GEngine->AddOnScreenDebugMessage(LineKey++, 0.f, FColor(255, 255, 160),
-			                                 FString::Printf(
-				                                 TEXT(
-					                                 "  %s  │  traces 1s=%.0f/s  10s=%.0f/s  60s=%.0f/s  peak=%.0f/s  │  moving=%.0f/s  rest=%.0f/s"),
-				                                 Owner ? *Owner->GetActorNameOrLabel() : TEXT("None"),
-				                                 C->TraceDiag.SnapshotTracesPerSec,
-				                                 C->TraceDiag.Avg10Sec,
-				                                 C->TraceDiag.Avg60Sec,
-				                                 C->TraceDiag.PeakTracesPerSec,
-				                                 C->TraceDiag.MovingTracesPerSec(),
-				                                 C->TraceDiag.RestTracesPerSec()));
-		}
-	}
+FColor USpatialAudioSubsystem::ThrottleTint(const float Stretch) {
+	const float Span = FMath::Max(Math::MaxTraceBudgetStretch - 1.f, KINDA_SMALL_NUMBER);
+	const float T = FMath::Clamp((Stretch - 1.f) / Span, 0.f, 1.f);
+	return FLinearColor::LerpUsingHSV(FLinearColor(1.f, 1.f, 0.63f), FLinearColor(1.f, 0.18f, 0.1f), T)
+		.ToFColor(false);
 }
 
-void USpatialAudioDebugSubsystem::Tick(float DeltaTime) {
-	Super::Tick(DeltaTime);
-	if (!GEngine) {
-		return;
+void USpatialAudioSubsystem::DrawGlobalDebugHUD(const FAggregateTraceStats& Stats) {
+	const bool bThrottling = GlobalTraceStretch > 1.01f;
+	const FString BudgetLabel = BudgetTracesPerSec <= 0.f
+		                            ? TEXT("  │  budget off")
+		                            : FString::Printf(TEXT("  │  budget %.0f/s  stretch %.2f×"),
+		                                              BudgetTracesPerSec, GlobalTraceStretch);
+
+	/** Ascending, because the engine lays these messages out bottom-up. */
+	TArray<int32> Order;
+	Order.Reserve(Sources.Num());
+	for (int32 i = 0; i < Sources.Num(); ++i) {
+		if (Sources[i].IsValid()) {
+			Order.Add(i);
+		}
+	}
+	Order.Sort([this](const int32 A, const int32 B) {
+		return Sources[A]->CurrentPriority < Sources[B]->CurrentPriority;
+	});
+
+	/** Clear last frame's surplus, or a line outlives the source that wrote it. */
+	constexpr int32 GlobalHudKey = 100;
+	int32 LineKey = GlobalHudKey - 1;
+
+	for (const int32 Index : Order) {
+		const USpatialAudioComponent* C = Sources[Index].Get();
+		const AActor* Owner = C->GetOwner();
+		if (!C->bInAudibleRange) {
+			GEngine->AddOnScreenDebugMessage(LineKey--, 0.f, FColor(120, 120, 120),
+			                                 FString::Printf(TEXT("  %s  │  out of range, idle"),
+			                                                 Owner ? *Owner->GetActorNameOrLabel() : TEXT("None")));
+			continue;
+		}
+
+		const FString ThrottleLabel = BudgetTracesPerSec > 0.f
+			                              ? FString::Printf(
+				                              TEXT("  swp %.2f×  edge %.2f×  los %.2f×"),
+				                              Math::ShareOfBudgetStretch(
+					                              C->TraceBudgetStretch, Math::SweepBudgetShare),
+				                              Math::ShareOfBudgetStretch(
+					                              C->TraceBudgetStretch, Math::EdgeCheckBudgetShare),
+				                              Math::ShareOfBudgetStretch(
+					                              C->TraceBudgetStretch, Math::DirectLoSBudgetShare))
+			                              : FString();
+		GEngine->AddOnScreenDebugMessage(LineKey--, 0.f, ThrottleTint(C->TraceBudgetStretch),
+		                                 FString::Printf(
+			                                 TEXT("  %s  │  1s=%.0f/s  60s=%.0f/s  │  prio %.2f%s"),
+			                                 Owner ? *Owner->GetActorNameOrLabel() : TEXT("None"),
+			                                 C->TraceDiag.SnapshotTracesPerSec,
+			                                 C->TraceDiag.Avg60Sec,
+			                                 C->CurrentPriority,
+			                                 *ThrottleLabel));
 	}
 
+	for (int32 Stale = Order.Num(); Stale < PrevSourceLineCount; ++Stale) {
+		GEngine->RemoveOnScreenDebugMessage(GlobalHudKey - 1 - Stale);
+	}
+	PrevSourceLineCount = Order.Num();
+
+	/** Higher keys draw above lower ones, so the summary takes the largest key to sit on top. */
+	GEngine->AddOnScreenDebugMessage(GlobalHudKey, 0.f, bThrottling ? FColor::Orange : FColor::Yellow,
+	                                 FString::Printf(
+		                                 TEXT("GLOBAL  %d source%s  │  1s=%.0f/s  60s=%.0f/s  peak=%.0f/s%s"),
+		                                 Stats.NumSources, Stats.NumSources == 1 ? TEXT("") : TEXT("s"),
+		                                 Stats.TracesPerSec, Stats.Avg60Sec,
+		                                 Stats.PeakTracesPerSec, *BudgetLabel));
+}
+
+void USpatialAudioSubsystem::Tick(float DeltaTime) {
+	Super::Tick(DeltaTime);
+
 	const FAggregateTraceStats Stats = AggregateSourceTraceStats();
+	ApplyTraceBudget(Stats, DeltaTime);
 
 	USpatialAudioComponent* First = Sources.Num() > 0 ? Sources[0].Get() : nullptr;
-	if (!First) {
+	if (!GEngine || !First) {
 		return;
 	}
 
@@ -202,7 +281,7 @@ void USpatialAudioDebugSubsystem::Tick(float DeltaTime) {
 	DrawGlobalDebugHUD(Stats);
 }
 
-bool USpatialAudioDebugSubsystem::CycleDebugRaySource() {
+bool USpatialAudioSubsystem::CycleDebugRaySource() {
 	int32 Selected = INDEX_NONE;
 	for (int32 i = 0; i < Sources.Num(); ++i) {
 		const USpatialAudioComponent* C = Sources[i].Get();
@@ -234,7 +313,7 @@ bool USpatialAudioDebugSubsystem::CycleDebugRaySource() {
 	return false;
 }
 
-void USpatialAudioDebugSubsystem::ApplyProximityDebugLimit(const USpatialAudioComponent& First,
+void USpatialAudioSubsystem::ApplyProximityDebugLimit(const USpatialAudioComponent& First,
                                                            const APlayerController* PC) {
 	const int32 MaxSources = First.GetSettings().MaxUncycledDebugSources;
 	if (MaxSources <= 0 || !PC || !PC->GetPawn()) {

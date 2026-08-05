@@ -244,7 +244,7 @@ private:
 	friend class FAsyncCastManager;
 	friend class FEdgeCache;
 	friend class FUpdater;
-	friend class USpatialAudioDebugSubsystem;
+	friend class USpatialAudioSubsystem;
 
 	float ComputeEffectiveSweepInterval() const;
 	/** Openings closer together than the virtual emitter's full-volume radius are one sound, so an
@@ -252,9 +252,10 @@ private:
 	float GetVoiceClusterRadius() const;
 	bool HasNewEdgeSinceFillArm() const;
 	bool IsCacheFillPending() const;
-	/** Whichever end has drifted further from the idle anchor, which is the value that crosses
-	 *  StationaryIdleBreakDist. Shared with the HUD so the readout cannot disagree with the check.
-	 *  Squared, so the live check pays no square root; only the debug draw takes the root. */
+	int32 GetEffectiveMaxVirtualVoices() const;
+	int32 GetEffectiveCachedEdgeMaxCount() const;
+	/** Shared with the HUD so the readout cannot disagree with the check. Squared, so only the debug
+	 *  draw pays a square root. */
 	float ComputeIdleAnchorDriftSq() const;
 	FVector ComputeSteeringLead(const FVector& SmoothedVelocity, const USpatialAudioSettings& Settings) const;
 	void RequestSweepOnPreSweepBandEntry(bool bPreSweepActive);
@@ -355,6 +356,11 @@ private:
 	bool bHasDirectLoS = false;
 
 	float TimeSinceHadDirectLoS = 1e9f;
+
+	/** Pushed by the subsystem. 1 = under budget. */
+	float TraceBudgetStretch = 1.f;
+
+	bool bInAudibleRange = false;
 
 	float MaxRayDistance = 5000.f;
 
@@ -469,9 +475,7 @@ private:
 	} VelocityScaling;
 
 	struct FSweepSchedulingState {
-		/** Held from the sweep that completed while stationary until either end leaves
-		 *  StationaryIdleBreakDist of the anchor below. Sweeps dispatching in between do not end it,
-		 *  so drifting a few centimetres cannot cost a full survey. */
+		/** Ends only on leaving StationaryIdleBreakDist of the anchor, never on a sweep dispatching. */
 		bool bStationaryIdleMode = false;
 		FVector StationaryIdleSourcePos = FVector::ZeroVector;
 		FVector StationaryIdleListenerPos = FVector::ZeroVector;

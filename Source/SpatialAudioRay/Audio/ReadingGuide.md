@@ -26,9 +26,10 @@ Everything else is machinery for answering those two accurately, cheaply, and wi
 |-------------------------------|------------------------------------------------------------------------|----------------------------------------------------|
 | Direct line-of-sight sampling | on a timed interval                                                    | produces the occlusion value, smoothed every frame |
 | Full async sweep              | on a timed interval, while heavily occluded or sight is confirmed lost | finds diffraction edges                            |
-| Edge cache maintenance        | one edge at a time, each on a timed interval, while sight is lost      | re-validates edges and fades out the dead          |
+| Edge cache maintenance        | one edge at a time, each on a timed interval, while sight is lost      | re-validates edges and drops the dead              |
 
-All three intervals shorten as either end moves and stretch when both are still. A sweep takes several frames, so its
+The sweep and the sampler shorten their intervals as either end moves; edge validation deliberately does not, since a
+cached edge needs checking at the same rate however fast you are travelling. A sweep takes several frames, so its
 answer is slightly out of date by the time it lands. The cheap loops compensate: occlusion is sampled on its own short
 interval and never waits for a sweep, and found edges are cached so the virtual emitters do not blink out between
 sweeps. Both the sweep and the cache go idle while the source is visible, so in that state the only thing still tracing
@@ -62,8 +63,10 @@ every point where it changed direction. The waypoints matter at Stop 5.
 
 `FCachedEdgePoint` is a confirmed diffraction edge that survives across sweeps. Note `ShortestPath` and
 `ShortestPathSegmentVerified`, the polyline its path distance was measured along and which of its segments were actually
-traced clear, and `EffectivePoint()`, where the audible emitter sits. The names `bRelayed` and `bEvicting` will make
-sense after Stop 6.
+traced clear, and the two position accessors. `OutputPoint()` is where the audible emitter sits and is always the real
+corner; `EffectivePoint()` is where line of sight is currently confirmed from, which for a rescued entry is its relay
+anchor rather than a corner. Validation and ranking use the second, everything audible uses the first. The names
+`bRelayed` and `bEvicting` will make sense after Stop 6.
 
 `FVirtualVoice` and `FVirtualSlot` are worth separating in your head. A voice is the logical "sound coming from cluster
 X". A slot is a pooled `UAudioComponent` that renders it. Voices hand slots off to each other so a position can jump
@@ -101,7 +104,7 @@ Read `TickComponent`, around 50 lines, and the phase methods it calls in order:
 ```
 TickAsyncPipeline          read back last frame's probes, advance the sweep one step
 UpdateVelocityScaling      smoothed source and listener speeds become interval multipliers
-UpdateStationaryIdleState  stretch the sweep interval while nothing moves
+UpdateStationaryIdleState  break idle once either end has left the anchor
 FEdgeCache::TickCachedEdgeEviction   validate and evict cached edges (Stop 6)
 ComputeEffectiveSweepInterval        how long until the next sweep is allowed
 TickNormalSweepDispatch    per-frame LoS sampling always, then either start a
@@ -135,6 +138,14 @@ Idle is anchored, not instantaneous. It is entered by a sweep completing while b
 the positions, and it is left only when either end travels `StationaryIdleBreakDist` from that anchor, which also
 requests the early sweep that arms the cache fill. Sweeps dispatching meanwhile do not end it. So idle pacing survives
 small drift, and the cost of leaving is paid once, at a distance you chose, rather than on the first frame of motion.
+
+On top of all that sits one global governor. `MaxTracesPerSecond` is a budget for every source in the world combined,
+and `SpatialAudioSubsystem` measures the summed rate each tick and pushes a stretch factor back onto each component,
+which multiplies the interval computed above. The three loops do not give way equally: sweeps take the stretch in full
+because a late sweep only delays finding a new edge, edge validation takes its square root because a stale entry keeps
+an emitter playing, and direct sight takes least because it writes occlusion itself. Distant sources absorb more of it
+than close ones, and sources past `MaxRayDistance` are excluded entirely, since they are already tracing nothing and
+counting them would hand throttling back to the sources doing the work.
 
 Read `BeginPlay` too. It caches every `UAudioComponent` tagged `AudioComponentSource`, since one pipeline serves all
 co-located sounds on an actor, creates a transient `UAudioBus` for them to write into, and builds the virtual voice
@@ -210,7 +221,10 @@ continuously, so a cached edge has to be validated from the listener's side the 
 it stops being real.
 
 Note the first line: the whole thing returns early while `bHasDirectLoS`, since a visible source has no diffraction
-paths worth maintaining. Everything below runs only while occluded. `TickSingleEdge` drops any entry already condemned,
+paths worth maintaining, and equally while the source is out of audible range, where nothing else traces either and
+validating a cache nobody can hear would be the one cost that ignored distance. The entries are kept in both cases, so
+walking back into range restores the diffraction instead of rebuilding it. Everything below runs only while occluded
+and in range. `TickSingleEdge` drops any entry already condemned,
 then runs five phases in order: `TickRelayRescueReadback`, `TickPhase0Readback`, `TickPhase0OffsetReadback`,
 `TickRelayMaintenance`, `TickPhase0Submission`.
 
@@ -226,7 +240,9 @@ A blocked Phase 0 trace does not evict. It escalates:
 2. A four-point fan around the listener, since one centre trace grazing a corner is thin evidence. It fires only on a
    blocked centre, so it costs nothing while the edge is comfortably visible.
 3. A relay rescue, routing the edge through the last listener position that could still see it, frozen at rescue time so
-   gain stays listener-independent.
+   gain stays listener-independent. Note what a relay is *not*: `RelayPoint` is somewhere the edge can be seen from, not
+   somewhere sound comes from, so it feeds validation only. The emitter keeps sitting on the real corner, which is the
+   distinction `OutputPoint()` and `EffectivePoint()` draw.
 
 Only then is the entry dropped, on the next tick, and the rescue submits its four traces and rules the following tick,
 leaving the edge playing untouched meanwhile. The drop is a cut rather than a fade, which sounds wrong and is not: the
@@ -251,6 +267,11 @@ already owns listener-side validity.
 An eviction is final. Every route into one has already exhausted promotion, the fan and the rescue, so an entry that
 reaches it has nothing left to say; `StartEviction` requests a sweep on the way out, and re-finding the edge is that
 sweep's job rather than a resurrection path in the cache.
+
+One last drop has nothing to do with validity. `CachedEdgeMaxCount` scales down with distance like every other budget,
+so retreating can leave a cache larger than its own cap; `TrimToEffectiveCap` then drops the longest route first, which
+is the entry contributing least. At that range the survivors are clustering into fewer emitters anyway, so the centroid
+barely moves.
 
 ## Stop 7. The crawl mechanic, and the cheap path
 
@@ -308,14 +329,15 @@ once occluded, and picks a vocal effort from it, so standing close but around a 
 `Voice/README.md` covers the layer; the split there mirrors this one, with every scheduling decision as pure functions
 in `NPCVoiceLogic.h`.
 
-`SpatialAudioDebugSubsystem` registers every component and polls the debug keys. With `bDrawDebugRays` set, N cycles
+`SpatialAudioSubsystem` registers every component, enforces the global trace budget, and polls the debug keys. It is
+the only place that sees every source's cost at once, which is why the budget lives there. With `bDrawDebugRays` set, N cycles
 which source draws, 2 shows bounce rays, 7 crawl steps, 6 edge points, 0 the string-pulled paths with unverified
 segments dimmed, 1 virtual emitters, 3 the per-source HUD and G the global trace counts. Walking behind a wall with 2, 7
 and 0 on makes Stops 5 through 7 concrete faster than reading them again. 6 and 1 together answer the clustering
 question above: each edge draws a line to the emitter it feeds, in that emitter's colour, and an edge with no line is
 one no audible voice speaks for.
 
-Tests live in `Source/SpatialAudioRay/Tests/`, 106 of them under `SpatialAudioRay.Math.*`, `.Async.*`, `.Voice.*` and
+Tests live in `Source/SpatialAudioRay/Tests/`, 112 of them under `SpatialAudioRay.Math.*`, `.Async.*`, `.Voice.*` and
 `.EdgeCache.*` in Session Frontend. They read as a spec for the pure helpers, and `MathTests.cpp` is a good final read.
 
 ---
