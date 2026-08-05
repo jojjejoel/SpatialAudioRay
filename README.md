@@ -22,7 +22,7 @@ Three loops run at different rates:
 |---|---|---|
 | Direct line-of-sight sampling | on a timed interval | produces the occlusion value, smoothed every frame |
 | Full async sweep | on a timed interval, while heavily occluded or sight is confirmed lost | finds diffraction edges, a ray budget spread over several frames |
-| Edge cache maintenance | one edge at a time, each on a timed interval, while sight is lost | re-validates edges and fades out the dead |
+| Edge cache maintenance | one edge at a time, each on a timed interval, while sight is lost | re-validates edges and drops the dead |
 
 A sweep takes several frames, so by the time it lands its answer is slightly out of date. That is why occlusion is sampled on its own short interval and never waits for a sweep, and why found edges are cached and kept alive independently instead of being re-derived each time. Both of the lower two stop entirely while any sightline to the source survives, and that bar is lower than it sounds: one clear sample out of the five is enough, so they can be idle at 80% occlusion. Below that, the only thing still tracing is the occlusion sampler. The sweep gets one exception, running through the near-occluded band as well, so the cache is already warm when the last sliver closes. The sampler and the sweep also idle when the listener is out of the source's audible range.
 
@@ -40,7 +40,7 @@ Most of the complexity is in the edge cache, because the listener keeps moving b
 2. Fan out four offset points around the listener, since a single centre trace grazing a corner is not enough evidence.
 3. Route the edge through the last listener position that could still see it, which buys time while you walk.
 
-Only after all of that does it start fading, and it fades rather than cutting, because a virtual emitter disappearing instantly is audible.
+Only after all of that is the entry dropped. It goes without a fade of its own, because the emitters are a pooled layer above the cache: losing an entry either nudges its cluster centroid, which the emitter follows, or moves it far enough that one emitter fades out and another fades in at the new corner.
 
 The distance a ray physically travelled is longer than the acoustic path, since crawling along a wall and bouncing adds detours. Before that distance is used for anything audible it gets string-pulled: from the edge, hop back to the furthest recorded waypoint that is directly visible, repeat until reaching the source. Rays also die as soon as travelled distance plus straight-line distance to the listener exceeds the budget, which by the triangle inequality means they provably cannot reach it.
 
@@ -60,21 +60,21 @@ Start with [`Source/SpatialAudioRay/Audio/ReadingGuide.md`](Source/SpatialAudioR
 Source/SpatialAudioRay/
 ├── Audio/     diffraction and occlusion
 ├── Voice/     the NPC voice system built on it
-└── Tests/     94 automation tests
+└── Tests/     92 automation tests
 Tools/VoiceGen/  offline voice bank generation
 ```
 
-`USpatialAudioComponent` owns all the state. `FAsyncCastManager`, `FUpdater` and `FEdgeCache` hold none of their own and are static functions over it, split by which of the three loops they belong to. `Math.h` and `Voice/NPCVoiceLogic.h` sit below both with the pure functions, no engine or component state in either, and 79 of the 94 tests are on those two files. Every tunable lives in one `UDataAsset` instead of as constants in the code.
+`USpatialAudioComponent` owns all the state. `FAsyncCastManager`, `FUpdater` and `FEdgeCache` hold none of their own and are static functions over it, split by which of the three loops they belong to. `Math.h` and `Voice/NPCVoiceLogic.h` sit below both with the pure functions, no engine or component state in either, and 78 of the 92 tests are on those two files. Every tunable lives in one `UDataAsset` instead of as constants in the code.
 
 ## Tests
 
-94 tests, run from Session Frontend, Automation, filtering on `SpatialAudioRay`:
+92 tests, run from Session Frontend, Automation, filtering on `SpatialAudioRay`:
 
 | Suite | Tests | Covers |
 |---|---|---|
-| `SpatialAudioRay.Math.*` | 48 | reflection, attenuation, clustering, path shortening |
+| `SpatialAudioRay.Math.*` | 47 | reflection, attenuation, clustering, path shortening |
 | `SpatialAudioRay.Voice.*` | 31 | efforts, hysteresis, barge-in, content selection |
-| `SpatialAudioRay.Async.*` | 13 | sweep accumulation, ray budget, turn determinism |
+| `SpatialAudioRay.Async.*` | 12 | sweep accumulation, ray budget, turn determinism |
 | `SpatialAudioRay.EdgeCache.*` | 2 | cache merge candidacy |
 
 ## Trying it

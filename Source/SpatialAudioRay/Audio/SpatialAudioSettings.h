@@ -245,13 +245,6 @@ public:
 		meta = (ClampMin = "5.0", ClampMax = "200.0"))
 	float CachedEdgeMergeRadius = 25.f;
 
-	/** Seconds a cached edge fades out after losing listener line-of-sight, still contributing at a
-	 *  decaying weight so the virtual source does not jump. A clear check during the fade cancels
-	 *  it. 0 = instant removal. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Edge Cache",
-		meta = (ClampMin = "0.0", ClampMax = "2.0"))
-	float CachedEdgeEvictionFadeTime = 0.3f;
-
 	/** Seconds between checks on one cached edge, PER CACHED EDGE: the interval is divided by cache
 	 *  size and one entry is taken per slice, so cost spreads instead of arriving as a burst of N.
 	 *  Scales down with listener speed. Drives all three passes, which each take their own turn:

@@ -35,8 +35,6 @@ struct FCachedEdgePoint {
 	bool bPhase0OffsetPending = false;
 
 	bool bEvicting = false;
-	bool bSourceSideEviction = false;
-	float EvictionAlpha = 1.f;
 
 	bool bNewSinceFillArm = false;
 

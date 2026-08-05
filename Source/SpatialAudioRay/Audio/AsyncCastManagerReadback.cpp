@@ -117,8 +117,6 @@ void FAsyncCastManager::WriteEntry(const USpatialAudioComponent& Component, FCac
 	Edge.CapturedListenerPos = Component.AsyncListenerPos;
 	Edge.bPhase0Pending = false;
 	Edge.bEvicting = false;
-	Edge.bSourceSideEviction = false;
-	Edge.EvictionAlpha = 1.f;
 	Edge.ClearRelay();
 	Edge.LastLoSListenerPos = Component.AsyncListenerPos;
 	Edge.bHasLastLoSListenerPos = true;
@@ -317,7 +315,7 @@ FAsyncCastManager::FCachedPointAccum FAsyncCastManager::AccumulateCachedPoints(
 	for (const FCachedEdgePoint& Edge : Points) {
 		++Out.RaysReached;
 		Out.MinLoSDist = FMath::Min(Out.MinLoSDist, Edge.EffectivePathDist());
-		const float DistW = Edge.EvictionAlpha / (1.f + Settings.CandidateDistanceFalloff
+		const float DistW = 1.f / (1.f + Settings.CandidateDistanceFalloff
 			* Edge.GeomDist / FMath::Max(MaxRayDistance, 1.f));
 		Out.WeightedPos += Edge.EffectivePoint() * DistW;
 		Out.WeightedDist += Edge.EffectivePathDist() * DistW;

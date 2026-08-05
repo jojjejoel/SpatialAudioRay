@@ -29,17 +29,16 @@ bool Accumulate_EmptyArray::RunTest(const FString& Parameters) {
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	Accumulate_SinglePoint_Alpha1,
-	"SpatialAudioRay.Async.Accumulate.SinglePoint.Alpha1",
+	Accumulate_SinglePoint_DistanceFalloff,
+	"SpatialAudioRay.Async.Accumulate.SinglePoint.DistanceFalloff",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
-bool Accumulate_SinglePoint_Alpha1::RunTest(const FString& Parameters) {
+bool Accumulate_SinglePoint_DistanceFalloff::RunTest(const FString& Parameters) {
 	constexpr float geomDist = 100.0f;
 	constexpr float maxDist = 100.0f;
 
 	FCachedEdgePoint Point;
-	Point.EvictionAlpha = 1;
 	Point.GeomDist = geomDist;
 
 	const TArray Array({Point});
@@ -53,39 +52,8 @@ bool Accumulate_SinglePoint_Alpha1::RunTest(const FString& Parameters) {
 		*Settings);
 
 	TestTrue(
-		TEXT("Single point with alpha 1 contributes full weight"),
+		TEXT("Single point is weighted by its distance falloff"),
 		Accum.TotalWeight == 1.f / (1.f + Settings->CandidateDistanceFalloff * geomDist / maxDist));
-
-	return true;
-}
-
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	Accumulate_SinglePoint_AlphaHalf,
-	"SpatialAudioRay.Async.Accumulate.SinglePoint.AlphaHalf",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
-)
-
-bool Accumulate_SinglePoint_AlphaHalf::RunTest(const FString& Parameters) {
-	constexpr float geomDist = 100.0f;
-	constexpr float maxDist = 100.0f;
-
-	FCachedEdgePoint Point;
-	Point.EvictionAlpha = 0.5f;
-	Point.GeomDist = geomDist;
-
-	const TArray Array({Point});
-
-	const auto Settings = NewObject<USpatialAudioSettings>();
-	Settings->CandidateDistanceFalloff = 0.5f;
-
-	FAsyncCastManager::FCachedPointAccum Accum = FAsyncCastManager::AccumulateCachedPoints(
-		Array,
-		maxDist,
-		*Settings);
-
-	TestTrue(
-		TEXT("Single point with alpha 0.5 contributes half weight"),
-		Accum.TotalWeight == 0.5f * (1.f / (1.f + Settings->CandidateDistanceFalloff * geomDist / maxDist)));
 
 	return true;
 }

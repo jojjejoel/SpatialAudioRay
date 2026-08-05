@@ -55,20 +55,8 @@ void FEdgeCache::SubmitPolylineRecheckTraces(USpatialAudioComponent& Component, 
 	}
 }
 
-bool FEdgeCache::TickEvictionFade(FCachedEdgePoint& Edge, float DeltaTime, float EvictFadeTime) {
-	if (!Edge.bEvicting) {
-		return false;
-	}
-	if (EvictFadeTime <= 0.f) {
-		return true;
-	}
-	Edge.EvictionAlpha -= DeltaTime / EvictFadeTime;
-	return Edge.EvictionAlpha <= 0.f;
-}
-
 void FEdgeCache::TickPhase0Readback(USpatialAudioComponent& Component, FCachedEdgePoint& Edge, UWorld* World,
-                                    const FVector& SourcePos, const FVector& ListenerPos,
-                                    const USpatialAudioSettings& Settings) {
+                                    const FVector& ListenerPos, const USpatialAudioSettings& Settings) {
 	if (!Edge.bPhase0Pending) {
 		return;
 	}
@@ -91,7 +79,7 @@ void FEdgeCache::TickPhase0Readback(USpatialAudioComponent& Component, FCachedEd
 			SubmitPhase0OffsetFan(Component, Edge, World, ListenerPos, Settings.DirectLoSSampleRadius);
 		}
 		else {
-			RescueOrEvict(Component, Edge, World, SourcePos, ListenerPos);
+			RescueOrEvict(Component, Edge, World, ListenerPos);
 		}
 		return;
 	}
@@ -100,7 +88,6 @@ void FEdgeCache::TickPhase0Readback(USpatialAudioComponent& Component, FCachedEd
 		Edge.LastLoSListenerPos = ListenerPos;
 		Edge.bHasLastLoSListenerPos = true;
 	}
-	RestoreFromListenerSideEviction(Edge, SourcePos, ListenerPos);
 }
 
 void FEdgeCache::DrawProbeResult(const USpatialAudioComponent& Component, const UWorld* World,
@@ -239,7 +226,7 @@ void FEdgeCache::SubmitPhase0OffsetFan(const USpatialAudioComponent& Component, 
 }
 
 void FEdgeCache::TickPhase0OffsetReadback(USpatialAudioComponent& Component, FCachedEdgePoint& Edge, UWorld* World,
-                                          const FVector& SourcePos, const FVector& ListenerPos) {
+                                          const FVector& ListenerPos) {
 	if (!Edge.bPhase0OffsetPending) {
 		return;
 	}
@@ -260,7 +247,7 @@ void FEdgeCache::TickPhase0OffsetReadback(USpatialAudioComponent& Component, FCa
 	}
 
 	if (ClearIdx == INDEX_NONE) {
-		RescueOrEvict(Component, Edge, World, SourcePos, ListenerPos);
+		RescueOrEvict(Component, Edge, World, ListenerPos);
 		return;
 	}
 
@@ -268,7 +255,6 @@ void FEdgeCache::TickPhase0OffsetReadback(USpatialAudioComponent& Component, FCa
 		Edge.LastLoSListenerPos = Edge.Phase0OffsetPts[ClearIdx];
 		Edge.bHasLastLoSListenerPos = true;
 	}
-	RestoreFromListenerSideEviction(Edge, SourcePos, ListenerPos);
 }
 
 bool FEdgeCache::ReadOffsetFanTraces(FCachedEdgePoint& Edge, UWorld* World, bool (&OutFanClear)[4]) {
@@ -298,21 +284,10 @@ void FEdgeCache::DrawOffsetFan(const USpatialAudioComponent& Component, const FC
 	}
 }
 
-void FEdgeCache::RestoreFromListenerSideEviction(FCachedEdgePoint& Edge, const FVector& SourcePos,
-                                                 const FVector& ListenerPos) {
-	if (!Edge.bEvicting || Edge.bSourceSideEviction) {
-		return;
-	}
-	Edge.bEvicting = false;
-	Edge.EvictionAlpha = 1.f;
-	Edge.CapturedSourcePos = SourcePos;
-	Edge.CapturedListenerPos = ListenerPos;
-}
-
 void FEdgeCache::RescueOrEvict(USpatialAudioComponent& Component, FCachedEdgePoint& Edge, UWorld* World,
-                               const FVector& SourcePos, const FVector& ListenerPos) {
+                               const FVector& ListenerPos) {
 	if (!SubmitRelayRescueTraces(Component, Edge, World, ListenerPos)) {
-		StartEviction(Component, Edge, SourcePos);
+		StartEviction(Component, Edge);
 	}
 }
 
@@ -335,7 +310,7 @@ bool FEdgeCache::SubmitRelayRescueTraces(const USpatialAudioComponent& Component
 }
 
 void FEdgeCache::TickRelayRescueReadback(USpatialAudioComponent& Component, FCachedEdgePoint& Edge, UWorld* World,
-                                         const FVector& SourcePos, const FVector& ListenerPos) {
+                                         const FVector& ListenerPos) {
 	if (!Edge.bRescuePending) {
 		return;
 	}
@@ -348,13 +323,13 @@ void FEdgeCache::TickRelayRescueReadback(USpatialAudioComponent& Component, FCac
 	}
 	Edge.bRescuePending = false;
 
-	if (Edge.bEvicting && Edge.bSourceSideEviction) {
+	if (Edge.bEvicting) {
 		return;
 	}
 
 	for (const FTraceDatum& Leg : Data) {
 		if (!IsTraceClear(Leg)) {
-			StartEviction(Component, Edge, SourcePos);
+			StartEviction(Component, Edge);
 			return;
 		}
 	}
@@ -362,13 +337,11 @@ void FEdgeCache::TickRelayRescueReadback(USpatialAudioComponent& Component, FCac
 	Edge.bRelayed = true;
 	Edge.RelayPoint = Edge.LastLoSListenerPos;
 	Edge.RelayDist = FVector::Dist(Edge.EdgePoint, Edge.RelayPoint);
-	Edge.bEvicting = false;
-	Edge.EvictionAlpha = 1.f;
 	Edge.CapturedListenerPos = ListenerPos;
 }
 
 void FEdgeCache::TickRelayMaintenance(USpatialAudioComponent& Component, FCachedEdgePoint& Edge, UWorld* World,
-                                      const FVector& SourcePos, const FVector& ListenerPos, bool bIntervalFired) {
+                                      const FVector& ListenerPos, bool bIntervalFired) {
 	if (!Edge.bRelayed) {
 		return;
 	}
@@ -396,7 +369,7 @@ void FEdgeCache::TickRelayMaintenance(USpatialAudioComponent& Component, FCached
 
 	if (!IsTraceClear(Data[2]) || !IsTraceClear(Data[3])) {
 		Edge.ClearRelay();
-		StartEviction(Component, Edge, SourcePos);
+		StartEviction(Component, Edge);
 		return;
 	}
 
@@ -447,20 +420,15 @@ void FEdgeCache::ConvertRelayToEdge(const USpatialAudioComponent& Component, FCa
 	Edge.ClearRelay();
 }
 
-void FEdgeCache::StartEviction(USpatialAudioComponent& Component, FCachedEdgePoint& Edge, const FVector& SourcePos,
-                               const bool bSourceSide) {
-	if (Edge.bEvicting) {
-		return;
-	}
+void FEdgeCache::StartEviction(USpatialAudioComponent& Component, FCachedEdgePoint& Edge) {
 	Edge.bEvicting = true;
-	Edge.bSourceSideEviction = bSourceSide;
 	Component.SweepScheduling.bMovementRequested = true;
 }
 
 void FEdgeCache::TickPhase0Submission(const USpatialAudioComponent& Component, FCachedEdgePoint& Edge, UWorld* World,
                                       const FVector& ListenerPos, bool bIntervalFired) {
 	if (!Edge.bPhase0Pending && !Edge.bPhase0OffsetPending && !Edge.bRescuePending && bIntervalFired
-		&& !(Edge.bEvicting && Edge.bSourceSideEviction)) {
+		&& !Edge.bEvicting) {
 		Edge.AsyncPhase0Handle = Component.SubmitAsyncTrace(World, ListenerPos, Edge.EffectivePoint());
 		Edge.bPhase0Pending = true;
 	}
@@ -491,17 +459,17 @@ bool FEdgeCache::AdvancePhase0Timer(USpatialAudioComponent& Component, const flo
 }
 
 bool FEdgeCache::TickSingleEdge(USpatialAudioComponent& Component, FCachedEdgePoint& Edge, UWorld* World,
-                                const FVector& SourcePos, const FVector& ListenerPos, const float DeltaTime,
-                                const bool bIntervalFired, const USpatialAudioSettings& Settings) {
-	if (TickEvictionFade(Edge, DeltaTime, Settings.CachedEdgeEvictionFadeTime)) {
+                                const FVector& ListenerPos, const bool bIntervalFired,
+                                const USpatialAudioSettings& Settings) {
+	if (Edge.bEvicting) {
 		return true;
 	}
 
-	TickRelayRescueReadback(Component, Edge, World, SourcePos, ListenerPos);
-	TickPhase0Readback(Component, Edge, World, SourcePos, ListenerPos, Settings);
-	TickPhase0OffsetReadback(Component, Edge, World, SourcePos, ListenerPos);
+	TickRelayRescueReadback(Component, Edge, World, ListenerPos);
+	TickPhase0Readback(Component, Edge, World, ListenerPos, Settings);
+	TickPhase0OffsetReadback(Component, Edge, World, ListenerPos);
 
-	TickRelayMaintenance(Component, Edge, World, SourcePos, ListenerPos, bIntervalFired);
+	TickRelayMaintenance(Component, Edge, World, ListenerPos, bIntervalFired);
 	TickPhase0Submission(Component, Edge, World, ListenerPos, bIntervalFired);
 	return false;
 }
@@ -529,20 +497,17 @@ void FEdgeCache::TickCachedEdgeEviction(USpatialAudioComponent& Component, const
 
 	const int32 SubmitIdx = AdvancePhase0Timer(Component, DeltaTime, Settings)
 		                        ? SelectRoundRobinEdge(Component.CachedEdgePoints, Component.Phase0Cursor,
-		                                               [](const FCachedEdgePoint& Edge)
-		                                               {
-			                                               return Edge.bEvicting && Edge.bSourceSideEviction;
-		                                               })
+		                                               [](const FCachedEdgePoint& Edge) { return Edge.bEvicting; })
 		                        : INDEX_NONE;
 
 	for (int32 i = Component.CachedEdgePoints.Num() - 1; i >= 0; --i) {
-		if (TickSingleEdge(Component, Component.CachedEdgePoints[i], World, SourcePos, ListenerPos,
-		                   DeltaTime, i == SubmitIdx, Settings)) {
+		if (TickSingleEdge(Component, Component.CachedEdgePoints[i], World, ListenerPos,
+		                   i == SubmitIdx, Settings)) {
 			Component.CachedEdgePoints.RemoveAt(i);
 		}
 	}
 
-	TickShortestPathReadback(Component, World, SourcePos, Settings);
+	TickShortestPathReadback(Component, World, Settings);
 	TickShortestPathRecheck(Component, World, SourcePos, DeltaTime, Settings);
 	TickInnerAnchorPromotion(Component, World, ListenerPos, DeltaTime, Settings);
 
@@ -628,7 +593,7 @@ void FEdgeCache::TickShortestPathRecheck(USpatialAudioComponent& Component, UWor
 		Path[0] = SourcePos;
 	}
 	else if (FVector::DistSquared(SourcePos, Path[0]) > 1.f) {
-		StartEviction(Component, Edge, SourcePos, /*bSourceSide=*/true);
+		StartEviction(Component, Edge);
 		return;
 	}
 
@@ -687,7 +652,7 @@ void FEdgeCache::ApplyRecheckReanchor(FCachedEdgePoint& Edge, const FVector& Liv
 }
 
 void FEdgeCache::TickShortestPathReadback(USpatialAudioComponent& Component, UWorld* World,
-                                          const FVector& SourcePos, const USpatialAudioSettings& Settings) {
+                                          const USpatialAudioSettings& Settings) {
 	if (!Component.PathRecheck.bPending) {
 		return;
 	}
@@ -718,7 +683,7 @@ void FEdgeCache::TickShortestPathReadback(USpatialAudioComponent& Component, UWo
 		              Component.PathRecheck.SegEnds[BlockedSeg], FColor::Red, false,
 		              Settings.DebugLineDuration * 4.f, 0, 3.f);
 	}
-	StartEviction(Component, *Edge, SourcePos, /*bSourceSide=*/true);
+	StartEviction(Component, *Edge);
 }
 
 void FEdgeCache::TickInnerAnchorPromotion(USpatialAudioComponent& Component, const UWorld* World,

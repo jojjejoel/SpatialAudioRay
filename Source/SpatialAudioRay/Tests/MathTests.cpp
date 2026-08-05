@@ -550,12 +550,11 @@ bool FVirtualCrossfadeSlew_DoesNotOvershoot::RunTest(const FString& Parameters) 
 
 namespace {
 	FCachedEdgePoint MakeEdgePoint(const FVector& Pos, float PathDist = 500.f,
-	                               float GeomDist = 400.f, float EvictionAlpha = 1.f) {
+	                               float GeomDist = 400.f) {
 		FCachedEdgePoint Ep;
 		Ep.EdgePoint = Pos;
 		Ep.PathDist = PathDist;
 		Ep.GeomDist = GeomDist;
-		Ep.EvictionAlpha = EvictionAlpha;
 		return Ep;
 	}
 }
@@ -761,33 +760,6 @@ bool FClusterEdgePoints_ListenerFalloff_RanksWithoutTouchingGain::RunTest(const 
 	}
 	return true;
 }
-
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FClusterEdgePoints_EvictionAlpha_ScalesWeight,
-	"SpatialAudioRay.Math.ClusterEdgePoints.EvictionAlpha_ScalesWeight",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
-)
-
-bool FClusterEdgePoints_EvictionAlpha_ScalesWeight::RunTest(const FString& Parameters) {
-	TArray<FCachedEdgePoint> Points;
-	Points.Add(MakeEdgePoint(FVector(0, 0, 0), 500.f, 400.f, /*EvictionAlpha=*/0.25f));
-	Points.Add(MakeEdgePoint(FVector(2000, 0, 0), 500.f, 400.f, /*EvictionAlpha=*/1.f));
-	Points.Add(MakeEdgePoint(FVector(4000, 0, 0), 500.f, 400.f, /*EvictionAlpha=*/0.f));
-
-	TArray<FEdgeCluster> Clusters;
-	Math::ClusterEdgePoints(Points, 250.f, 0.f, FVector::ZeroVector, 0.f, 5000.f, 4, Clusters);
-
-	TestEqual(TEXT("Zero-alpha point creates no cluster"), Clusters.Num(), 2);
-	if (Clusters.Num() == 2) {
-		TestTrue(TEXT("Full-alpha cluster outweighs the fading one"),
-		         Clusters[0].Centroid.Equals(FVector(2000, 0, 0), 0.1f));
-		TestTrue(TEXT("Weights reflect the 4x alpha ratio"),
-		         FMath::IsNearlyEqual(Clusters[0].TotalWeight / Clusters[1].TotalWeight, 4.f, 0.01f));
-	}
-	return true;
-}
-
-
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FEffectiveAcousticDistance_BlendsByOcclusion,

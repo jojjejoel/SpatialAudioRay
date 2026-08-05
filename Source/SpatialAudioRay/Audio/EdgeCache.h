@@ -23,39 +23,34 @@ private:
 	                                        float EndInset);
 	static void ApplyRecheckReanchor(FCachedEdgePoint& Edge, const FVector& LiveSourcePos);
 	static void TickShortestPathReadback(USpatialAudioComponent& Component, UWorld* World,
-	                                     const FVector& SourcePos, const USpatialAudioSettings& Settings);
+	                                     const USpatialAudioSettings& Settings);
 
 	static void ClearStalePendingChecks(USpatialAudioComponent& Component);
 	static bool AdvancePhase0Timer(USpatialAudioComponent& Component, float DeltaTime,
 	                               const USpatialAudioSettings& Settings);
 	static bool TickSingleEdge(USpatialAudioComponent& Component, FCachedEdgePoint& Edge, UWorld* World,
-	                           const FVector& SourcePos, const FVector& ListenerPos, float DeltaTime,
-	                           bool bIntervalFired, const USpatialAudioSettings& Settings);
+	                           const FVector& ListenerPos, bool bIntervalFired,
+	                           const USpatialAudioSettings& Settings);
 
-	static bool TickEvictionFade(FCachedEdgePoint& Edge, float DeltaTime, float EvictFadeTime);
 	static void TickPhase0Readback(USpatialAudioComponent& Component, FCachedEdgePoint& Edge, UWorld* World,
-	                               const FVector& SourcePos, const FVector& ListenerPos,
-	                               const USpatialAudioSettings& Settings);
+	                               const FVector& ListenerPos, const USpatialAudioSettings& Settings);
 	static void SubmitPhase0OffsetFan(const USpatialAudioComponent& Component, FCachedEdgePoint& Edge, UWorld* World,
 	                                  const FVector& ListenerPos, float OffsetRadius);
 	static void TickPhase0OffsetReadback(USpatialAudioComponent& Component, FCachedEdgePoint& Edge, UWorld* World,
-	                                     const FVector& SourcePos, const FVector& ListenerPos);
+	                                     const FVector& ListenerPos);
 	static bool ReadOffsetFanTraces(FCachedEdgePoint& Edge, UWorld* World, bool (&OutFanClear)[4]);
 	static void DrawOffsetFan(const USpatialAudioComponent& Component, const FCachedEdgePoint& Edge,
 	                          const UWorld* World,
 	                          const bool (&FanClear)[4]);
-	static void RestoreFromListenerSideEviction(FCachedEdgePoint& Edge, const FVector& SourcePos,
-	                                            const FVector& ListenerPos);
 	static void RescueOrEvict(USpatialAudioComponent& Component, FCachedEdgePoint& Edge, UWorld* World,
-	                          const FVector& SourcePos, const FVector& ListenerPos);
+	                          const FVector& ListenerPos);
 	static void TickPhase0Submission(const USpatialAudioComponent& Component, FCachedEdgePoint& Edge, UWorld* World,
 	                                 const FVector& ListenerPos, bool bIntervalFired);
-	static void StartEviction(USpatialAudioComponent& Component, FCachedEdgePoint& Edge, const FVector& SourcePos,
-	                          bool bSourceSide = false);
+	static void StartEviction(USpatialAudioComponent& Component, FCachedEdgePoint& Edge);
 	static bool SubmitRelayRescueTraces(const USpatialAudioComponent& Component, FCachedEdgePoint& Edge,
 	                                    UWorld* World, const FVector& ListenerPos);
 	static void TickRelayRescueReadback(USpatialAudioComponent& Component, FCachedEdgePoint& Edge, UWorld* World,
-	                                    const FVector& SourcePos, const FVector& ListenerPos);
+	                                    const FVector& ListenerPos);
 	static bool ProbeListenerLoSPoint(const USpatialAudioComponent& Component, const UWorld* World,
 	                                  const FVector& ListenerPos, const FVector& Point);
 	static void DrawProbeResult(const USpatialAudioComponent& Component, const UWorld* World,
@@ -75,7 +70,7 @@ private:
 	                                       const UWorld* World,
 	                                       const FVector& ListenerPos, const FVector& InnerAnchor);
 	static void TickRelayMaintenance(USpatialAudioComponent& Component, FCachedEdgePoint& Edge, UWorld* World,
-	                                 const FVector& SourcePos, const FVector& ListenerPos, bool bIntervalFired);
+	                                 const FVector& ListenerPos, bool bIntervalFired);
 	static bool ReadRelayCheckTraces(FCachedEdgePoint& Edge, UWorld* World, FTraceDatum (&OutData)[4]);
 	static void SubmitRelayCheckTraces(const USpatialAudioComponent& Component, FCachedEdgePoint& Edge,
 	                                   UWorld* World, const FVector& ListenerPos);

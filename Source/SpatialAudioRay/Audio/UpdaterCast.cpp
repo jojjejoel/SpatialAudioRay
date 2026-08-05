@@ -201,7 +201,7 @@ FUpdater::FEdgeWeightAccum FUpdater::AccumulateCachedEdgeWeights(USpatialAudioCo
 	for (int32 i = 0; i < Component.CachedEdgePoints.Num(); ++i) {
 		const FCachedEdgePoint& Ep = Component.CachedEdgePoints[i];
 
-		const float SrcW = Ep.EvictionAlpha / (1.f + Settings.CandidateDistanceFalloff
+		const float SrcW = 1.f / (1.f + Settings.CandidateDistanceFalloff
 			* Ep.GeomDist / FMath::Max(Component.MaxRayDistance, 1.f));
 		const float PosW = SrcW / (1.f + Settings.ListenerDistanceFalloff
 			* FVector::Dist(ListenerPos, Ep.EffectivePoint()) / FMath::Max(Component.MaxRayDistance, 1.f));

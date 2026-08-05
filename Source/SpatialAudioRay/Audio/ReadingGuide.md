@@ -62,8 +62,8 @@ every point where it changed direction. The waypoints matter at Stop 5.
 
 `FCachedEdgePoint` is a confirmed diffraction edge that survives across sweeps. Note `ShortestPath` and
 `ShortestPathSegmentVerified`, the polyline its path distance was measured along and which of its segments were actually
-traced clear, and `EffectivePoint()`, where the audible emitter sits. The names `bRelayed` and `bSourceSideEviction`
-will make sense after Stop 6.
+traced clear, and `EffectivePoint()`, where the audible emitter sits. The names `bRelayed` and `bEvicting` will make
+sense after Stop 6.
 
 `FVirtualVoice` and `FVirtualSlot` are worth separating in your head. A voice is the logical "sound coming from cluster
 X". A slot is a pooled `UAudioComponent` that renders it. Voices hand slots off to each other so a position can jump
@@ -193,9 +193,9 @@ continuously, so a cached edge has to be validated from the listener's side the 
 it stops being real.
 
 Note the first line: the whole thing returns early while `bHasDirectLoS`, since a visible source has no diffraction
-paths worth maintaining. Everything below runs only while occluded. `TickSingleEdge` then runs six phases in order:
-`TickEvictionFade`, `TickRelayRescueReadback`, `TickPhase0Readback`, `TickPhase0OffsetReadback`, `TickRelayMaintenance`,
-`TickPhase0Submission`.
+paths worth maintaining. Everything below runs only while occluded. `TickSingleEdge` drops any entry already condemned,
+then runs five phases in order: `TickRelayRescueReadback`, `TickPhase0Readback`, `TickPhase0OffsetReadback`,
+`TickRelayMaintenance`, `TickPhase0Submission`.
 
 Phase 0 is one async listener-to-edge trace, submitted for a single entry per slice rather than the whole cache. It
 shares `CachedEdgeCheckInterval` with the polyline recheck and the promotion step, and `EdgeCheckSlice` divides that by
@@ -211,10 +211,12 @@ A blocked Phase 0 trace does not evict. It escalates:
 3. A relay rescue, routing the edge through the last listener position that could still see it, frozen at rescue time so
    gain stays listener-independent.
 
-Only then does eviction start, and it is a fade through `EvictionAlpha` rather than a cut, since an emitter vanishing
-instantly is audible. The rescue submits its four traces and rules the following tick, leaving the edge playing
-untouched meanwhile; pre-fading would break outright at fade time 0, where the entry is removed before any readback
-could land.
+Only then is the entry dropped, on the next tick, and the rescue submits its four traces and rules the following tick,
+leaving the edge playing untouched meanwhile. The drop is a cut rather than a fade, which sounds wrong and is not: the
+emitter is a pooled slot, not the entry. Losing the entry either moves its cluster centroid less than
+`VirtualVoiceMaxMoveDistance`, in which case the slot follows, or further, in which case the slot fades out where it
+stands while another fades in at the new corner. The gain change is smoothed either way, so an eviction fade would only
+have duplicated a crossfade that already exists a layer up.
 
 Two design points worth carrying away. Rescue depends only on the edge's own geometry, never on whether sibling edges
 are healthy. That matters because edges around one corner tend to go dark on the same tick, and any rule referring to
@@ -229,9 +231,9 @@ evict every multi-corner path on sight. The first segment is special: retraced f
 clear result re-anchors the entry and re-measures `PathDist`. Listener movement never evicts anything, because Phase 0
 already owns listener-side validity.
 
-Whether an eviction can be undone depends on which side failed. Listener-side ones un-evict the moment Phase 0 sees the
-edge again. Source-side ones, flagged `bSourceSideEviction`, need a fresh sweep, because the listener leg is usually
-still clear and a restore would outpace the fade forever.
+An eviction is final. Every route into one has already exhausted promotion, the fan and the rescue, so an entry that
+reaches it has nothing left to say; `StartEviction` requests a sweep on the way out, and re-finding the edge is that
+sweep's job rather than a resurrection path in the cache.
 
 ## Stop 7. The crawl mechanic, and the cheap path
 
@@ -295,7 +297,7 @@ and 0 on makes Stops 5 through 7 concrete faster than reading them again. 6 and 
 question above: each edge draws a line to the emitter it feeds, in that emitter's colour, and an edge with no line is
 one no audible voice speaks for.
 
-Tests live in `Source/SpatialAudioRay/Tests/`, 94 of them under `SpatialAudioRay.Math.*`, `.Async.*`, `.Voice.*` and
+Tests live in `Source/SpatialAudioRay/Tests/`, 92 of them under `SpatialAudioRay.Math.*`, `.Async.*`, `.Voice.*` and
 `.EdgeCache.*` in Session Frontend. They read as a spec for the pure helpers, and `MathTests.cpp` is a good final read.
 
 ---

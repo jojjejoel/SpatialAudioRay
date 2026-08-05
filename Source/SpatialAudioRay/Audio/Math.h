@@ -166,7 +166,7 @@ namespace Math {
 		for (int32 PointIdx = 0; PointIdx < Points.Num(); ++PointIdx) {
 			const FCachedEdgePoint& Ep = Points[PointIdx];
 			const FVector EpPos = Ep.EffectivePoint();
-			const float SrcW = Ep.EvictionAlpha / (1.f + CandidateDistanceFalloff
+			const float SrcW = 1.f / (1.f + CandidateDistanceFalloff
 				* Ep.GeomDist / FMath::Max(MaxRayDistance, 1.f));
 			const float RankW = SrcW / (1.f + ListenerDistanceFalloff
 				* FVector::Dist(ListenerPos, EpPos) / FMath::Max(MaxRayDistance, 1.f));
