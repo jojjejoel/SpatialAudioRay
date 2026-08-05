@@ -255,6 +255,57 @@ namespace Math {
 		return FMath::Clamp(FMath::Max(FMath::RoundToInt(FullValue * Priority), Floor), 0, FullValue);
 	}
 
+	struct FSweepPacingState {
+		float CurrentPriority = 1.f;
+		float SweepMultiplier = 1.f;
+		float EdgeMultiplier = 1.f;
+		bool bStationary = false;
+		bool bCacheFillPending = false;
+		bool bStationaryIdleMode = false;
+	};
+
+	/** The three cases are exclusive rather than multiplied. A cache fill outstanding while stopped
+	 *  wins first, so an unfilled burst cannot idle-crawl. Idle wins next and REPLACES velocity
+	 *  scaling: they are opposite answers to the same question, and applying both lands back near
+	 *  the base interval. */
+	inline float ComputeSweepInterval(const FSweepPacingState& State, const USpatialAudioSettings& Settings) {
+		const float EffortScale = FMath::Max(Settings.MaxDistanceEffortScale, KINDA_SMALL_NUMBER);
+		const float BaseInterval = FMath::Lerp(
+			Settings.FullSweepInterval / EffortScale, Settings.FullSweepInterval, State.CurrentPriority);
+
+		if (State.bStationary && State.bCacheFillPending) {
+			return BaseInterval * Settings.MinSweepIntervalScale;
+		}
+		if (State.bStationaryIdleMode) {
+			return BaseInterval * Settings.StationaryIdleMultiplier;
+		}
+		return BaseInterval * FMath::Min(State.SweepMultiplier, State.EdgeMultiplier);
+	}
+
+	struct FSweepDispatchState {
+		bool bAsyncCastActive = false;
+		bool bFinalizePending = false;
+		bool bInRange = false;
+		bool bPreSweepBand = false;
+		bool bConfirmedLoSLoss = false;
+		bool bEarlySweepRequested = false;
+		float TimeSinceFullCast = 0.f;
+		float SweepInterval = 0.f;
+	};
+
+	/** The pre-sweep band is a second way in besides confirmed sight loss, and an early request is a
+	 *  second way past the timer. Both were added later, and both are easy to break by tightening
+	 *  the wrong clause. */
+	inline bool ShouldDispatchSweep(const FSweepDispatchState& State) {
+		if (State.bAsyncCastActive || State.bFinalizePending || !State.bInRange) {
+			return false;
+		}
+		if (!State.bPreSweepBand && !State.bConfirmedLoSLoss) {
+			return false;
+		}
+		return State.TimeSinceFullCast >= State.SweepInterval || State.bEarlySweepRequested;
+	}
+
 	inline bool HasAnyDirectLoS(const TArray<FSpatialRayState>& rays) {
 		for (const FSpatialRayState& Ray : rays) {
 			if (Ray.bLoSFound && Ray.LoSBounces == 0) {

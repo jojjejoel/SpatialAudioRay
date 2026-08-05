@@ -302,6 +302,161 @@ bool FHasAnyDirectLoS_IndirectOnly::RunTest(const FString& Parameters) {
 }
 
 
+namespace {
+	USpatialAudioSettings* MakePacingSettings() {
+		USpatialAudioSettings* Settings = NewObject<USpatialAudioSettings>();
+		Settings->FullSweepInterval = 1.f;
+		Settings->MaxDistanceEffortScale = 0.5f;
+		Settings->MinSweepIntervalScale = 0.25f;
+		Settings->StationaryIdleMultiplier = 10.f;
+		return Settings;
+	}
+
+	Math::FSweepPacingState MakeMovingState() {
+		Math::FSweepPacingState State;
+		State.CurrentPriority = 1.f;
+		State.SweepMultiplier = 0.25f;
+		State.EdgeMultiplier = 0.5f;
+		State.bStationary = false;
+		return State;
+	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSweepInterval_DistanceSetsTheBaseInterval,
+	"SpatialAudioRay.Math.SweepInterval.DistanceSetsTheBaseInterval",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FSweepInterval_DistanceSetsTheBaseInterval::RunTest(const FString& Parameters) {
+	const auto Settings = MakePacingSettings();
+	Math::FSweepPacingState State;
+
+	State.CurrentPriority = 1.f;
+	TestTrue(TEXT("Closest range sweeps at FullSweepInterval"),
+	         FMath::IsNearlyEqual(Math::ComputeSweepInterval(State, *Settings), 1.f, 0.0001f));
+
+	State.CurrentPriority = 0.f;
+	TestTrue(TEXT("Max range divides the interval by MaxDistanceEffortScale"),
+	         FMath::IsNearlyEqual(Math::ComputeSweepInterval(State, *Settings), 2.f, 0.0001f));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSweepInterval_IdleReplacesVelocityScalingRatherThanStacking,
+	"SpatialAudioRay.Math.SweepInterval.IdleReplacesVelocityScalingRatherThanStacking",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FSweepInterval_IdleReplacesVelocityScalingRatherThanStacking::RunTest(const FString& Parameters) {
+	const auto Settings = MakePacingSettings();
+
+	Math::FSweepPacingState Moving = MakeMovingState();
+	TestTrue(TEXT("Moving alone applies the smaller velocity multiplier"),
+	         FMath::IsNearlyEqual(Math::ComputeSweepInterval(Moving, *Settings), 0.25f, 0.0001f));
+
+	Math::FSweepPacingState MovingWhileIdleHeld = MakeMovingState();
+	MovingWhileIdleHeld.bStationaryIdleMode = true;
+	TestTrue(TEXT("Idle held while moving gives the idle interval, not the velocity-scaled one"),
+	         FMath::IsNearlyEqual(Math::ComputeSweepInterval(MovingWhileIdleHeld, *Settings), 10.f, 0.0001f));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSweepInterval_CacheFillOutranksIdle,
+	"SpatialAudioRay.Math.SweepInterval.CacheFillOutranksIdle",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FSweepInterval_CacheFillOutranksIdle::RunTest(const FString& Parameters) {
+	const auto Settings = MakePacingSettings();
+
+	Math::FSweepPacingState State;
+	State.bStationary = true;
+	State.bCacheFillPending = true;
+	State.bStationaryIdleMode = true;
+	TestTrue(TEXT("An outstanding cache fill wins over idle so the burst cannot idle-crawl"),
+	         FMath::IsNearlyEqual(Math::ComputeSweepInterval(State, *Settings), 0.25f, 0.0001f));
+
+	Math::FSweepPacingState MovingFill = MakeMovingState();
+	MovingFill.bCacheFillPending = true;
+	TestTrue(TEXT("A cache fill while moving does not apply, since the burst is for arrival"),
+	         FMath::IsNearlyEqual(Math::ComputeSweepInterval(MovingFill, *Settings), 0.25f, 0.0001f));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSweepDispatch_RequiresBandOrConfirmedLoss,
+	"SpatialAudioRay.Math.SweepDispatch.RequiresBandOrConfirmedLoss",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FSweepDispatch_RequiresBandOrConfirmedLoss::RunTest(const FString& Parameters) {
+	Math::FSweepDispatchState State;
+	State.bInRange = true;
+	State.TimeSinceFullCast = 10.f;
+	State.SweepInterval = 1.f;
+
+	TestFalse(TEXT("Clear sight outside the band never sweeps"), Math::ShouldDispatchSweep(State));
+
+	State.bConfirmedLoSLoss = true;
+	TestTrue(TEXT("Confirmed sight loss sweeps"), Math::ShouldDispatchSweep(State));
+
+	State.bConfirmedLoSLoss = false;
+	State.bPreSweepBand = true;
+	TestTrue(TEXT("The pre-sweep band sweeps without waiting for confirmed loss"),
+	         Math::ShouldDispatchSweep(State));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSweepDispatch_EarlyRequestBypassesTheTimer,
+	"SpatialAudioRay.Math.SweepDispatch.EarlyRequestBypassesTheTimer",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FSweepDispatch_EarlyRequestBypassesTheTimer::RunTest(const FString& Parameters) {
+	Math::FSweepDispatchState State;
+	State.bInRange = true;
+	State.bConfirmedLoSLoss = true;
+	State.TimeSinceFullCast = 0.f;
+	State.SweepInterval = 1.f;
+
+	TestFalse(TEXT("An unelapsed timer alone does not sweep"), Math::ShouldDispatchSweep(State));
+
+	State.bEarlySweepRequested = true;
+	TestTrue(TEXT("An early request sweeps before the timer elapses"), Math::ShouldDispatchSweep(State));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSweepDispatch_BlockedWhileBusyOrOutOfRange,
+	"SpatialAudioRay.Math.SweepDispatch.BlockedWhileBusyOrOutOfRange",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FSweepDispatch_BlockedWhileBusyOrOutOfRange::RunTest(const FString& Parameters) {
+	Math::FSweepDispatchState Ready;
+	Ready.bInRange = true;
+	Ready.bConfirmedLoSLoss = true;
+	Ready.bEarlySweepRequested = true;
+	TestTrue(TEXT("The baseline state dispatches"), Math::ShouldDispatchSweep(Ready));
+
+	Math::FSweepDispatchState Casting = Ready;
+	Casting.bAsyncCastActive = true;
+	TestFalse(TEXT("A sweep in flight blocks another"), Math::ShouldDispatchSweep(Casting));
+
+	Math::FSweepDispatchState Finalizing = Ready;
+	Finalizing.bFinalizePending = true;
+	TestFalse(TEXT("A pending finalize blocks a new sweep"), Math::ShouldDispatchSweep(Finalizing));
+
+	Math::FSweepDispatchState OutOfRange = Ready;
+	OutOfRange.bInRange = false;
+	TestFalse(TEXT("Out of audible range never sweeps, even on an early request"),
+	          Math::ShouldDispatchSweep(OutOfRange));
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FScaleCountByDistancePriority_FollowsPriorityDownToTheFloor,
 	"SpatialAudioRay.Math.ScaleCountByDistancePriority.FollowsPriorityDownToTheFloor",

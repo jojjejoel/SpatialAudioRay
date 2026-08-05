@@ -361,9 +361,17 @@ void USpatialAudioComponent::TickNormalSweepDispatch(const float DeltaTime, cons
 	const bool bPreSweep = IsPreSweepActive();
 	RequestSweepOnPreSweepBandEntry(bPreSweep);
 
-	if (!bAsyncCastActive && !Finalize.bPending && bInRange &&
-		(bPreSweep || HasConfirmedLoSLoss()) &&
-		(TimeSinceFullCast >= SweepInterval || SweepScheduling.bEarlySweepRequested)) {
+	Math::FSweepDispatchState Dispatch;
+	Dispatch.bAsyncCastActive = bAsyncCastActive;
+	Dispatch.bFinalizePending = Finalize.bPending;
+	Dispatch.bInRange = bInRange;
+	Dispatch.bPreSweepBand = bPreSweep;
+	Dispatch.bConfirmedLoSLoss = HasConfirmedLoSLoss();
+	Dispatch.bEarlySweepRequested = SweepScheduling.bEarlySweepRequested;
+	Dispatch.TimeSinceFullCast = TimeSinceFullCast;
+	Dispatch.SweepInterval = SweepInterval;
+
+	if (Math::ShouldDispatchSweep(Dispatch)) {
 		FUpdater::PerformUpdateRayCast(*this, GetSettings());
 		if (!bHasDirectLoS || bPreSweep) {
 			const bool bWasEarlySweep = SweepScheduling.bEarlySweepRequested;
@@ -507,20 +515,14 @@ void USpatialAudioComponent::TickComponent(const float DeltaTime, const ELevelTi
 
 
 float USpatialAudioComponent::ComputeEffectiveSweepInterval() const {
-	const float EffortScale = FMath::Max(GetSettings().MaxDistanceEffortScale, KINDA_SMALL_NUMBER);
-	const float BaseInterval = FMath::Lerp(
-		GetSettings().FullSweepInterval / EffortScale, GetSettings().FullSweepInterval, CurrentPriority);
-
-	if (VelocityScaling.IsStationary() && IsCacheFillPending()) {
-		return BaseInterval * GetSettings().MinSweepIntervalScale;
-	}
-	/** Idle pacing replaces velocity scaling rather than stacking with it: they are opposite answers
-	 *  to the same question, and multiplying both lands back near the base interval. It holds while
-	 *  moving too, until the anchor breaks, so a small drift cannot cost a full survey. */
-	if (SweepScheduling.bStationaryIdleMode) {
-		return BaseInterval * GetSettings().StationaryIdleMultiplier;
-	}
-	return BaseInterval * FMath::Min(VelocityScaling.SweepMultiplier, VelocityScaling.EdgeMultiplier);
+	Math::FSweepPacingState State;
+	State.CurrentPriority = CurrentPriority;
+	State.SweepMultiplier = VelocityScaling.SweepMultiplier;
+	State.EdgeMultiplier = VelocityScaling.EdgeMultiplier;
+	State.bStationary = VelocityScaling.IsStationary();
+	State.bCacheFillPending = IsCacheFillPending();
+	State.bStationaryIdleMode = SweepScheduling.bStationaryIdleMode;
+	return Math::ComputeSweepInterval(State, GetSettings());
 }
 
 FVector USpatialAudioComponent::ComputeSteeringLead(const FVector& SmoothedVelocity,
