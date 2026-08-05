@@ -360,17 +360,19 @@ void USpatialAudioComponent::TickNormalSweepDispatch(const float DeltaTime, cons
 	CurrentTraceBucket = ETraceBucket::Sweep;
 
 	const bool bPreSweep = IsPreSweepActive();
+	RequestSweepOnPreSweepBandEntry(bPreSweep);
+
 	if (!bAsyncCastActive && !Finalize.bPending && bInRange &&
 		(bPreSweep || HasConfirmedLoSLoss()) &&
-		(TimeSinceFullCast >= SweepInterval || SweepScheduling.bMovementRequested)) {
+		(TimeSinceFullCast >= SweepInterval || SweepScheduling.bEarlySweepRequested)) {
 		FUpdater::PerformUpdateRayCast(*this, GetSettings());
 		if (!bHasDirectLoS || bPreSweep) {
-			const bool bMovementTriggered = SweepScheduling.bMovementRequested;
+			const bool bWasEarlySweep = SweepScheduling.bEarlySweepRequested;
 			TimeSinceFullCast = 0.f;
-			SweepScheduling.bMovementRequested = false;
+			SweepScheduling.bEarlySweepRequested = false;
 			SweepScheduling.bStationaryIdleMode = false;
-			if (bMovementTriggered) {
-				SweepScheduling.CacheFillSweepsRemaining = GetSettings().MovementCacheFillMaxSweeps;
+			if (bWasEarlySweep) {
+				SweepScheduling.CacheFillSweepsRemaining = GetSettings().CacheFillMaxSweeps;
 				for (FCachedEdgePoint& EP : CachedEdgePoints) {
 					EP.bNewSinceFillArm = false;
 				}
@@ -488,13 +490,11 @@ void USpatialAudioComponent::TickComponent(const float DeltaTime, const ELevelTi
 
 	TimeSinceFullCast = bHasDirectLoS && !IsPreSweepActive() ? 0.f : TimeSinceFullCast + DeltaTime;
 
-	TickMovementSweepTrigger(DeltaTime, bInRange, TickPawn);
-
 	const bool bPrevHadDirectLoS = bHasDirectLoS;
 	TickNormalSweepDispatch(DeltaTime, bInRange, EffFullSweepInterval);
 
 	if (bPrevHadDirectLoS && !bHasDirectLoS) {
-		SweepScheduling.bMovementRequested = true;
+		SweepScheduling.bEarlySweepRequested = true;
 	}
 
 	TickDirectLoSConfirmation(DeltaTime);
@@ -550,31 +550,15 @@ bool USpatialAudioComponent::IsCacheFillPending() const {
 	return SweepScheduling.CacheFillSweepsRemaining > 0 && !HasNewEdgeSinceFillArm();
 }
 
-void USpatialAudioComponent::TickMovementSweepTrigger(const float DeltaTime, const bool bInRange, const APawn* Pawn) {
-	SweepScheduling.MovementCooldownTimer += DeltaTime;
-	if (!bInRange || bHasDirectLoS || !Pawn || !GetOwner()) {
-		return;
+/** The band's head start is the occlusion between PreSweepOcclusionThreshold and the crossfade opening.
+ *  TimeSinceFullCast un-pins from zero on entry, so without this the first band sweep costs a whole
+ *  interval of that. */
+void USpatialAudioComponent::RequestSweepOnPreSweepBandEntry(const bool bPreSweepActive) {
+	if (bPreSweepActive && !SweepScheduling.bWasPreSweepActive) {
+		SweepScheduling.bEarlySweepRequested = true;
 	}
-
-	const FVector LisPos = Pawn->GetActorLocation();
-	const float TriggerDist = GetSettings().MovementSweepTriggerDist;
-	if (TriggerDist <= 0.f) {
-		return;
-	}
-
-	if (!SweepScheduling.bTriggerPosSet) {
-		SweepScheduling.bTriggerPosSet = true;
-		SweepScheduling.LastTriggerListenerPos = LisPos;
-	}
-	else if (SweepScheduling.MovementCooldownTimer >= GetSettings().MovementSweepCooldown *
-		CurrentVelocityIntervalMultiplier &&
-		FVector::DistSquared(LisPos, SweepScheduling.LastTriggerListenerPos) > FMath::Square(TriggerDist)) {
-		SweepScheduling.bMovementRequested = true;
-		SweepScheduling.LastTriggerListenerPos = LisPos;
-		SweepScheduling.MovementCooldownTimer = 0.f;
-	}
+	SweepScheduling.bWasPreSweepActive = bPreSweepActive;
 }
-
 
 void USpatialAudioComponent::GetEffectiveRayCounts(int32& OutFull, float& OutPriority) const {
 	OutPriority = 1.f;
@@ -638,7 +622,6 @@ void USpatialAudioComponent::UpdateVelocityScaling(const float DeltaTime, const 
 		                                       ? FMath::Clamp(VelocityScaling.SmoothedListenerSpeed / MaxSpeed, 0.f,
 		                                                      1.f)
 		                                       : 0.f;
-	CurrentVelocityIntervalMultiplier = FMath::Lerp(1.f, MinScale, VelocityFraction);
 	VelocityScaling.SweepMultiplier = FMath::Lerp(1.f, MinScale, SourceVelocityFraction);
 	VelocityScaling.EdgeMultiplier = FMath::Lerp(1.f, MinScale, ListenerVelocityFraction);
 	VelocityScaling.OffsetLoSMultiplier = FMath::Lerp(

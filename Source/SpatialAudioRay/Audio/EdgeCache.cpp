@@ -422,7 +422,7 @@ void FEdgeCache::ConvertRelayToEdge(const USpatialAudioComponent& Component, FCa
 
 void FEdgeCache::StartEviction(USpatialAudioComponent& Component, FCachedEdgePoint& Edge) {
 	Edge.bEvicting = true;
-	Component.SweepScheduling.bMovementRequested = true;
+	Component.SweepScheduling.bEarlySweepRequested = true;
 }
 
 void FEdgeCache::TickPhase0Submission(const USpatialAudioComponent& Component, FCachedEdgePoint& Edge, UWorld* World,

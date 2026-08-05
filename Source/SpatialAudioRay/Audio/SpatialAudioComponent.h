@@ -236,10 +236,6 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Spatial Audio|Debug")
 	float CurrentPriority = 1.f;
 
-	/** Interval multiplier from velocity scaling [MinSweepIntervalScale, 1.0]. 1.0 = stationary. */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Spatial Audio|Debug")
-	float CurrentVelocityIntervalMultiplier = 1.f;
-
 	/** Slewed virtual crossfade gate [0-1], chasing ComputeVirtualCrossfadeTarget. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Spatial Audio|Virtual Source")
 	float CurrentVirtualCrossfade = 0.f;
@@ -257,7 +253,7 @@ private:
 	bool HasNewEdgeSinceFillArm() const;
 	bool IsCacheFillPending() const;
 	FVector ComputeSteeringLead(const FVector& SmoothedVelocity, const USpatialAudioSettings& Settings) const;
-	void TickMovementSweepTrigger(float DeltaTime, bool bInRange, const APawn* Pawn);
+	void RequestSweepOnPreSweepBandEntry(bool bPreSweepActive);
 
 	static float TimeToBlendSpeed(float Seconds);
 	bool HasConfirmedLoSLoss() const;
@@ -475,10 +471,8 @@ private:
 		bool bStationaryIdleMode = false;
 		FVector StationaryIdleSourcePos = FVector::ZeroVector;
 		FVector StationaryIdleListenerPos = FVector::ZeroVector;
-		FVector LastTriggerListenerPos = FVector::ZeroVector;
-		bool bTriggerPosSet = false;
-		float MovementCooldownTimer = 0.f;
-		bool bMovementRequested = false;
+		bool bEarlySweepRequested = false;
+		bool bWasPreSweepActive = false;
 
 		int32 CacheFillSweepsRemaining = 0;
 	} SweepScheduling;

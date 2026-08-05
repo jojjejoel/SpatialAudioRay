@@ -125,7 +125,7 @@ public:
 	float VelocityScaleMaxSpeed = 400.f;
 
 	/** Smallest factor the sweep interval is ever multiplied by, reached at VelocityScaleMaxSpeed
-	 *  while moving and applied whole while a post-movement cache fill is outstanding. The two
+	 *  while moving and applied whole while a cache fill is outstanding. The two
 	 *  states cannot overlap: a cache fill only runs once both ends are stationary. 0.5 = sweeps
 	 *  fire twice as often. 1.0 = off. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Sweep Scheduling",
@@ -143,24 +143,13 @@ public:
 		meta = (ClampMin = "1.0", ClampMax = "200.0"))
 	float StationaryIdleBreakDist = 25.0f;
 
-	/** Distance (cm) the listener must move since the last sweep to request an early one, bypassing
-	 *  the interval timer. 0 = disable movement-triggered sweeps. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Sweep Scheduling",
-		meta = (ClampMin = "0.0", ClampMax = "1000.0"))
-	float MovementSweepTriggerDist = 200.f;
-
-	/** Minimum seconds between movement-triggered sweeps. Does not gate interval-triggered sweeps. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Sweep Scheduling",
-		meta = (ClampMin = "0.0", ClampMax = "5.0"))
-	float MovementSweepCooldown = 0.3f;
-
-	/** After a movement-triggered sweep, keep sweeping at MinSweepIntervalScale speed for up to this
+	/** After an early sweep, keep sweeping at MinSweepIntervalScale speed for up to this
 	 *  many completed sweeps, or until a new edge is cached. Edges re-confirmed at the same spot and
 	 *  relays do not count: the burst exists to survey the NEW position. Covers arriving occluded
 	 *  somewhere new, where velocity scaling has already stopped. 0 = off. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Sweep Scheduling",
 		meta = (ClampMin = "0", ClampMax = "20"))
-	int32 MovementCacheFillMaxSweeps = 0;
+	int32 CacheFillMaxSweeps = 10;
 
 	/** Smoothed occlusion at which sweeps start pre-warming the edge cache while the source is
 	 *  still partly visible, so the voices start from a populated cache at full occlusion. The

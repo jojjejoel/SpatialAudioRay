@@ -104,18 +104,23 @@ UpdateVelocityScaling      smoothed source and listener speeds become interval m
 UpdateStationaryIdleState  stretch the sweep interval while nothing moves
 FEdgeCache::TickCachedEdgeEviction   validate and evict cached edges (Stop 6)
 ComputeEffectiveSweepInterval        how long until the next sweep is allowed
-TickMovementSweepTrigger   listener moved far, request an early sweep
 TickNormalSweepDispatch    per-frame LoS sampling always, then either start a
                            sweep or run the cheap update cast
 SmoothTowardTargets        interpolate occlusion and path attenuation
 UpdateAudioParameters      write the final numbers to the audio components (Stop 8)
 ```
 
-One inline branch sits between dispatch and smoothing: the frame direct sight is lost sets `bMovementRequested`,
-starting the next sweep immediately instead of waiting out the timer, so the cache refills while the crossfade is still
-opening.
+Three events request a sweep ahead of the timer, all through `bEarlySweepRequested`. The frame direct sight is lost, as
+an inline branch between dispatch and smoothing, so the cache refills while the crossfade is still opening. Any edge
+eviction, from `StartEviction`. And `RequestSweepOnPreSweepBandEntry`, the frame occlusion first crosses
+`PreSweepOcclusionThreshold`: `TimeSinceFullCast` is pinned to zero until then, so the band would otherwise spend its
+first whole interval not sweeping, which is the head start it exists to provide.
 
-Sweep pacing itself is `ComputeEffectiveSweepInterval`, folding velocity scaling, a post-movement cache-fill burst and
+Note what is absent. Nothing polls how far the listener has walked. A distance trigger existed and was removed, because
+velocity scaling already shortens the interval with speed, which is the same lever expressed per second rather than per
+metre. All three surviving triggers name an event in the acoustic relationship instead.
+
+Sweep pacing itself is `ComputeEffectiveSweepInterval`, folding velocity scaling, a cache-fill burst and
 stationary idle, in that order. Every branch that lengthens the interval requires both ends stationary, so a moving
 listener has no floor beyond velocity scaling.
 
