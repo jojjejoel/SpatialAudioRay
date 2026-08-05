@@ -44,7 +44,7 @@ private:
 
 	static float UpdateVirtualCrossfadeGate(USpatialAudioComponent& Component, float DeltaTime,
 	                                        const USpatialAudioSettings& Settings);
-	static void ApplySourceOcclusionParams(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings);
+	static void ApplySourceOcclusionParams(USpatialAudioComponent& Component);
 
 	struct FVirtualVoiceUpdateResult {
 		float TotalVirtualGain = 0.f;
@@ -90,8 +90,7 @@ private:
 	static void UpdateVirtualSourceTarget(USpatialAudioComponent& Component, const FEdgeWeightAccum& Accum,
 	                                      const FVector& SourcePos);
 	static void UpdatePathAttenuationTarget(USpatialAudioComponent& Component, const FEdgeWeightAccum& Accum,
-	                                        const USpatialAudioSettings& Settings, const FVector& SourcePos,
-	                                        bool bVirtualPathActive);
+	                                        const USpatialAudioSettings& Settings, bool bVirtualPathActive);
 
 	static void SyncVirtualVoicesToClusters(USpatialAudioComponent& Component,
 	                                        const TArray<FEdgeCluster>& Clusters,

@@ -34,11 +34,10 @@ float FUpdater::UpdateVirtualCrossfadeGate(USpatialAudioComponent& Component, co
 	return Component.CurrentVirtualCrossfade;
 }
 
-void FUpdater::ApplySourceOcclusionParams(USpatialAudioComponent& Component,
-                                          const USpatialAudioSettings& Settings) {
+void FUpdater::ApplySourceOcclusionParams(USpatialAudioComponent& Component) {
 	for (int32 i = Component.CachedAudioComponentSources.Num() - 1; i >= 0; --i) {
 		if (UAudioComponent* Ac = Component.CachedAudioComponentSources[i].Get()) {
-			Ac->SetFloatParameter(Settings.OcclusionParamName, Component.CurrentOcclusion);
+			Ac->SetFloatParameter(FName("Occlusion"), Component.CurrentOcclusion);
 			Ac->SetVolumeMultiplier(Component.bDebugSilenceSource ? 0.f : 1.f);
 		}
 		else {
@@ -152,7 +151,7 @@ void FUpdater::UpdateDualModeAudio(USpatialAudioComponent& Component, const floa
                                    const USpatialAudioSettings& Settings) {
 	const float VirtualCrossfade = UpdateVirtualCrossfadeGate(Component, DeltaTime, Settings);
 
-	ApplySourceOcclusionParams(Component, Settings);
+	ApplySourceOcclusionParams(Component);
 
 	AActor* OwnerActor = Component.GetOwner();
 	if (!OwnerActor) {

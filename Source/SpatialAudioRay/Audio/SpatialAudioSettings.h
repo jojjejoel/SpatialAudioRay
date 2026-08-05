@@ -126,7 +126,7 @@ public:
 
 	/** Distance (cm) either end must move from where idle mode was entered to resume normal pacing. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Sweep Scheduling",
-		meta = (ClampMin = "1.0", ClampMax = "200.0"))
+		meta = (ClampMin = "1.0", ClampMax = "500.0"))
 	float StationaryIdleBreakDist = 25.0f;
 
 	/** After an early sweep, keep sweeping at MinSweepIntervalScale speed for up to this
@@ -150,13 +150,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Line Of Sight Sampling",
 		meta = (ClampMin = "0.0"))
 	float DirectLoSSampleRadius = 50.f;
-
-	/** Scales the attenuation inner radius into the LoS target sphere around the source, so seeing
-	 *  any of its surface counts as seeing the source. Models source extent at no extra trace cost.
-	 *  1 = sphere at the inner radius, 0 = point source. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Line Of Sight Sampling",
-		meta = (ClampMin = "0.0"))
-	float SourceLoSSampleRadiusScale = 1.f;
 
 	/** Checks per full ring rotation (step = 90 degrees / N). The fraction averages over exactly one
 	 *  pattern, so a stationary scene yields a constant value. 1 = fixed ring. */
@@ -184,10 +177,6 @@ public:
 		meta = (ClampMin = "0.05", ClampMax = "1.0"))
 	float OffsetLoSVelocityScale = 0.25f;
 
-
-	/** MetaSound float parameter that receives the occlusion value (0 = open, 1 = fully blocked). */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Occlusion")
-	FName OcclusionParamName = "Occlusion";
 
 	/** Seconds for occlusion to follow its target, in either direction. 0 = instant. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Occlusion",
@@ -278,13 +267,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Virtual Sound",
 		meta = (ClampMin = "0.0", ClampMax = "5.0"))
 	float PathAttenuationStrength = 0.3f;
-
-	/** Blends the travelled path distance toward the straight line before computing
-	 *  PathAttenuation. A hedge for geometry where the sweep caches a longer substitute for the
-	 *  true shortest path; it softens genuine long detours too. 0 = pure travelled distance. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Virtual Sound",
-		meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float PathAttenuationGeomBlend = 0.f;
 
 	/** Seconds for the path attenuation value to follow its target. 0 = instant. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Virtual Sound",

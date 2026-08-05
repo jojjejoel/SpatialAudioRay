@@ -272,10 +272,9 @@ float USpatialAudioComponent::EvaluateVirtualAttenuationVolumeAt(const float Dis
 	return VirtualAttenuationSettings.Evaluate(FTransform::Identity, FVector(Distance, 0.f, 0.f));
 }
 
-float USpatialAudioComponent::ComputePathAttenuationCurved(const float AvgPathDist, const float Leg1Geom,
+float USpatialAudioComponent::ComputePathAttenuationCurved(const float AvgPathDist,
                                                            const USpatialAudioSettings& S) const {
-	const float BlendedDist = FMath::Lerp(AvgPathDist, Leg1Geom, S.PathAttenuationGeomBlend);
-	return FMath::Clamp((1.f - EvaluateVirtualAttenuationVolumeAt(BlendedDist)) * S.PathAttenuationStrength,
+	return FMath::Clamp((1.f - EvaluateVirtualAttenuationVolumeAt(AvgPathDist)) * S.PathAttenuationStrength,
 	                    0.f, 1.f);
 }
 

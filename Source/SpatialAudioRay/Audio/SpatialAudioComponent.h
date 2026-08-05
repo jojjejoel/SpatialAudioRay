@@ -298,7 +298,7 @@ private:
 	void DrawEdgeTimerDebugText(uint64 Base, const USpatialAudioSettings& Settings) const;
 
 	float EvaluateVirtualAttenuationVolumeAt(float Distance) const;
-	float ComputePathAttenuationCurved(float AvgPathDist, float Leg1Geom, const USpatialAudioSettings& S) const;
+	float ComputePathAttenuationCurved(float AvgPathDist, const USpatialAudioSettings& S) const;
 
 	void CacheAudioComponents();
 	void ApplyAttenuationOverrides();

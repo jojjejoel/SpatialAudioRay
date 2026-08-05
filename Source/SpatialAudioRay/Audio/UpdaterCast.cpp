@@ -132,7 +132,7 @@ void FUpdater::TrySampleOffsetLoS(USpatialAudioComponent& Component, UWorld* Wor
 	const float RadiusScale = FMath::Pow((Component.LoSSlotIndex + 1.f) / RotationSteps,
 	                                     FMath::Max(Settings.OffsetRingRadiusExponent, 0.f));
 	const float OffsetR = Settings.DirectLoSSampleRadius * RadiusScale;
-	const float SourceR = Component.AttenuationInnerRadius * Settings.SourceLoSSampleRadiusScale;
+	const float SourceR = Component.AttenuationInnerRadius;
 	Component.LastOffsetLoSFraction = SyncOffsetLoSFraction(
 		Component, World, SourcePos, ListenerPos, OffsetR, SourceR, SourceR * RadiusScale,
 		UE_HALF_PI / RotationSteps);
@@ -236,7 +236,7 @@ void FUpdater::UpdateVirtualSourceTarget(USpatialAudioComponent& Component, cons
 }
 
 void FUpdater::UpdatePathAttenuationTarget(USpatialAudioComponent& Component, const FEdgeWeightAccum& Accum,
-                                           const USpatialAudioSettings& Settings, const FVector& SourcePos,
+                                           const USpatialAudioSettings& Settings,
                                            const bool bVirtualPathActive) {
 	if (!bVirtualPathActive) {
 		if (Component.bHasDirectLoS) {
@@ -248,9 +248,8 @@ void FUpdater::UpdatePathAttenuationTarget(USpatialAudioComponent& Component, co
 	if (Accum.SrcWeightTotal > 0.f) {
 		Component.CurrentSourceToVirtualDistance = Accum.WeightedDistSum / Accum.SrcWeightTotal;
 	}
-	const float Leg1Geom = FVector::Dist(SourcePos, Component.TargetVirtualSourceLocation);
 	Component.TargetPathAttenuation = Component.ComputePathAttenuationCurved(
-		Component.CurrentSourceToVirtualDistance, Leg1Geom, Settings);
+		Component.CurrentSourceToVirtualDistance, Settings);
 }
 
 void FUpdater::PerformUpdateRayCast(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings) {
@@ -272,7 +271,7 @@ void FUpdater::PerformUpdateRayCast(USpatialAudioComponent& Component, const USp
 	}
 
 	UpdateVirtualSourceTarget(Component, Accum, SourcePos);
-	UpdatePathAttenuationTarget(Component, Accum, Settings, SourcePos, bVirtualPathActive);
+	UpdatePathAttenuationTarget(Component, Accum, Settings, bVirtualPathActive);
 
 	TArray<FEdgeCluster> VoiceClusters;
 	if (bVirtualPathActive) {
@@ -293,16 +292,14 @@ TArray<FUpdater::FDesired> FUpdater::BuildDesiredVoices(const USpatialAudioCompo
                                                         const USpatialAudioSettings& Settings) {
 	TArray<FDesired> Desired;
 
-	const FVector ActorPos = Component.GetOwner()->GetActorLocation();
 	float TotalWeight = 0.f;
 	for (const FEdgeCluster& Cluster : Clusters) {
 		TotalWeight += Cluster.TotalWeight;
 	}
 	for (const FEdgeCluster& Cluster : Clusters) {
-		const float Leg1Geom = FVector::Dist(ActorPos, Cluster.Centroid);
 		Desired.Add({
 			Cluster.Centroid, Cluster.PathDist,
-			Component.ComputePathAttenuationCurved(Cluster.PathDist, Leg1Geom, Settings),
+			Component.ComputePathAttenuationCurved(Cluster.PathDist, Settings),
 			Cluster.TotalWeight / FMath::Max(TotalWeight, KINDA_SMALL_NUMBER)
 		});
 	}

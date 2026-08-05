@@ -23,7 +23,7 @@ bool FAsyncCastManager::TryDiscardStaleSweep(USpatialAudioComponent& Component, 
 		return false;
 	}
 
-	const float SourceR = Component.AttenuationInnerRadius * Settings.SourceLoSSampleRadiusScale;
+	const float SourceR = Component.AttenuationInnerRadius;
 	const float OffsetFraction = FUpdater::SyncOffsetLoSFraction(
 		Component, World, Owner->GetActorLocation(), Pawn->GetActorLocation(),
 		Settings.DirectLoSSampleRadius,
@@ -243,11 +243,7 @@ void FAsyncCastManager::PublishSweepAudioTargets(USpatialAudioComponent& Compone
 	AccumIn.bDirectLoSFound = Component.Finalize.bDirectLoSFound;
 	const FRayAccumulatorOutput AccumOut = ComputeAudioFromRayAccumulator(AccumIn);
 
-	const float Leg1Geom = AccumOut.bHasVirtualSource
-		                       ? FVector::Dist(Component.AsyncSourcePos, AccumOut.VirtualSourcePos)
-		                       : AccumOut.MinLoSDist;
-	Component.TargetPathAttenuation = Component.ComputePathAttenuationCurved(
-		AccumOut.MinLoSDist, Leg1Geom, Settings);
+	Component.TargetPathAttenuation = Component.ComputePathAttenuationCurved(AccumOut.MinLoSDist, Settings);
 
 	if (!AccumOut.bHasVirtualSource) {
 		return;
