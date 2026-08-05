@@ -42,7 +42,8 @@ namespace {
 		float MinSweepIntervalScale, float StoredEffFullSweepInterval,
 		float StationaryIdleMultiplier, float CoverageFraction,
 		float SmoothedSourceSpeed, float SmoothedListenerSpeed,
-		bool bCacheFillPending, int32 CacheFillSweepsRemaining) {
+		bool bCacheFillPending, int32 CacheFillSweepsRemaining,
+		float IdleAnchorDrift, float IdleBreakDist) {
 		FPacingDebugInfo Info;
 		if (bBothStationary && bCacheFillPending) {
 			Info.Label = FString::Printf(TEXT("CACHE-FILL (%.2f×  %.2fs  no new edge yet  %d sweeps left)"),
@@ -50,10 +51,10 @@ namespace {
 			                             CacheFillSweepsRemaining);
 			Info.Color = FColor::Cyan;
 		}
-		else if (bBothStationary && bStationaryIdleMode) {
-			Info.Label = FString::Printf(TEXT("IDLE (%.0f×  %.2fs  cov=%.0f%%)"),
+		else if (bStationaryIdleMode) {
+			Info.Label = FString::Printf(TEXT("IDLE (%.0f×  %.2fs  cov=%.0f%%  drift %.0f/%.0fcm)"),
 			                             StationaryIdleMultiplier, StoredEffFullSweepInterval,
-			                             CoverageFraction * 100.f);
+			                             CoverageFraction * 100.f, IdleAnchorDrift, IdleBreakDist);
 			Info.Color = FColor::Orange;
 		}
 		else {
@@ -281,7 +282,8 @@ void USpatialAudioComponent::DrawSweepPacingDebugText(const uint64 Base, const U
 		Settings.MinSweepIntervalScale, StoredEffFullSweepInterval,
 		Settings.StationaryIdleMultiplier, CoverageFraction,
 		VelocityScaling.SmoothedSourceSpeed, VelocityScaling.SmoothedListenerSpeed,
-		IsCacheFillPending(), SweepScheduling.CacheFillSweepsRemaining);
+		IsCacheFillPending(), SweepScheduling.CacheFillSweepsRemaining,
+		FMath::Sqrt(ComputeIdleAnchorDriftSq()), Settings.StationaryIdleBreakDist);
 
 	const FString SweepStatus = bAsyncCastActive ? TEXT("CASTING") : TEXT("idle");
 
@@ -334,7 +336,7 @@ void USpatialAudioComponent::DrawTraceStatsDebugText(const uint64 Base) const {
 }
 
 void USpatialAudioComponent::DrawEdgeTimerDebugText(const uint64 Base, const USpatialAudioSettings& Settings) const {
-	const float Ph0Interval = Settings.CachedEdgeCheckInterval * VelocityScaling.EdgeMultiplier;
+	const float Ph0Interval = Settings.CachedEdgeCheckInterval;
 
 	int32 Ph0Pending = 0;
 	for (const FCachedEdgePoint& EP : CachedEdgePoints) {

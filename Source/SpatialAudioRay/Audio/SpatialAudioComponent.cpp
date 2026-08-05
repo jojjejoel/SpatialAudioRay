@@ -369,7 +369,6 @@ void USpatialAudioComponent::TickNormalSweepDispatch(const float DeltaTime, cons
 			const bool bWasEarlySweep = SweepScheduling.bEarlySweepRequested;
 			TimeSinceFullCast = 0.f;
 			SweepScheduling.bEarlySweepRequested = false;
-			SweepScheduling.bStationaryIdleMode = false;
 			if (bWasEarlySweep) {
 				SweepScheduling.CacheFillSweepsRemaining = GetSettings().CacheFillMaxSweeps;
 				for (FCachedEdgePoint& EP : CachedEdgePoints) {
@@ -508,20 +507,20 @@ void USpatialAudioComponent::TickComponent(const float DeltaTime, const ELevelTi
 
 
 float USpatialAudioComponent::ComputeEffectiveSweepInterval() const {
-	const bool bBothStationary = VelocityScaling.IsStationary();
-
 	const float EffortScale = FMath::Max(GetSettings().MaxDistanceEffortScale, KINDA_SMALL_NUMBER);
-	float Interval = FMath::Lerp(
-			GetSettings().FullSweepInterval / EffortScale, GetSettings().FullSweepInterval, CurrentPriority)
-		* FMath::Min(VelocityScaling.SweepMultiplier, VelocityScaling.EdgeMultiplier);
+	const float BaseInterval = FMath::Lerp(
+		GetSettings().FullSweepInterval / EffortScale, GetSettings().FullSweepInterval, CurrentPriority);
 
-	if (bBothStationary && IsCacheFillPending()) {
-		Interval *= GetSettings().MinSweepIntervalScale;
+	if (VelocityScaling.IsStationary() && IsCacheFillPending()) {
+		return BaseInterval * GetSettings().MinSweepIntervalScale;
 	}
-	else if (bBothStationary && SweepScheduling.bStationaryIdleMode) {
-		Interval *= GetSettings().StationaryIdleMultiplier;
+	/** Idle pacing replaces velocity scaling rather than stacking with it: they are opposite answers
+	 *  to the same question, and multiplying both lands back near the base interval. It holds while
+	 *  moving too, until the anchor breaks, so a small drift cannot cost a full survey. */
+	if (SweepScheduling.bStationaryIdleMode) {
+		return BaseInterval * GetSettings().StationaryIdleMultiplier;
 	}
-	return Interval;
+	return BaseInterval * FMath::Min(VelocityScaling.SweepMultiplier, VelocityScaling.EdgeMultiplier);
 }
 
 FVector USpatialAudioComponent::ComputeSteeringLead(const FVector& SmoothedVelocity,
@@ -546,6 +545,20 @@ bool USpatialAudioComponent::HasNewEdgeSinceFillArm() const {
 
 bool USpatialAudioComponent::IsCacheFillPending() const {
 	return SweepScheduling.CacheFillSweepsRemaining > 0 && !HasNewEdgeSinceFillArm();
+}
+
+float USpatialAudioComponent::ComputeIdleAnchorDriftSq() const {
+	const UWorld* World = GetWorld();
+	const APlayerController* PC = World ? World->GetFirstPlayerController() : nullptr;
+	const APawn* Pawn = PC ? PC->GetPawn() : nullptr;
+	if (!Pawn || !GetOwner()) {
+		return 0.f;
+	}
+	return FMath::Max(
+		static_cast<float>(FVector::DistSquared(GetOwner()->GetActorLocation(),
+		                                        SweepScheduling.StationaryIdleSourcePos)),
+		static_cast<float>(FVector::DistSquared(Pawn->GetActorLocation(),
+		                                       SweepScheduling.StationaryIdleListenerPos)));
 }
 
 /** The band's head start is the occlusion between PreSweepOcclusionThreshold and the crossfade opening.
@@ -626,12 +639,15 @@ void USpatialAudioComponent::UpdateVelocityScaling(const float DeltaTime, const 
 }
 
 void USpatialAudioComponent::UpdateStationaryIdleState(const bool bInRange, const APawn* Pawn) {
-	if (SweepScheduling.bStationaryIdleMode && bInRange && Pawn && GetOwner()) {
-		const float BreakDistSq = FMath::Square(GetSettings().StationaryIdleBreakDist);
-		if (FVector::DistSquared(GetOwner()->GetActorLocation(), SweepScheduling.StationaryIdleSourcePos) > BreakDistSq
-			||
-			FVector::DistSquared(Pawn->GetActorLocation(), SweepScheduling.StationaryIdleListenerPos) > BreakDistSq) {
-			SweepScheduling.bStationaryIdleMode = false;
-		}
+	if (!SweepScheduling.bStationaryIdleMode || !bInRange || !Pawn || !GetOwner()) {
+		return;
 	}
+	if (ComputeIdleAnchorDriftSq() <= FMath::Square(GetSettings().StationaryIdleBreakDist)) {
+		return;
+	}
+
+	SweepScheduling.bStationaryIdleMode = false;
+	/** Un-stretching the interval alone would leave this sweep interval-triggered, and only an early
+	 *  sweep arms the cache fill, which is the whole point of having moved somewhere new. */
+	SweepScheduling.bEarlySweepRequested = true;
 }

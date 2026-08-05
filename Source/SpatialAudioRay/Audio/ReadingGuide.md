@@ -110,19 +110,31 @@ SmoothTowardTargets        interpolate occlusion and path attenuation
 UpdateAudioParameters      write the final numbers to the audio components (Stop 8)
 ```
 
-Three events request a sweep ahead of the timer, all through `bEarlySweepRequested`. The frame direct sight is lost, as
+Four events request a sweep ahead of the timer, all through `bEarlySweepRequested`. The frame direct sight is lost, as
 an inline branch between dispatch and smoothing, so the cache refills while the crossfade is still opening. Any edge
-eviction, from `StartEviction`. And `RequestSweepOnPreSweepBandEntry`, the frame occlusion first crosses
+eviction, from `StartEviction`. `RequestSweepOnPreSweepBandEntry`, the frame occlusion first crosses
 `PreSweepOcclusionThreshold`: `TimeSinceFullCast` is pinned to zero until then, so the band would otherwise spend its
-first whole interval not sweeping, which is the head start it exists to provide.
+first whole interval not sweeping, which is the head start it exists to provide. And leaving stationary idle in
+`UpdateStationaryIdleState`, because un-stretching the interval alone leaves the resulting sweep interval-triggered,
+and only an early sweep arms the cache fill that surveys the position just moved to.
+
+That last one is the tell for how the two mechanisms differ. An interval-triggered sweep and an early one look
+identical from the outside; only the early one arms `CacheFillSweepsRemaining`, so a trigger that forgets to set the
+flag silently loses the follow-up survey rather than the sweep.
 
 Note what is absent. Nothing polls how far the listener has walked. A distance trigger existed and was removed, because
 velocity scaling already shortens the interval with speed, which is the same lever expressed per second rather than per
-metre. All three surviving triggers name an event in the acoustic relationship instead.
+metre. Every surviving trigger names an event in the acoustic relationship instead.
 
-Sweep pacing itself is `ComputeEffectiveSweepInterval`, folding velocity scaling, a cache-fill burst and
-stationary idle, in that order. Every branch that lengthens the interval requires both ends stationary, so a moving
-listener has no floor beyond velocity scaling.
+Sweep pacing itself is `ComputeEffectiveSweepInterval`, and the three cases are exclusive rather than multiplied. A
+cache fill outstanding while stopped wins first, since an unfilled burst must not idle-crawl. Stationary idle wins
+next, and it *replaces* velocity scaling rather than stacking with it: the two are opposite answers to the same
+question, and multiplying both lands back near the base interval. Otherwise velocity scaling applies alone.
+
+Idle is anchored, not instantaneous. It is entered by a sweep completing while both ends are stationary, which records
+the positions, and it is left only when either end travels `StationaryIdleBreakDist` from that anchor, which also
+requests the early sweep that arms the cache fill. Sweeps dispatching meanwhile do not end it. So idle pacing survives
+small drift, and the cost of leaving is paid once, at a distance you chose, rather than on the first frame of motion.
 
 Read `BeginPlay` too. It caches every `UAudioComponent` tagged `AudioComponentSource`, since one pipeline serves all
 co-located sounds on an actor, creates a transient `UAudioBus` for them to write into, and builds the virtual voice

@@ -11,8 +11,7 @@ float FEdgeCache::PerEdgeInterval(const USpatialAudioComponent& Component, const
 
 float FEdgeCache::EdgeCheckSlice(const USpatialAudioComponent& Component,
                                  const USpatialAudioSettings& Settings) {
-	return PerEdgeInterval(Component,
-	                       Settings.CachedEdgeCheckInterval * Component.VelocityScaling.EdgeMultiplier);
+	return PerEdgeInterval(Component, Settings.CachedEdgeCheckInterval);
 }
 
 int32 FEdgeCache::SelectRoundRobinEdge(const TArray<FCachedEdgePoint>& Points, int32& Cursor,

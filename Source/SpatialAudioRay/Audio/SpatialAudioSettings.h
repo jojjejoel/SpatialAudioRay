@@ -69,7 +69,7 @@ public:
 		meta = (ClampMin = "0", ClampMax = "16"))
 	int32 MaxBounces = 4;
 
-	/** Multiplier on MaxRayDistance setting the total travel budget across all bounces. Each
+	/** Multiplier on MaxRayDistance setting the total travel budget across all bounces. Each	
 	 *  individual segment is still capped to MaxRayDistance. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Ray Budget",
 		meta = (ClampMin = "0.0"))
@@ -198,9 +198,10 @@ public:
 
 	/** Seconds between checks on one cached edge, PER CACHED EDGE: the interval is divided by cache
 	 *  size and one entry is taken per slice, so cost spreads instead of arriving as a burst of N.
-	 *  Scales down with listener speed. Drives all three passes, which each take their own turn:
-	 *  the listener-to-edge trace, the source-side polyline recheck, and the promotion step that
-	 *  walks an edge toward its true corner. */
+	 *  Flat: unlike the sweep interval this does not scale with speed, so validation costs the same
+	 *  standing still as sprinting. Drives all three passes, which each take their own turn: the
+	 *  listener-to-edge trace, the source-side polyline recheck, and the promotion step that walks
+	 *  an edge toward its true corner. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Edge Cache",
 		meta = (ClampMin = "0.01", ClampMax = "5.0"))
 	float CachedEdgeCheckInterval = 0.1f;

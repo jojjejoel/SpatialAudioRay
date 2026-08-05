@@ -252,6 +252,10 @@ private:
 	float GetVoiceClusterRadius() const;
 	bool HasNewEdgeSinceFillArm() const;
 	bool IsCacheFillPending() const;
+	/** Whichever end has drifted further from the idle anchor, which is the value that crosses
+	 *  StationaryIdleBreakDist. Shared with the HUD so the readout cannot disagree with the check.
+	 *  Squared, so the live check pays no square root; only the debug draw takes the root. */
+	float ComputeIdleAnchorDriftSq() const;
 	FVector ComputeSteeringLead(const FVector& SmoothedVelocity, const USpatialAudioSettings& Settings) const;
 	void RequestSweepOnPreSweepBandEntry(bool bPreSweepActive);
 
@@ -465,6 +469,9 @@ private:
 	} VelocityScaling;
 
 	struct FSweepSchedulingState {
+		/** Held from the sweep that completed while stationary until either end leaves
+		 *  StationaryIdleBreakDist of the anchor below. Sweeps dispatching in between do not end it,
+		 *  so drifting a few centimetres cannot cost a full survey. */
 		bool bStationaryIdleMode = false;
 		FVector StationaryIdleSourcePos = FVector::ZeroVector;
 		FVector StationaryIdleListenerPos = FVector::ZeroVector;
