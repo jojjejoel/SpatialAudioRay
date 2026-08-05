@@ -248,6 +248,13 @@ namespace Math {
 		}
 	}
 
+	/** Distance-scaled budget for a count: it follows priority down but never past the floor that
+	 *  MaxDistanceEffortScale sets for a source at maximum range. */
+	inline int32 ScaleCountByDistancePriority(int32 FullValue, float Priority, float MaxDistanceScale) {
+		const int32 Floor = FMath::RoundToInt(FullValue * MaxDistanceScale);
+		return FMath::Clamp(FMath::Max(FMath::RoundToInt(FullValue * Priority), Floor), 0, FullValue);
+	}
+
 	inline bool HasAnyDirectLoS(const TArray<FSpatialRayState>& rays) {
 		for (const FSpatialRayState& Ray : rays) {
 			if (Ray.bLoSFound && Ray.LoSBounces == 0) {

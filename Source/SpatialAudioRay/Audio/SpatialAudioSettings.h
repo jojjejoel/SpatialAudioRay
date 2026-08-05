@@ -66,24 +66,12 @@ public:
 
 	/** Number of rays fired in the full async sweep (Fibonacci sphere distribution). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Ray Budget")
-	int32 FullSweepRayCount = 64;
-
-	/** Minimum full-sweep ray count when distance scaling is active. Set at or above
-	 *  FullSweepRayCount to disable ray scaling. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Ray Budget",
-		meta = (ClampMin = "4"))
-	int32 MinFullSweepRayCount = 16;
+	int32 FullSweepRayCount = 8;
 
 	/** Maximum number of wall bounces a ray can take before being discarded. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Ray Budget",
 		meta = (ClampMin = "0", ClampMax = "16"))
 	int32 MaxBounces = 4;
-
-	/** Minimum bounces at maximum distance. Scales linearly from MaxBounces; set equal to it to
-	 *  disable bounce scaling. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Ray Budget",
-		meta = (ClampMin = "0", ClampMax = "16"))
-	int32 MinMaxBounces = 1;
 
 	/** Multiplier on MaxRayDistance setting the total travel budget across all bounces. Each
 	 *  individual segment is still capped to MaxRayDistance. */
@@ -98,9 +86,17 @@ public:
 		meta = (ClampMin = "0.5", ClampMax = "8.0"))
 	float DistancePriorityExponent = 2.0f;
 
+	/** How much effort a source at maximum distance gets, as a fraction of what it gets up close.
+	 *  One value floors all three distance-scaled budgets: ray count and bounce count multiply by
+	 *  it, and the sweep interval divides by it, so 0.25 means a quarter of the rays and bounces
+	 *  and a four times longer interval. 1 = no distance scaling at all. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Ray Budget",
+		meta = (ClampMin = "0.05", ClampMax = "1.0"))
+	float MaxDistanceEffortScale = 0.65f;
+
 	/** Ray-count multiplier once the edge cache is full, interpolated by how full it is. A saturated
 	 *  cache can only improve by displacement, so searching into one is worth less. Floors at one
-	 *  ray, not at MinFullSweepRayCount, which is the distance-scaling floor. 1 = no reduction. */
+	 *  ray, not at the MaxDistanceEffortScale floor, which is a separate knob. 1 = no reduction. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Ray Budget",
 		meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float FullCacheRayScale = 1.f;
@@ -111,12 +107,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Sweep Scheduling",
 		meta = (ClampMin = "0.05"))
 	float FullSweepInterval = 0.5f;
-
-	/** Seconds between full async sweeps at maximum distance. Scales linearly from
-	 *  FullSweepInterval; set equal to it to disable interval scaling. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Sweep Scheduling",
-		meta = (ClampMin = "0.05"))
-	float MaxFullSweepInterval = 2.0f;
 
 	/** Combined source + listener speed (cm/s) at which velocity interval scaling reaches full
 	 *  effect. Typical single-mover values: walk 200, jog 350, sprint 600. 0 = off. */

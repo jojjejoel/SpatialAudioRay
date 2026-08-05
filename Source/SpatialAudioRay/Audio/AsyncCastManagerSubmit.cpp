@@ -109,8 +109,8 @@ void FAsyncCastManager::ResolveSweepRayBudget(USpatialAudioComponent& Component,
                                               const USpatialAudioSettings& Settings) {
 	int32 ScaledRayCount;
 	Component.GetEffectiveRayCounts(ScaledRayCount, Component.CurrentPriority);
-	Component.AsyncMaxBounces = FMath::Max(Settings.MinMaxBounces,
-	                                       FMath::RoundToInt(Settings.MaxBounces * Component.CurrentPriority));
+	Component.AsyncMaxBounces = Math::ScaleCountByDistancePriority(
+		Settings.MaxBounces, Component.CurrentPriority, Settings.MaxDistanceEffortScale);
 	Component.AsyncTotalRays = ApplyCacheFullnessRayScale(Component, ScaledRayCount, Settings);
 
 	Component.PendingValidCachedPoints.Reset();

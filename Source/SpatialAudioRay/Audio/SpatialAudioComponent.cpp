@@ -511,8 +511,9 @@ void USpatialAudioComponent::TickComponent(const float DeltaTime, const ELevelTi
 float USpatialAudioComponent::ComputeEffectiveSweepInterval() const {
 	const bool bBothStationary = VelocityScaling.IsStationary();
 
+	const float EffortScale = FMath::Max(GetSettings().MaxDistanceEffortScale, KINDA_SMALL_NUMBER);
 	float Interval = FMath::Lerp(
-			GetSettings().MaxFullSweepInterval, GetSettings().FullSweepInterval, CurrentPriority)
+			GetSettings().FullSweepInterval / EffortScale, GetSettings().FullSweepInterval, CurrentPriority)
 		* FMath::Min(VelocityScaling.SweepMultiplier, VelocityScaling.EdgeMultiplier);
 
 	if (bBothStationary && IsCacheFillPending()) {
@@ -572,9 +573,8 @@ void USpatialAudioComponent::GetEffectiveRayCounts(int32& OutFull, float& OutPri
 		OutPriority = 1.f - FMath::Pow(TLinear, GetSettings().DistancePriorityExponent);
 	}
 
-	const int32 Scaled = FMath::RoundToInt(GetSettings().FullSweepRayCount * OutPriority);
-	OutFull = FMath::Clamp(FMath::Max(Scaled, GetSettings().MinFullSweepRayCount),
-	                       0, GetSettings().FullSweepRayCount);
+	OutFull = Math::ScaleCountByDistancePriority(GetSettings().FullSweepRayCount, OutPriority,
+	                                             GetSettings().MaxDistanceEffortScale);
 }
 
 

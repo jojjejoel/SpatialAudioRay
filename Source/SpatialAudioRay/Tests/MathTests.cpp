@@ -303,6 +303,29 @@ bool FHasAnyDirectLoS_IndirectOnly::RunTest(const FString& Parameters) {
 
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FScaleCountByDistancePriority_FollowsPriorityDownToTheFloor,
+	"SpatialAudioRay.Math.ScaleCountByDistancePriority.FollowsPriorityDownToTheFloor",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FScaleCountByDistancePriority_FollowsPriorityDownToTheFloor::RunTest(const FString& Parameters) {
+	constexpr int32 Full = 64;
+	constexpr float Scale = 0.25f;
+
+	TestEqual(TEXT("Full priority gives the full count"),
+	          Math::ScaleCountByDistancePriority(Full, 1.f, Scale), 64);
+	TestEqual(TEXT("Zero priority floors at the max-distance scale"),
+	          Math::ScaleCountByDistancePriority(Full, 0.f, Scale), 16);
+	TestEqual(TEXT("Mid priority scales linearly while above the floor"),
+	          Math::ScaleCountByDistancePriority(Full, 0.5f, Scale), 32);
+	TestEqual(TEXT("Priority below the floor does not reduce further"),
+	          Math::ScaleCountByDistancePriority(Full, 0.1f, Scale), 16);
+	TestEqual(TEXT("Scale 1 disables distance scaling entirely"),
+	          Math::ScaleCountByDistancePriority(Full, 0.f, 1.f), 64);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FVirtualAudio_Gain_Formula,
 	"SpatialAudioRay.Math.VirtualAudio.Gain.Formula",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
