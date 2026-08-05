@@ -815,20 +815,19 @@ int32 FAsyncCastManager::CountPrefixAnchorWaypoints(const TArray<FSpatialRayStat
 	return Count;
 }
 
-int32 FAsyncCastManager::FindFirstVisibleAnchor(const USpatialAudioComponent& Component, const UWorld* World,
-                                                const FVector& FromPoint,
+int32 FAsyncCastManager::FindFirstVisibleAnchor(const FVisibilityPredicate& IsClear, const FVector& FromPoint,
                                                 const TArray<FSpatialRayState::FBounceWaypoint>& Waypoints,
                                                 int32 SearchLimit) {
 	for (int32 AnchorIdx = 0; AnchorIdx < SearchLimit; ++AnchorIdx) {
-		if (HasClearShortcut(Component, World, FromPoint, Waypoints[AnchorIdx].Pos)) {
+		if (IsClear(FromPoint, Waypoints[AnchorIdx].Pos)) {
 			return AnchorIdx;
 		}
 	}
 	return INDEX_NONE;
 }
 
-float FAsyncCastManager::ComputeStringPulledLeg1(const USpatialAudioComponent& Component, const UWorld* World,
-                                                 const FSpatialRayState& Ray, const FVector& SourcePos,
+float FAsyncCastManager::ComputeStringPulledLeg1(const FVisibilityPredicate& IsClear, const FSpatialRayState& Ray,
+                                                 const FVector& SourcePos,
                                                  TArray<FVector>& OutPath, TArray<bool>& OutSegmentVerified) {
 	TArray<FVector> ReversePath;
 	TArray<bool> ReverseSegmentVerified;
@@ -840,15 +839,14 @@ float FAsyncCastManager::ComputeStringPulledLeg1(const USpatialAudioComponent& C
 	float PulledDist = 0.f;
 
 	while (true) {
-		if (HasClearShortcut(Component, World, PullPoint, SourcePos)) {
+		if (IsClear(PullPoint, SourcePos)) {
 			PulledDist += FVector::Dist(PullPoint, SourcePos);
 			ReverseSegmentVerified.Add(true);
 			ReversePath.Add(SourcePos);
 			break;
 		}
 
-		const int32 AnchorIdx = FindFirstVisibleAnchor(Component, World, PullPoint, Ray.BounceWaypoints,
-		                                               RemainingAnchors);
+		const int32 AnchorIdx = FindFirstVisibleAnchor(IsClear, PullPoint, Ray.BounceWaypoints, RemainingAnchors);
 		if (AnchorIdx != INDEX_NONE) {
 			PulledDist += FVector::Dist(PullPoint, Ray.BounceWaypoints[AnchorIdx].Pos);
 			ReverseSegmentVerified.Add(true);
@@ -908,7 +906,10 @@ void FAsyncCastManager::SubmitFinalizeBatch(USpatialAudioComponent& Component, c
 		if (Ray.bLoSFound && Ray.LoSBounces > 0 && !bDirectLoSFound) {
 			FFinalizeRefineProbe Probe;
 			Probe.LoSOrigin = Ray.LoSOrigin;
-			Probe.BasePathDist = ComputeStringPulledLeg1(Component, World, Ray, Component.AsyncSourcePos,
+			auto IsClear = [&Component, World](const FVector& From, const FVector& To) {
+				return HasClearShortcut(Component, World, From, To);
+			};
+			Probe.BasePathDist = ComputeStringPulledLeg1(IsClear, Ray, Component.AsyncSourcePos,
 			                                             Probe.ShortestPath, Probe.ShortestPathSegmentVerified);
 			Component.Finalize.RefineProbes.Add(MoveTemp(Probe));
 		}

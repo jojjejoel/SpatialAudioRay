@@ -38,6 +38,120 @@ namespace {
 	}
 }
 
+namespace {
+	const FVector PullSource(0, 0, 0);
+	const FVector PullWaypoint0(1000, 0, 0);
+	const FVector PullWaypoint1(1000, 1000, 0);
+	const FVector PullEdge(1000, 2000, 0);
+
+	/** A ray that travelled 5000cm to reach an edge only 2236cm away in a straight line, turning at
+	 *  two waypoints on the way. String pulling should recover whatever the visibility allows. */
+	FSpatialRayState MakePulledRay() {
+		FSpatialRayState Ray;
+		Ray.LoSOrigin = PullEdge;
+		Ray.LoSCumulativeDistance = 5000.f;
+		Ray.BounceWaypoints.Add({PullWaypoint0, 2000.f});
+		Ray.BounceWaypoints.Add({PullWaypoint1, 3500.f});
+		return Ray;
+	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FStringPull_DirectSightCollapsesToOneSegment,
+	"SpatialAudioRay.Async.StringPull.DirectSightCollapsesToOneSegment",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FStringPull_DirectSightCollapsesToOneSegment::RunTest(const FString& Parameters) {
+	auto AlwaysClear = [](const FVector&, const FVector&) { return true; };
+
+	TArray<FVector> Path;
+	TArray<bool> Verified;
+	const float Pulled = FAsyncCastManager::ComputeStringPulledLeg1(
+		AlwaysClear, MakePulledRay(), PullSource, Path, Verified);
+
+	TestTrue(TEXT("An unobstructed edge measures the straight line, not the travelled route"),
+	         FMath::IsNearlyEqual(Pulled, FVector::Dist(PullEdge, PullSource), 0.1f));
+	TestEqual(TEXT("The polyline collapses to source and edge"), Path.Num(), 2);
+	TestTrue(TEXT("The path reads source first"), Path[0].Equals(PullSource, 0.1f));
+	TestTrue(TEXT("and ends at the edge"), Path.Last().Equals(PullEdge, 0.1f));
+	TestEqual(TEXT("Its single segment is verified"), Verified.Num(), 1);
+	TestTrue(TEXT("Verified means traced clear"), Verified[0]);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FStringPull_HopsThroughTheFirstVisibleAnchor,
+	"SpatialAudioRay.Async.StringPull.HopsThroughTheFirstVisibleAnchor",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FStringPull_HopsThroughTheFirstVisibleAnchor::RunTest(const FString& Parameters) {
+	// The source is hidden from the edge, but both legs through waypoint 0 are open.
+	auto CornerBlocked = [](const FVector& From, const FVector& To) {
+		const bool bEdgeToSource = From.Equals(PullEdge, 0.1f) && To.Equals(PullSource, 0.1f);
+		return !bEdgeToSource;
+	};
+
+	TArray<FVector> Path;
+	TArray<bool> Verified;
+	const float Pulled = FAsyncCastManager::ComputeStringPulledLeg1(
+		CornerBlocked, MakePulledRay(), PullSource, Path, Verified);
+
+	const float Expected = FVector::Dist(PullEdge, PullWaypoint0) + FVector::Dist(PullWaypoint0, PullSource);
+	TestTrue(TEXT("The pulled distance is the two straight legs, not the travelled 5000"),
+	         FMath::IsNearlyEqual(Pulled, Expected, 0.1f));
+	TestEqual(TEXT("The later waypoint is skipped entirely"), Path.Num(), 3);
+	TestTrue(TEXT("The surviving anchor is the first visible one"), Path[1].Equals(PullWaypoint0, 0.1f));
+	TestTrue(TEXT("Both spliced segments are verified"), Verified.Num() == 2 && Verified[0] && Verified[1]);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FStringPull_BlindFallbackKeepsTravelledRoute,
+	"SpatialAudioRay.Async.StringPull.BlindFallbackKeepsTravelledRoute",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FStringPull_BlindFallbackKeepsTravelledRoute::RunTest(const FString& Parameters) {
+	auto NeverClear = [](const FVector&, const FVector&) { return false; };
+
+	TArray<FVector> Path;
+	TArray<bool> Verified;
+	const float Pulled = FAsyncCastManager::ComputeStringPulledLeg1(
+		NeverClear, MakePulledRay(), PullSource, Path, Verified);
+
+	TestTrue(TEXT("With nothing visible the distance falls back to what the ray actually travelled"),
+	         FMath::IsNearlyEqual(Pulled, 5000.f, 0.1f));
+	TestEqual(TEXT("Every waypoint is retained"), Path.Num(), 4);
+	TestEqual(TEXT("with a segment flag for each"), Verified.Num(), 3);
+	TestTrue(TEXT("None of them is verified, so the recheck will skip them"),
+	         !Verified[0] && !Verified[1] && !Verified[2]);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FStringPull_NeverExceedsTheTravelledDistance,
+	"SpatialAudioRay.Async.StringPull.NeverExceedsTheTravelledDistance",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FStringPull_NeverExceedsTheTravelledDistance::RunTest(const FString& Parameters) {
+	auto AlwaysClear = [](const FVector&, const FVector&) { return true; };
+
+	FSpatialRayState Ray = MakePulledRay();
+	Ray.LoSCumulativeDistance = 100.f;
+
+	TArray<FVector> Path;
+	TArray<bool> Verified;
+	const float Pulled = FAsyncCastManager::ComputeStringPulledLeg1(
+		AlwaysClear, Ray, PullSource, Path, Verified);
+
+	TestTrue(TEXT("A pulled path is clamped to the distance the ray actually flew"),
+	         Pulled <= 100.f + 0.1f);
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FCacheMerge_SameCornerKeepsShorterRoute,
 	"SpatialAudioRay.Async.CacheMerge.SameCornerKeepsShorterRoute",

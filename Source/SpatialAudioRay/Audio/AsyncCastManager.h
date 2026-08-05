@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Math/RandomStream.h"
+#include "Templates/Function.h"
 #include "SpatialAudioSettings.h"
 #include "SpatialAudioTypes.h"
 
@@ -50,6 +51,17 @@ public:
 
 	static int32 CountPrefixAnchorWaypoints(const TArray<FSpatialRayState::FBounceWaypoint>& Waypoints,
 	                                        float LoSCumulativeDistance);
+
+	/** Answers "is this straight segment unobstructed". Injected so string pulling, which is only
+	 *  geometry, can run against synthetic visibility in tests instead of a world. */
+	using FVisibilityPredicate = TFunctionRef<bool(const FVector&, const FVector&)>;
+
+	static int32 FindFirstVisibleAnchor(const FVisibilityPredicate& IsClear, const FVector& FromPoint,
+	                                    const TArray<FSpatialRayState::FBounceWaypoint>& Waypoints,
+	                                    int32 SearchLimit);
+	static float ComputeStringPulledLeg1(const FVisibilityPredicate& IsClear, const FSpatialRayState& Ray,
+	                                     const FVector& SourcePos,
+	                                     TArray<FVector>& OutPath, TArray<bool>& OutSegmentVerified);
 
 	static FVector ComputeMidAirTurnDirection(const FVector& InDir, const FVector& TurnPoint,
 	                                          const FVector& ListenerPos, bool bApplyBias,
@@ -166,11 +178,4 @@ private:
 	                                   const USpatialAudioSettings& Settings);
 	static bool HasClearShortcut(const USpatialAudioComponent& Component, const UWorld* World,
 	                             const FVector& Edge, const FVector& Anchor);
-	static int32 FindFirstVisibleAnchor(const USpatialAudioComponent& Component, const UWorld* World,
-	                                    const FVector& FromPoint,
-	                                    const TArray<FSpatialRayState::FBounceWaypoint>& Waypoints,
-	                                    int32 SearchLimit);
-	static float ComputeStringPulledLeg1(const USpatialAudioComponent& Component, const UWorld* World,
-	                                     const FSpatialRayState& Ray, const FVector& SourcePos,
-	                                     TArray<FVector>& OutPath, TArray<bool>& OutSegmentVerified);
 };

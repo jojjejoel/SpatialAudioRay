@@ -315,7 +315,7 @@ and 0 on makes Stops 5 through 7 concrete faster than reading them again. 6 and 
 question above: each edge draws a line to the emitter it feeds, in that emitter's colour, and an edge with no line is
 one no audible voice speaks for.
 
-Tests live in `Source/SpatialAudioRay/Tests/`, 102 of them under `SpatialAudioRay.Math.*`, `.Async.*`, `.Voice.*` and
+Tests live in `Source/SpatialAudioRay/Tests/`, 106 of them under `SpatialAudioRay.Math.*`, `.Async.*`, `.Voice.*` and
 `.EdgeCache.*` in Session Frontend. They read as a spec for the pure helpers, and `MathTests.cpp` is a good final read.
 
 ---
