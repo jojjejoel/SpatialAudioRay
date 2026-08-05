@@ -60,19 +60,19 @@ Start with [`Source/SpatialAudioRay/Audio/ReadingGuide.md`](Source/SpatialAudioR
 Source/SpatialAudioRay/
 ├── Audio/     diffraction and occlusion
 ├── Voice/     the NPC voice system built on it
-└── Tests/     92 automation tests
+└── Tests/     89 automation tests
 Tools/VoiceGen/  offline voice bank generation
 ```
 
-`USpatialAudioComponent` owns all the state. `FAsyncCastManager`, `FUpdater` and `FEdgeCache` hold none of their own and are static functions over it, split by which of the three loops they belong to. `Math.h` and `Voice/NPCVoiceLogic.h` sit below both with the pure functions, no engine or component state in either, and 78 of the 92 tests are on those two files. Every tunable lives in one `UDataAsset` instead of as constants in the code.
+`USpatialAudioComponent` owns all the state. `FAsyncCastManager`, `FUpdater` and `FEdgeCache` hold none of their own and are static functions over it, split by which of the three loops they belong to. `Math.h` and `Voice/NPCVoiceLogic.h` sit below both with the pure functions, no engine or component state in either, and 75 of the 89 tests are on those two files. Every tunable lives in one `UDataAsset` instead of as constants in the code.
 
 ## Tests
 
-92 tests, run from Session Frontend, Automation, filtering on `SpatialAudioRay`:
+89 tests, run from Session Frontend, Automation, filtering on `SpatialAudioRay`:
 
 | Suite | Tests | Covers |
 |---|---|---|
-| `SpatialAudioRay.Math.*` | 47 | reflection, attenuation, clustering, path shortening |
+| `SpatialAudioRay.Math.*` | 44 | reflection, attenuation, clustering, path shortening |
 | `SpatialAudioRay.Voice.*` | 31 | efforts, hysteresis, barge-in, content selection |
 | `SpatialAudioRay.Async.*` | 12 | sweep accumulation, ray budget, turn determinism |
 | `SpatialAudioRay.EdgeCache.*` | 2 | cache merge candidacy |

@@ -313,7 +313,7 @@ bool FVirtualAudio_Gain_Formula::RunTest(const FString& Parameters) {
 
 	const Math::FVirtualAudioParams VAP = Math::ComputeVirtualAudioParams(
 		/*VirtualCrossfade=*/0.5f, /*PathAttenuation=*/0.2f,
-		                     /*Leg1Geom=*/100.f, /*Leg1Traveled=*/100.f,
+		                     /*Leg1Traveled=*/100.f,
 		                     /*MaxRayDistance=*/5000.f,
 		                     *Settings);
 
@@ -332,96 +332,37 @@ bool FVirtualAudio_PathAttenuation_ReducesGain::RunTest(const FString& Parameter
 	const auto Settings = NewObject<USpatialAudioSettings>();
 
 	const Math::FVirtualAudioParams NoneAtten = Math::ComputeVirtualAudioParams(
-		1.f, 0.f, 100.f, 100.f, 5000.f, *Settings);
+		1.f, 0.f, 100.f, 5000.f, *Settings);
 
 	const Math::FVirtualAudioParams HalfAtten = Math::ComputeVirtualAudioParams(
-		1.f, 0.5f, 100.f, 100.f, 5000.f, *Settings);
+		1.f, 0.5f, 100.f, 5000.f, *Settings);
 
 	TestTrue(TEXT("Higher path attenuation reduces virtual gain"), HalfAtten.VirtualGain < NoneAtten.VirtualGain);
 	return true;
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FVirtualAudio_PathBend_NoLeg1Excess_IsZero,
-	"SpatialAudioRay.Math.VirtualAudio.PathBend.NoLeg1Excess_IsZero",
+	FVirtualAudio_PathBend_DistanceStrength_ScalesWithTraveledDistance,
+	"SpatialAudioRay.Math.VirtualAudio.PathBend.DistanceStrength_ScalesWithTraveledDistance",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
-bool FVirtualAudio_PathBend_NoLeg1Excess_IsZero::RunTest(const FString& Parameters) {
-	const auto Settings = NewObject<USpatialAudioSettings>();
-
-	const Math::FVirtualAudioParams VAP = Math::ComputeVirtualAudioParams(
-		1.f, 0.f,
-		/*Leg1Geom=*/200.f, /*Leg1Traveled=*/200.f,
-		/*MaxRayDistance=*/5000.f,
-		*Settings);
-
-	TestEqual(TEXT("No Leg1 excess gives zero path bend"), VAP.VirtualPathBend, 0.f);
-	return true;
-}
-
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FVirtualAudio_PathBend_WithLeg1Excess_NonZero,
-	"SpatialAudioRay.Math.VirtualAudio.PathBend.WithLeg1Excess_NonZero",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
-)
-
-bool FVirtualAudio_PathBend_WithLeg1Excess_NonZero::RunTest(const FString& Parameters) {
-	const auto Settings = NewObject<USpatialAudioSettings>();
-
-	const Math::FVirtualAudioParams VAP = Math::ComputeVirtualAudioParams(
-		1.f, 0.f,
-		/*Leg1Geom=*/200.f, /*Leg1Traveled=*/300.f,
-		/*MaxRayDistance=*/5000.f,
-		*Settings);
-
-	TestTrue(TEXT("Leg1 excess produces non-zero path bend"), VAP.VirtualPathBend > 0.f);
-	return true;
-}
-
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FVirtualAudio_PathBend_FullExcess_SetsSaturationPoint,
-	"SpatialAudioRay.Math.VirtualAudio.PathBend.FullExcess_SetsSaturationPoint",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
-)
-
-bool FVirtualAudio_PathBend_FullExcess_SetsSaturationPoint::RunTest(const FString& Parameters) {
-	const auto Settings = NewObject<USpatialAudioSettings>();
-
-	const Math::FVirtualAudioParams Default = Math::ComputeVirtualAudioParams(
-		1.f, 0.f, /*Leg1Geom=*/200.f, /*Leg1Traveled=*/300.f, /*MaxRayDistance=*/5000.f, *Settings);
-	TestTrue(TEXT("Default FullExcess=1: excess 0.5 gives bend 0.5"),
-	         FMath::IsNearlyEqual(Default.VirtualPathBend, 0.5f, 0.0001f));
-
-	Settings->VirtualPathBendFullExcess = 0.5f;
-	const Math::FVirtualAudioParams Halved = Math::ComputeVirtualAudioParams(
-		1.f, 0.f, 200.f, 300.f, 5000.f, *Settings);
-	TestEqual(TEXT("FullExcess=0.5: excess 0.5 saturates bend at 1"), Halved.VirtualPathBend, 1.f);
-	return true;
-}
-
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FVirtualAudio_PathBend_DistanceStrength_AddsTraveledDistanceTerm,
-	"SpatialAudioRay.Math.VirtualAudio.PathBend.DistanceStrength_AddsTraveledDistanceTerm",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
-)
-
-bool FVirtualAudio_PathBend_DistanceStrength_AddsTraveledDistanceTerm::RunTest(const FString& Parameters) {
+bool FVirtualAudio_PathBend_DistanceStrength_ScalesWithTraveledDistance::RunTest(const FString& Parameters) {
 	const auto Settings = NewObject<USpatialAudioSettings>();
 
 	const Math::FVirtualAudioParams Off = Math::ComputeVirtualAudioParams(
-		1.f, 0.f, /*Leg1Geom=*/2500.f, /*Leg1Traveled=*/2500.f, /*MaxRayDistance=*/5000.f, *Settings);
-	TestEqual(TEXT("Strength 0 (default): straight path stays at zero bend"), Off.VirtualPathBend, 0.f);
+		1.f, 0.f, /*Leg1Traveled=*/2500.f, /*MaxRayDistance=*/5000.f, *Settings);
+	TestEqual(TEXT("Strength 0 (default): no bend at any distance"), Off.VirtualPathBend, 0.f);
 
 	Settings->VirtualPathBendDistanceStrength = 1.f;
 	const Math::FVirtualAudioParams On = Math::ComputeVirtualAudioParams(
-		1.f, 0.f, 2500.f, 2500.f, 5000.f, *Settings);
+		1.f, 0.f, 2500.f, 5000.f, *Settings);
 	TestTrue(TEXT("Strength 1: traveled at half MaxRay gives bend 0.5"),
 	         FMath::IsNearlyEqual(On.VirtualPathBend, 0.5f, 0.0001f));
 
-	const Math::FVirtualAudioParams Stacked = Math::ComputeVirtualAudioParams(
-		1.f, 0.f, /*Leg1Geom=*/1666.67f, /*Leg1Traveled=*/2500.f, 5000.f, *Settings);
-	TestEqual(TEXT("Detour + distance terms stack and clamp at 1"), Stacked.VirtualPathBend, 1.f);
+	const Math::FVirtualAudioParams Saturated = Math::ComputeVirtualAudioParams(
+		1.f, 0.f, /*Leg1Traveled=*/7500.f, 5000.f, *Settings);
+	TestEqual(TEXT("Beyond MaxRayDistance the bend clamps at 1"), Saturated.VirtualPathBend, 1.f);
 	return true;
 }
 

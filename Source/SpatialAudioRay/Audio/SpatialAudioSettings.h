@@ -314,15 +314,9 @@ public:
 		meta = (ClampMin = "0.0", ClampMax = "10.0"))
 	float PathAttenuationBlendTime = 0.2f;
 
-	/** Path excess ratio (travelled/straight-line - 1) at which VirtualPathBend saturates at 1. The
-	 *  single saturation point for everything the MetaSound derives from bend. Large values mute
-	 *  the detour term, leaving VirtualPathBendDistanceStrength as the sole driver. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Virtual Sound",
-		meta = (ClampMin = "0.01", ClampMax = "100.0"))
-	float VirtualPathBendFullExcess = 1.f;
-
-	/** Adds a source-to-cluster distance term to VirtualPathBend, so far diffraction points sound
-	 *  duller even on straight single-corner paths. 0 = detour ratio only. */
+	/** How strongly travelled path distance drives VirtualPathBend, the single value the MetaSound
+	 *  derives its filtering and reverb from, so sound arriving from further around the geometry is
+	 *  duller. Saturates at 1 when the path reaches MaxRayDistance. 0 = no bend at all. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Virtual Sound",
 		meta = (ClampMin = "0.0", ClampMax = "4.0"))
 	float VirtualPathBendDistanceStrength = 0.f;

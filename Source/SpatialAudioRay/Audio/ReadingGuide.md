@@ -281,9 +281,10 @@ enabled the hard term is suppressed, because a marginal pinhole can blank a rota
 `UpdateVirtualVoiceSlots` writes each slot's numbers. `VirtualGain` is path attenuation times weight share times fade
 envelope times gate, with nothing listener-dependent in it. Path attenuation is evaluated against the virtual template's
 own attenuation curve, so the source-to-emitter leg costs what the engine charges for the same distance on the
-emitter-to-listener leg. `VirtualPathBend` is the detour ratio plus a distance term, and the MetaSound derives filter
-cutoff and reverb from that single value. The slot component is physically moved, which is what lets the engine's
-attenuation do the proximity work.
+emitter-to-listener leg. `VirtualPathBend` is travelled path distance against the ray range, and the MetaSound derives
+filter cutoff and reverb from that single value. It once carried a detour-ratio term as well, dropped once tuning had
+settled on distance alone, so the name is now broader than the quantity. The slot component is physically moved, which
+is what lets the engine's attenuation do the proximity work.
 
 Finish with `Math.h` end to end, around 310 lines of pure stateless functions.
 
@@ -302,7 +303,7 @@ and 0 on makes Stops 5 through 7 concrete faster than reading them again. 6 and 
 question above: each edge draws a line to the emitter it feeds, in that emitter's colour, and an edge with no line is
 one no audible voice speaks for.
 
-Tests live in `Source/SpatialAudioRay/Tests/`, 92 of them under `SpatialAudioRay.Math.*`, `.Async.*`, `.Voice.*` and
+Tests live in `Source/SpatialAudioRay/Tests/`, 89 of them under `SpatialAudioRay.Math.*`, `.Async.*`, `.Voice.*` and
 `.EdgeCache.*` in Session Frontend. They read as a spec for the pure helpers, and `MathTests.cpp` is a good final read.
 
 ---

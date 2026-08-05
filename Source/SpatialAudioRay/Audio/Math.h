@@ -262,28 +262,22 @@ namespace Math {
 		float VirtualPathBend;
 	};
 
-	inline float ComputeVirtualPathBend(float Leg1Geom, float Leg1Traveled, float MaxRayDistance,
+	inline float ComputeVirtualPathBend(float Leg1Traveled, float MaxRayDistance,
 	                                    const USpatialAudioSettings& Settings) {
-		const float Leg1ExcessRatio = Leg1Geom > 0.f
-			                              ? FMath::Max(0.f, Leg1Traveled / Leg1Geom - 1.f)
-			                              : 0.f;
-		const float FullExcess = FMath::Max(Settings.VirtualPathBendFullExcess, KINDA_SMALL_NUMBER);
 		const float DistanceBend = Settings.VirtualPathBendDistanceStrength
 			* Leg1Traveled / FMath::Max(MaxRayDistance, 1.f);
-		return FMath::Clamp(Leg1ExcessRatio / FullExcess + DistanceBend, 0.f, 1.f);
+		return FMath::Clamp(DistanceBend, 0.f, 1.f);
 	}
 
 	inline FVirtualAudioParams ComputeVirtualAudioParams(
 		float VirtualCrossfade,
 		float PathAttenuation,
-		float Leg1Geom,
 		float Leg1Traveled,
 		float MaxRayDistance,
 		const USpatialAudioSettings& Settings) {
 		FVirtualAudioParams Out;
 		Out.VirtualGain = VirtualCrossfade * (1.f - PathAttenuation);
-		Out.VirtualPathBend =
-			ComputeVirtualPathBend(Leg1Geom, Leg1Traveled, MaxRayDistance, Settings);
+		Out.VirtualPathBend = ComputeVirtualPathBend(Leg1Traveled, MaxRayDistance, Settings);
 		return Out;
 	}
 

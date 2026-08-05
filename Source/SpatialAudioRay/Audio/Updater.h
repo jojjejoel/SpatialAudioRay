@@ -62,7 +62,7 @@ private:
 	                            const FVector& ActorPos);
 	static void ApplyVoiceAudioParams(const USpatialAudioComponent& Component, const USpatialAudioSettings& Settings,
 	                                  FVirtualSlot& Slot, FVirtualVoice& Voice, UAudioComponent* VC,
-	                                  const FVector& ActorPos, float DeltaTime, float ParamBlendSpeed,
+	                                  float DeltaTime, float ParamBlendSpeed,
 	                                  float VirtualCrossfade, FVirtualVoiceUpdateResult& OutResult);
 	static FVirtualVoiceUpdateResult UpdateVirtualVoiceSlots(USpatialAudioComponent& Component,
 	                                                         const USpatialAudioSettings& Settings,

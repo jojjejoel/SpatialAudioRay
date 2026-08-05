@@ -83,7 +83,7 @@ void FUpdater::MoveSlotToVoice(FVirtualSlot& Slot, UAudioComponent* VC, const FV
 
 void FUpdater::ApplyVoiceAudioParams(const USpatialAudioComponent& Component, const USpatialAudioSettings& Settings,
                                      FVirtualSlot& Slot, FVirtualVoice& Voice, UAudioComponent* VC,
-                                     const FVector& ActorPos, const float DeltaTime, const float ParamBlendSpeed,
+                                     const float DeltaTime, const float ParamBlendSpeed,
                                      const float VirtualCrossfade, FVirtualVoiceUpdateResult& OutResult) {
 	Voice.CurrentWeightShare = FMath::FInterpTo(Voice.CurrentWeightShare, Voice.TargetWeightShare,
 	                                            DeltaTime, ParamBlendSpeed);
@@ -91,10 +91,8 @@ void FUpdater::ApplyVoiceAudioParams(const USpatialAudioComponent& Component, co
 	                                                Voice.TargetPathAttenuation,
 	                                                DeltaTime, ParamBlendSpeed);
 
-	const float Leg1Geom = FVector::Dist(ActorPos, ActorPos + Slot.WorldOffset);
-
 	const Math::FVirtualAudioParams VAP = Math::ComputeVirtualAudioParams(
-		1.f, Voice.CurrentPathAttenuation, Leg1Geom, Voice.PathDist, Component.MaxRayDistance, Settings);
+		1.f, Voice.CurrentPathAttenuation, Voice.PathDist, Component.MaxRayDistance, Settings);
 
 	Slot.FrozenGainScale = VAP.VirtualGain * Voice.CurrentWeightShare;
 	Voice.CurrentPathBend = VAP.VirtualPathBend;
@@ -143,7 +141,7 @@ FUpdater::FVirtualVoiceUpdateResult FUpdater::UpdateVirtualVoiceSlots(USpatialAu
 
 		FVirtualVoice& Voice = Component.VirtualVoices[Slot.VoiceIndex];
 		MoveSlotToVoice(Slot, VC, Voice, ActorPos);
-		ApplyVoiceAudioParams(Component, Settings, Slot, Voice, VC, ActorPos, DeltaTime,
+		ApplyVoiceAudioParams(Component, Settings, Slot, Voice, VC, DeltaTime,
 		                      Rates.ParamBlendSpeed, VirtualCrossfade, Result);
 	}
 
