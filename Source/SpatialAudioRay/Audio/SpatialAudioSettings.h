@@ -203,23 +203,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Occlusion")
 	FName OcclusionParamName = "Occlusion";
 
-	/** Shape of the occlusion curve applied before driving audio effects. 1 = linear; higher pushes
-	 *  the audible effect later in the range. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Occlusion",
-		meta = (ClampMin = "0.0", ClampMax = "8.0"))
-	float OcclusionCurveExponent = 1.5f;
-
 	/** Seconds for occlusion to follow its target, in either direction. 0 = instant. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Occlusion",
 		meta = (ClampMin = "0.0", ClampMax = "10.0"))
 	float OcclusionBlendTime = 0.25f;
-
-	/** Seconds direct LoS must hold before the virtual source snaps back and the edge cache clears.
-	 *  Debounces single-frame flickers at a shadow boundary. Occlusion itself still reacts
-	 *  immediately. 0 = no debounce. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Occlusion",
-		meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float DirectLoSConfirmTime = 0.1f;
 
 
 	/** Maximum number of edge points cached simultaneously. */

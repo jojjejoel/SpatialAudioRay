@@ -12,8 +12,7 @@
 
 void FUpdater::UpdateAudioParameters(USpatialAudioComponent& Component, const float DeltaTime,
                                      const USpatialAudioSettings& Settings) {
-	const float CurvedOcclusion = FMath::Pow(Component.CurrentOcclusion, Settings.OcclusionCurveExponent);
-	UpdateDualModeAudio(Component, DeltaTime, Settings, CurvedOcclusion);
+	UpdateDualModeAudio(Component, DeltaTime, Settings);
 }
 
 float FUpdater::UpdateVirtualCrossfadeGate(USpatialAudioComponent& Component, const float DeltaTime,
@@ -35,11 +34,11 @@ float FUpdater::UpdateVirtualCrossfadeGate(USpatialAudioComponent& Component, co
 	return Component.CurrentVirtualCrossfade;
 }
 
-void FUpdater::ApplySourceOcclusionParams(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings,
-                                          const float CurvedOcclusion) {
+void FUpdater::ApplySourceOcclusionParams(USpatialAudioComponent& Component,
+                                          const USpatialAudioSettings& Settings) {
 	for (int32 i = Component.CachedAudioComponentSources.Num() - 1; i >= 0; --i) {
 		if (UAudioComponent* Ac = Component.CachedAudioComponentSources[i].Get()) {
-			Ac->SetFloatParameter(Settings.OcclusionParamName, CurvedOcclusion);
+			Ac->SetFloatParameter(Settings.OcclusionParamName, Component.CurrentOcclusion);
 			Ac->SetVolumeMultiplier(Component.bDebugSilenceSource ? 0.f : 1.f);
 		}
 		else {
@@ -152,12 +151,10 @@ FUpdater::FVirtualVoiceUpdateResult FUpdater::UpdateVirtualVoiceSlots(USpatialAu
 }
 
 void FUpdater::UpdateDualModeAudio(USpatialAudioComponent& Component, const float DeltaTime,
-                                   const USpatialAudioSettings& Settings,
-                                   const float CurvedOcclusion) {
+                                   const USpatialAudioSettings& Settings) {
 	const float VirtualCrossfade = UpdateVirtualCrossfadeGate(Component, DeltaTime, Settings);
-	Component.AudioDiag.CurvedOcclusion = CurvedOcclusion;
 
-	ApplySourceOcclusionParams(Component, Settings, CurvedOcclusion);
+	ApplySourceOcclusionParams(Component, Settings);
 
 	AActor* OwnerActor = Component.GetOwner();
 	if (!OwnerActor) {

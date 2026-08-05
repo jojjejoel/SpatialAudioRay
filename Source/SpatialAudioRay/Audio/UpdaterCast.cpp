@@ -222,8 +222,7 @@ void FUpdater::ClearCacheOnConfirmedDirectLoS(USpatialAudioComponent& Component,
                                               const USpatialAudioSettings& Settings) {
 	if (Component.bHasDirectLoS) {
 		Component.LoSDiffractionPaths.Reset();
-		if (Component.DirectLoSConfirmedDuration >= Settings.DirectLoSConfirmTime
-			&& !Component.IsPreSweepActive()) {
+		if (!Component.IsPreSweepActive()) {
 			Component.CachedEdgePoints.Reset();
 		}
 	}
@@ -240,7 +239,7 @@ void FUpdater::UpdatePathAttenuationTarget(USpatialAudioComponent& Component, co
                                            const USpatialAudioSettings& Settings, const FVector& SourcePos,
                                            const bool bVirtualPathActive) {
 	if (!bVirtualPathActive) {
-		if (Component.bHasDirectLoS && Component.DirectLoSConfirmedDuration >= Settings.DirectLoSConfirmTime) {
+		if (Component.bHasDirectLoS) {
 			Component.TargetPathAttenuation = 0.f;
 		}
 		return;

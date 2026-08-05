@@ -387,12 +387,10 @@ void USpatialAudioComponent::TickNormalSweepDispatch(const float DeltaTime, cons
 	}
 }
 
-void USpatialAudioComponent::TickDirectLoSConfirmation(const float DeltaTime) {
-	DirectLoSConfirmedDuration = bHasDirectLoS ? DirectLoSConfirmedDuration + DeltaTime : 0.f;
+void USpatialAudioComponent::TickDirectLoSState(const float DeltaTime) {
 	TimeSinceHadDirectLoS = bHasDirectLoS ? 0.f : TimeSinceHadDirectLoS + DeltaTime;
 
-	const bool bConfirmedDirectLoS = DirectLoSConfirmedDuration >= GetSettings().DirectLoSConfirmTime;
-	if (bHasDirectLoS && bConfirmedDirectLoS && !IsPreSweepActive()) {
+	if (bHasDirectLoS && !IsPreSweepActive()) {
 		CachedEdgePoints.Empty();
 		SweepScheduling.CacheFillSweepsRemaining = 0;
 	}
@@ -497,7 +495,7 @@ void USpatialAudioComponent::TickComponent(const float DeltaTime, const ELevelTi
 		SweepScheduling.bEarlySweepRequested = true;
 	}
 
-	TickDirectLoSConfirmation(DeltaTime);
+	TickDirectLoSState(DeltaTime);
 	SmoothTowardTargets(DeltaTime);
 
 	UpdateTraceDiagnostics(DeltaTime);

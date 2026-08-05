@@ -266,7 +266,7 @@ private:
 
 	void TickAsyncPipeline(const USpatialAudioSettings& Settings);
 	void TickNormalSweepDispatch(float DeltaTime, bool bInRange, float SweepInterval);
-	void TickDirectLoSConfirmation(float DeltaTime);
+	void TickDirectLoSState(float DeltaTime);
 	void SmoothTowardTargets(float DeltaTime);
 	void UpdateTraceDiagnostics(float DeltaTime);
 
@@ -350,8 +350,6 @@ private:
 
 	bool bHasDirectLoS = false;
 
-	float DirectLoSConfirmedDuration = 0.f;
-
 	float TimeSinceHadDirectLoS = 1e9f;
 
 	float MaxRayDistance = 5000.f;
@@ -368,7 +366,6 @@ private:
 
 
 	struct FAudioDiagnostics {
-		float CurvedOcclusion = 0.f;
 		float VirtualGain = 0.f;
 	} AudioDiag;
 

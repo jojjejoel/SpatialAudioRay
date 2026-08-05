@@ -271,7 +271,7 @@ by then.
 
 `UpdateDualModeAudio` in `UpdaterAudio.cpp` runs last every frame.
 
-Every tagged source component receives `CurvedOcclusion`, and each MetaSound shapes its own volume and filtering from
+Every tagged source component receives `CurrentOcclusion`, and each MetaSound shapes its own volume and filtering from
 it. There is no external crossfade on the source side.
 
 `UpdateVirtualCrossfadeGate` decides whether the virtual voices are audible at all. It hard-opens once a full sampling

@@ -40,13 +40,11 @@ private:
 	}
 
 	static void UpdateDualModeAudio(USpatialAudioComponent& Component, float DeltaTime,
-	                                const USpatialAudioSettings& Settings,
-	                                float CurvedOcclusion);
+	                                const USpatialAudioSettings& Settings);
 
 	static float UpdateVirtualCrossfadeGate(USpatialAudioComponent& Component, float DeltaTime,
 	                                        const USpatialAudioSettings& Settings);
-	static void ApplySourceOcclusionParams(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings,
-	                                       float CurvedOcclusion);
+	static void ApplySourceOcclusionParams(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings);
 
 	struct FVirtualVoiceUpdateResult {
 		float TotalVirtualGain = 0.f;
