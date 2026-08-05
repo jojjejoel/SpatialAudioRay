@@ -19,9 +19,9 @@ float FUpdater::UpdateVirtualCrossfadeGate(USpatialAudioComponent& Component, co
                                            const USpatialAudioSettings& Settings) {
 	const float RawRamp = Math::ComputeVirtualCrossfadeRamp(
 		Component.CurrentOcclusion, Settings.VirtualCrossfadeStartOcclusion);
-	Component.SmoothedCrossfadeRamp = Settings.VirtualCrossfadeSmoothingTime > 0.f
+	Component.SmoothedCrossfadeRamp = Settings.VirtualFadeTime > 0.f
 		                                  ? FMath::FInterpTo(Component.SmoothedCrossfadeRamp, RawRamp,
-		                                                     DeltaTime, 1.f / Settings.VirtualCrossfadeSmoothingTime)
+		                                                     DeltaTime, 1.f / Settings.VirtualFadeTime)
 		                                  : RawRamp;
 	const int32 RotationSteps = Component.ResolveRingRotationSteps();
 	const bool bGateHasLoS = Component.NoLoSSampleStreak < RotationSteps;
@@ -30,7 +30,7 @@ float FUpdater::UpdateVirtualCrossfadeGate(USpatialAudioComponent& Component, co
 		bGateHasLoS, bRampEnabled && Component.VelocityScaling.IsStationary(),
 		Component.SmoothedCrossfadeRamp);
 	Component.CurrentVirtualCrossfade = Math::ComputeVirtualCrossfadeSlew(
-		Component.CurrentVirtualCrossfade, CrossfadeTarget, Settings.VirtualCrossfadeFadeTime, DeltaTime);
+		Component.CurrentVirtualCrossfade, CrossfadeTarget, Settings.VirtualFadeTime, DeltaTime);
 	return Component.CurrentVirtualCrossfade;
 }
 
@@ -50,8 +50,8 @@ void FUpdater::ApplySourceOcclusionParams(USpatialAudioComponent& Component,
 FUpdater::FVoiceBlendRates FUpdater::ComputeVoiceBlendRates(const USpatialAudioSettings& Settings,
                                                             const float DeltaTime) {
 	FVoiceBlendRates Rates;
-	Rates.FadeStep = Settings.VirtualVoiceHandoffFadeTime > 0.f
-		                 ? DeltaTime / Settings.VirtualVoiceHandoffFadeTime
+	Rates.FadeStep = Settings.VirtualFadeTime > 0.f
+		                 ? DeltaTime / Settings.VirtualFadeTime
 		                 : 1.f;
 	Rates.ParamBlendSpeed = Settings.PathAttenuationBlendTime > 0.f
 		                        ? 1.f / Settings.PathAttenuationBlendTime

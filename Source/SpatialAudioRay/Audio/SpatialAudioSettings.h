@@ -236,15 +236,10 @@ public:
 
 	/** Maximum distance (cm) a voice may move in one update while keeping its audio component.
 	 *  Beyond it the old voice fades out where it stands and a new one fades in at the new
-	 *  position, over VirtualVoiceHandoffFadeTime. */
+	 *  position, over VirtualFadeTime. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Virtual Voices",
 		meta = (ClampMin = "0.0", ClampMax = "5000.0"))
 	float VirtualVoiceMaxMoveDistance = 150.f;
-
-	/** Seconds for a voice's fade envelope on position handoffs and appear/disappear. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Virtual Voices",
-		meta = (ClampMin = "0.0", ClampMax = "2.0"))
-	float VirtualVoiceHandoffFadeTime = 0.25f;
 
 	/** How strongly path distance reduces a candidate's contribution to the virtual source
 	 *  position. 0 = all candidates weighted equally. */
@@ -274,17 +269,13 @@ public:
 		meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float VirtualCrossfadeStartOcclusion = 1.f;
 
-	/** Seconds of smoothing on the occlusion-keyed fade-in ramp. The ramp amplifies occlusion
-	 *  sampling wobble by 1/(1-Start), so this keeps that out of the audible gain. 0 = off. */
+	/** Seconds every fade in the virtual path takes: smoothing the occlusion-keyed ramp, which
+	 *  amplifies sampling wobble by 1/(1-Start), slewing the gate between silent and fully engaged,
+	 *  and each voice's envelope on position handoffs and appear/disappear. The first two are in
+	 *  series, so a gate transition lags roughly twice this. 0 = instant. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Virtual Sound",
 		meta = (ClampMin = "0.0", ClampMax = "2.0"))
-	float VirtualCrossfadeSmoothingTime = 0.35f;
-
-	/** Seconds for the virtual crossfade gate to ramp between silent and fully engaged, in either
-	 *  direction. 0 = instant. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Virtual Sound",
-		meta = (ClampMin = "0.0", ClampMax = "2.0"))
-	float VirtualCrossfadeFadeTime = 0.15f;
+	float VirtualFadeTime = 0.125f;
 
 	/** How strongly diffracted path distance attenuates VirtualGain. 0 = no effect, 1 = fully
 	 *  attenuated when the path equals MaxRayDistance. */
