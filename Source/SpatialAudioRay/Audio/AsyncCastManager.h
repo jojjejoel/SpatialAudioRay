@@ -53,7 +53,7 @@ public:
 
 	static FVector ComputeMidAirTurnDirection(const FVector& InDir, const FVector& TurnPoint,
 	                                          const FVector& ListenerPos, bool bApplyBias,
-	                                          float SurfaceRoughness, float BounceListenerBias);
+	                                          float SurfaceRoughness, float ListenerBias);
 
 private:
 	static bool TryDiscardStaleSweep(USpatialAudioComponent& Component, UWorld* World,

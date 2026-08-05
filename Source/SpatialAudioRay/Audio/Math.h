@@ -12,7 +12,7 @@ namespace Math {
 	inline FVector ComputeBouncedDirection(const FVector& InDir, const FVector& SurfaceNormal,
 	                                       bool bApplyBias, const FVector& HitLocation,
 	                                       const FVector& ListenerPos, float SurfaceRoughness,
-	                                       float BounceListenerBias) {
+	                                       float ListenerBias) {
 		const FVector Reflected = ReflectDirection(InDir, SurfaceNormal);
 		FVector RandH = FMath::VRand();
 		if (FVector::DotProduct(RandH, SurfaceNormal) < 0.f) {
@@ -39,9 +39,9 @@ namespace Math {
 			}
 		}
 
-		if (BounceListenerBias > 0.f) {
+		if (ListenerBias > 0.f) {
 			const FVector ToListener = (ListenerPos - HitLocation).GetSafeNormal();
-			Result = FMath::Lerp(Result, ToListener, BounceListenerBias).GetSafeNormal();
+			Result = FMath::Lerp(Result, ToListener, ListenerBias).GetSafeNormal();
 			if (FVector::DotProduct(Result, SurfaceNormal) < 0.f) {
 				Result -= 2.f * FVector::DotProduct(Result, SurfaceNormal) * SurfaceNormal;
 				Result.Normalize();

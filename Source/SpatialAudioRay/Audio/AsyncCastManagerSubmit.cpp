@@ -236,7 +236,7 @@ bool FAsyncCastManager::TryProcessMidAirTurn(const USpatialAudioComponent& Compo
 	Ray.CumulativeDistance += Ray.SegSubmitLen;
 	Ray.Dir = ComputeMidAirTurnDirection(Ray.Dir, TurnPoint, Component.AsyncSteeringListenerPos,
 	                                     !Ray.bLoSFound, Settings.SurfaceRoughness,
-	                                     Settings.BounceListenerBias);
+	                                     Settings.ListenerBias);
 	Ray.Origin = TurnPoint;
 	++Ray.Bounce;
 	Ray.BounceWaypoints.Add({TurnPoint, Ray.CumulativeDistance});
@@ -298,7 +298,7 @@ bool FAsyncCastManager::TrySetupSurfaceCrawl(USpatialAudioComponent& Component, 
 		                        ? Slide
 		                        : ToLisPlane.GetSafeNormal();
 	const FVector CrawlDir = FMath::Lerp(Slide, LisBias,
-	                                     Settings.CrawlListenerBias).GetSafeNormal();
+	                                     Settings.ListenerBias).GetSafeNormal();
 
 	if (CrawlDir.IsNearlyZero()) {
 		return false;
@@ -381,7 +381,7 @@ void FAsyncCastManager::ProcessRayBounceContinuation(USpatialAudioComponent& Com
 
 	Ray.Dir = Math::ComputeBouncedDirection(Ray.Dir, Hit.Normal, !Ray.bLoSFound,
 	                                        Hit.Location, Component.AsyncSteeringListenerPos, Settings.SurfaceRoughness,
-	                                        Settings.BounceListenerBias);
+	                                        Settings.ListenerBias);
 	Ray.Origin = Hit.Location + Hit.Normal * Settings.RaySurfaceBias;
 	++Ray.Bounce;
 	Ray.BounceWaypoints.Add({Ray.Origin, Ray.CumulativeDistance});
@@ -682,7 +682,7 @@ void FAsyncCastManager::ApplyCrawlResult(const USpatialAudioComponent& Component
 		Ray.Dir = Math::ComputeBouncedDirection(Ray.CrawlInDir, Ray.CrawlHitNormal, !Ray.bLoSFound,
 		                                        Ray.CrawlHitLoc, Component.AsyncSteeringListenerPos,
 		                                        Settings.SurfaceRoughness,
-		                                        Settings.BounceListenerBias);
+		                                        Settings.ListenerBias);
 		Ray.Origin = Ray.CrawlHitLoc + Ray.CrawlHitNormal * Settings.RaySurfaceBias;
 		++Ray.Bounce;
 	}
@@ -736,8 +736,8 @@ void FAsyncCastManager::ProcessCrawlBatch(const USpatialAudioComponent& Componen
 
 FVector FAsyncCastManager::ComputeMidAirTurnDirection(const FVector& InDir, const FVector& TurnPoint,
                                                       const FVector& ListenerPos, bool bApplyBias,
-                                                      float SurfaceRoughness, float BounceListenerBias) {
-	if (SurfaceRoughness <= 0.f && BounceListenerBias <= 0.f) {
+                                                      float SurfaceRoughness, float ListenerBias) {
+	if (SurfaceRoughness <= 0.f && ListenerBias <= 0.f) {
 		const uint32 Seed = HashCombine(GetTypeHash(TurnPoint), GetTypeHash(ListenerPos));
 		const FRandomStream Stream(static_cast<int32>(Seed));
 		FVector AxisU, AxisV;
@@ -763,9 +763,9 @@ FVector FAsyncCastManager::ComputeMidAirTurnDirection(const FVector& InDir, cons
 		}
 	}
 
-	if (BounceListenerBias > 0.f) {
+	if (ListenerBias > 0.f) {
 		const FVector ToListener = (ListenerPos - TurnPoint).GetSafeNormal();
-		Result = FMath::Lerp(Result, ToListener, BounceListenerBias).GetSafeNormal();
+		Result = FMath::Lerp(Result, ToListener, ListenerBias).GetSafeNormal();
 	}
 
 	return Result;

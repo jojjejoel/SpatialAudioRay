@@ -22,17 +22,13 @@ public:
 		meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float SurfaceRoughness = 0.7f;
 
-	/** How strongly a bounce direction is nudged toward the listener after roughness scatter.
-	 *  0.15-0.3 leans rays toward diffraction edges without collapsing them onto one path. */
+	/** How strongly every change of ray direction is pulled toward the listener: a bounce or mid-air
+	 *  turn after roughness scatter, and the direction a surface crawl slides along a wall. Leans
+	 *  rays toward diffraction edges, at the cost of collapsing them onto one path as it approaches
+	 *  1. 0 = the purely physical direction, 1 = straight at the listener. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Ray Casting",
 		meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float BounceListenerBias = 0.f;
-
-	/** How strongly the crawl direction is pulled toward the listener. 0 = the ray's own slide
-	 *  direction, 1 = straight at the listener projected onto the wall plane. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Ray Casting",
-		meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float CrawlListenerBias = 0.5f;
+	float ListenerBias = 0.4f;
 
 	/** Distance (cm) relaunched ray origins, crawl paths and edge points are lifted off the surface
 	 *  they interact with. Must stay small: larger values bury points inside neighbouring geometry
