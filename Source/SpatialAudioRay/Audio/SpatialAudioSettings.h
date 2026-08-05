@@ -239,13 +239,6 @@ public:
 		meta = (ClampMin = "0.0", ClampMax = "10.0"))
 	float ListenerDistanceFalloff = 0.f;
 
-	/** Per-bounce multiplier on a ray's contribution to the virtual source position, applied as
-	 *  falloff^bounces. 0.5 = each extra bounce halves the influence. 1 = off, only path distance
-	 *  matters. Above 1 favours the more indirect routes instead. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Virtual Voices",
-		meta = (ClampMin = "0.05", ClampMax = "10.0"))
-	float BounceCountFalloff = 1.f;
-
 
 	/** Smoothed occlusion at which the virtual voices begin fading in, reaching full level at total
 	 *  occlusion, letting diffracted sound bleed in through pinhole states. Set at or above

@@ -10,7 +10,6 @@ inline bool IsTraceClear(const FTraceDatum& Datum) {
 
 struct FStoredLoSPath {
 	FVector LoSOrigin;
-	int32 LoSBounces = 0;
 	float LoSCumulativeDistance = 0.f;
 	float PathDist = 0.f;
 	TArray<FVector> ShortestPath;
@@ -23,7 +22,6 @@ struct FCachedEdgePoint {
 	float PathDist = 0.f;
 	TArray<FVector> ShortestPath;
 	TArray<bool> ShortestPathSegmentVerified;
-	int32 LoSBounces = 0;
 	FVector CapturedSourcePos = FVector::ZeroVector;
 	FVector CapturedListenerPos = FVector::ZeroVector;
 
@@ -156,8 +154,6 @@ struct FSpatialRayState {
 struct FFinalizeRefineProbe {
 	FVector LoSOrigin = FVector::ZeroVector;
 	float BasePathDist = 0.f;
-	int32 LoSBounces = 0;
-	float BounceWeightFactor = 1.f;
 	TArray<FVector> ShortestPath;
 	TArray<bool> ShortestPathSegmentVerified;
 };

@@ -61,14 +61,13 @@ void FAsyncCastManager::AccumulateRefineProbes(USpatialAudioComponent& Component
 		const float GeomDist = FVector::Dist(Component.AsyncSourcePos, EdgePoint);
 		const float DistW = 1.f / (1.f + Settings.CandidateDistanceFalloff * GeomDist
 			/ FMath::Max(Component.MaxRayDistance, 1.f));
-		const float Weight = DistW * Probe.BounceWeightFactor;
+		const float Weight = DistW;
 		WeightedPosSum += EdgePoint * Weight;
 		WeightedDistSum += Probe.BasePathDist * Weight;
 		TotalWeight += Weight;
 
 		FStoredLoSPath StoredPath;
 		StoredPath.LoSOrigin = EdgePoint;
-		StoredPath.LoSBounces = Probe.LoSBounces;
 		StoredPath.LoSCumulativeDistance = GeomDist;
 		StoredPath.PathDist = Probe.BasePathDist;
 		StoredPath.ShortestPath = Probe.ShortestPath;
@@ -99,10 +98,8 @@ bool FAsyncCastManager::OutranksIncumbent(const USpatialAudioComponent& Componen
 	if (Incumbent.bRelayed) {
 		return true;
 	}
-	return Found.LoSBounces < Incumbent.LoSBounces ||
-	(Found.LoSBounces == Incumbent.LoSBounces
-		&& RankScore(Component, Settings, Found.PathDist, Found.LoSOrigin)
-		> RankScore(Component, Settings, Incumbent.EffectivePathDist(), Incumbent.EffectivePoint()) * 1.01f);
+	return RankScore(Component, Settings, Found.PathDist, Found.LoSOrigin)
+		> RankScore(Component, Settings, Incumbent.EffectivePathDist(), Incumbent.EffectivePoint()) * 1.01f;
 }
 
 void FAsyncCastManager::WriteEntry(const USpatialAudioComponent& Component, FCachedEdgePoint& Edge,
@@ -112,7 +109,6 @@ void FAsyncCastManager::WriteEntry(const USpatialAudioComponent& Component, FCac
 	Edge.PathDist = Found.PathDist;
 	Edge.ShortestPath = Found.ShortestPath;
 	Edge.ShortestPathSegmentVerified = Found.ShortestPathSegmentVerified;
-	Edge.LoSBounces = Found.LoSBounces;
 	Edge.CapturedSourcePos = Component.AsyncSourcePos;
 	Edge.CapturedListenerPos = Component.AsyncListenerPos;
 	Edge.bPhase0Pending = false;
@@ -151,10 +147,8 @@ bool FAsyncCastManager::IsWorseIncumbent(const USpatialAudioComponent& Component
 	if (Candidate.bRelayed != Worst.bRelayed) {
 		return Candidate.bRelayed;
 	}
-	return Candidate.LoSBounces > Worst.LoSBounces ||
-	(Candidate.LoSBounces == Worst.LoSBounces
-		&& RankScore(Component, Settings, Candidate.EffectivePathDist(), Candidate.EffectivePoint())
-		< RankScore(Component, Settings, Worst.EffectivePathDist(), Worst.EffectivePoint()));
+	return RankScore(Component, Settings, Candidate.EffectivePathDist(), Candidate.EffectivePoint())
+		< RankScore(Component, Settings, Worst.EffectivePathDist(), Worst.EffectivePoint());
 }
 
 int32 FAsyncCastManager::FindWorstIncumbent(const USpatialAudioComponent& Component,

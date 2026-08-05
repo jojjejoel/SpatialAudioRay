@@ -411,7 +411,6 @@ void FEdgeCache::ConvertRelayToEdge(const USpatialAudioComponent& Component, FCa
 	Edge.EdgePoint = Corner;
 	Edge.ShortestPath.Add(Corner);
 	Edge.ShortestPathSegmentVerified.Add(true);
-	Edge.LoSBounces += 1;
 	Edge.GeomDist = FVector::Dist(Edge.CapturedSourcePos, Edge.EdgePoint);
 	Edge.CapturedListenerPos = ListenerPos;
 	Edge.bNewSinceFillArm = true;

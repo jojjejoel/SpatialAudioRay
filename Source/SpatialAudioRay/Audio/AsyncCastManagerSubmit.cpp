@@ -910,9 +910,6 @@ void FAsyncCastManager::SubmitFinalizeBatch(USpatialAudioComponent& Component, c
 			Probe.LoSOrigin = Ray.LoSOrigin;
 			Probe.BasePathDist = ComputeStringPulledLeg1(Component, World, Ray, Component.AsyncSourcePos,
 			                                             Probe.ShortestPath, Probe.ShortestPathSegmentVerified);
-			Probe.LoSBounces = Ray.LoSBounces;
-			Probe.BounceWeightFactor =
-				FMath::Pow(Settings.BounceCountFalloff, static_cast<float>(Ray.LoSBounces));
 			Component.Finalize.RefineProbes.Add(MoveTemp(Probe));
 		}
 	}

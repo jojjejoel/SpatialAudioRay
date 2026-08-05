@@ -26,22 +26,19 @@ bool FMergeCandidate_ExcludesStopgapsAndLeavers::RunTest(const FString& Paramete
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FTravelledFurther_IgnoresBounceCount,
-	"SpatialAudioRay.EdgeCache.TravelledFurther.IgnoresBounceCount",
+	FTravelledFurther_PicksByPathDistance,
+	"SpatialAudioRay.EdgeCache.TravelledFurther.PicksByPathDistance",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
 )
 
-bool FTravelledFurther_IgnoresBounceCount::RunTest(const FString& Parameters) {
+bool FTravelledFurther_PicksByPathDistance::RunTest(const FString& Parameters) {
 	FCachedEdgePoint Short;
 	Short.PathDist = 800.f;
-	Short.LoSBounces = 3;
 
 	FCachedEdgePoint Long;
 	Long.PathDist = 4000.f;
-	Long.LoSBounces = 1;
 
-	TestTrue(TEXT("The longer route loses regardless of bounce count"),
-	         FEdgeCache::TravelledFurther(Long, Short));
+	TestTrue(TEXT("The longer route loses"), FEdgeCache::TravelledFurther(Long, Short));
 	TestFalse(TEXT("The shorter route survives"), FEdgeCache::TravelledFurther(Short, Long));
 
 	FCachedEdgePoint Tied = Short;
