@@ -3,6 +3,192 @@
 #include "Misc/AutomationTest.h"
 #include "Audio/AsyncCastManager.h"
 
+namespace {
+	FCacheMergeContext MakeMergeContext(const FVector& ListenerPos = FVector::ZeroVector) {
+		FCacheMergeContext Ctx;
+		Ctx.SourcePos = FVector::ZeroVector;
+		Ctx.ListenerPos = ListenerPos;
+		Ctx.MaxRayDistance = 5000.f;
+		return Ctx;
+	}
+
+	USpatialAudioSettings* MakeMergeSettings(int32 MaxCount = 4, float MergeRadius = 100.f) {
+		USpatialAudioSettings* Settings = NewObject<USpatialAudioSettings>();
+		Settings->CachedEdgeMaxCount = MaxCount;
+		Settings->CachedEdgeMergeRadius = MergeRadius;
+		Settings->CandidateDistanceFalloff = 1.f;
+		Settings->ListenerDistanceFalloff = 0.f;
+		return Settings;
+	}
+
+	FStoredLoSPath MakeFound(const FVector& Origin, float PathDist) {
+		FStoredLoSPath Path;
+		Path.LoSOrigin = Origin;
+		Path.PathDist = PathDist;
+		Path.LoSCumulativeDistance = PathDist;
+		return Path;
+	}
+
+	FCachedEdgePoint MakeCached(const FVector& Point, float PathDist) {
+		FCachedEdgePoint Edge;
+		Edge.EdgePoint = Point;
+		Edge.PathDist = PathDist;
+		Edge.GeomDist = PathDist;
+		return Edge;
+	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FCacheMerge_SameCornerKeepsShorterRoute,
+	"SpatialAudioRay.Async.CacheMerge.SameCornerKeepsShorterRoute",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FCacheMerge_SameCornerKeepsShorterRoute::RunTest(const FString& Parameters) {
+	const FCacheMergeContext Ctx = MakeMergeContext();
+	const auto Settings = MakeMergeSettings();
+
+	TArray<FCachedEdgePoint> Edges{MakeCached(FVector(1000, 0, 0), 2000.f)};
+	FAsyncCastManager::MergeStoredPaths(Edges, {MakeFound(FVector(1010, 0, 0), 1200.f)}, Ctx, *Settings);
+
+	TestEqual(TEXT("A find inside the merge radius does not add an entry"), Edges.Num(), 1);
+	TestTrue(TEXT("The shorter route overwrites the incumbent"),
+	         FMath::IsNearlyEqual(Edges[0].PathDist, 1200.f));
+
+	FAsyncCastManager::MergeStoredPaths(Edges, {MakeFound(FVector(1010, 0, 0), 5000.f)}, Ctx, *Settings);
+	TestTrue(TEXT("A longer route at the same corner is rejected"),
+	         FMath::IsNearlyEqual(Edges[0].PathDist, 1200.f));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FCacheMerge_FillsToCapacityBeforeDisplacing,
+	"SpatialAudioRay.Async.CacheMerge.FillsToCapacityBeforeDisplacing",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FCacheMerge_FillsToCapacityBeforeDisplacing::RunTest(const FString& Parameters) {
+	const FCacheMergeContext Ctx = MakeMergeContext();
+	const auto Settings = MakeMergeSettings(/*MaxCount=*/2);
+
+	TArray<FCachedEdgePoint> Edges;
+	const TArray<FStoredLoSPath> Found{
+		MakeFound(FVector(1000, 0, 0), 1000.f),
+		MakeFound(FVector(0, 1000, 0), 1100.f),
+		MakeFound(FVector(0, 0, 1000), 1200.f)
+	};
+	FAsyncCastManager::MergeStoredPaths(Edges, Found, Ctx, *Settings);
+
+	TestEqual(TEXT("The cache never exceeds CachedEdgeMaxCount"), Edges.Num(), 2);
+	TestTrue(TEXT("Newly added entries are marked new for the cache fill"),
+	         Edges[0].bNewSinceFillArm && Edges[1].bNewSinceFillArm);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FCacheMerge_DisplacesAtMostOnePerSweep,
+	"SpatialAudioRay.Async.CacheMerge.DisplacesAtMostOnePerSweep",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FCacheMerge_DisplacesAtMostOnePerSweep::RunTest(const FString& Parameters) {
+	const FCacheMergeContext Ctx = MakeMergeContext();
+	const auto Settings = MakeMergeSettings(/*MaxCount=*/2);
+
+	TArray<FCachedEdgePoint> Edges{
+		MakeCached(FVector(1000, 0, 0), 4000.f),
+		MakeCached(FVector(0, 1000, 0), 4000.f)
+	};
+	const TArray<FStoredLoSPath> Found{
+		MakeFound(FVector(0, 0, 1000), 100.f),
+		MakeFound(FVector(0, 0, 2000), 100.f)
+	};
+	FAsyncCastManager::MergeStoredPaths(Edges, Found, Ctx, *Settings);
+
+	int32 Replaced = 0;
+	for (const FCachedEdgePoint& Edge : Edges) {
+		if (FMath::IsNearlyEqual(Edge.PathDist, 100.f)) {
+			++Replaced;
+		}
+	}
+	TestEqual(TEXT("Two far better finds still displace only one incumbent"), Replaced, 1);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FCacheMerge_HysteresisRejectsMarginalFinds,
+	"SpatialAudioRay.Async.CacheMerge.HysteresisRejectsMarginalFinds",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FCacheMerge_HysteresisRejectsMarginalFinds::RunTest(const FString& Parameters) {
+	const FCacheMergeContext Ctx = MakeMergeContext();
+	const auto Settings = MakeMergeSettings();
+
+	const FCachedEdgePoint Incumbent = MakeCached(FVector(1000, 0, 0), 1000.f);
+
+	TestFalse(TEXT("A find a hair better than the incumbent does not displace it"),
+	          FAsyncCastManager::OutranksIncumbent(
+		          Ctx, *Settings, MakeFound(FVector(0, 1000, 0), 999.f), Incumbent));
+	TestTrue(TEXT("A clearly shorter path does displace it"),
+	         FAsyncCastManager::OutranksIncumbent(
+		         Ctx, *Settings, MakeFound(FVector(0, 1000, 0), 500.f), Incumbent));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FCacheMerge_RelayedEntriesAlwaysLose,
+	"SpatialAudioRay.Async.CacheMerge.RelayedEntriesAlwaysLose",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FCacheMerge_RelayedEntriesAlwaysLose::RunTest(const FString& Parameters) {
+	const FCacheMergeContext Ctx = MakeMergeContext();
+	const auto Settings = MakeMergeSettings();
+
+	FCachedEdgePoint Relayed = MakeCached(FVector(1000, 0, 0), 100.f);
+	Relayed.bRelayed = true;
+	const FCachedEdgePoint Direct = MakeCached(FVector(0, 1000, 0), 4000.f);
+
+	TestTrue(TEXT("A relay is displaced even by a far worse find"),
+	         FAsyncCastManager::OutranksIncumbent(
+		         Ctx, *Settings, MakeFound(FVector(0, 0, 1000), 4900.f), Relayed));
+	TestTrue(TEXT("A relay ranks as the worst incumbent regardless of its path"),
+	         FAsyncCastManager::IsWorseIncumbent(Ctx, *Settings, Relayed, Direct));
+	TestFalse(TEXT("A direct entry never ranks worse than a relay"),
+	          FAsyncCastManager::IsWorseIncumbent(Ctx, *Settings, Direct, Relayed));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FCacheMerge_WorstIncumbentSkipsMatchedEntries,
+	"SpatialAudioRay.Async.CacheMerge.WorstIncumbentSkipsMatchedEntries",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FCacheMerge_WorstIncumbentSkipsMatchedEntries::RunTest(const FString& Parameters) {
+	const FCacheMergeContext Ctx = MakeMergeContext();
+	const auto Settings = MakeMergeSettings();
+
+	const TArray<FCachedEdgePoint> Edges{
+		MakeCached(FVector(1000, 0, 0), 4000.f),
+		MakeCached(FVector(0, 1000, 0), 500.f)
+	};
+
+	TArray<bool> NoneMatched{false, false};
+	TestEqual(TEXT("The longest path is the worst incumbent"),
+	          FAsyncCastManager::FindWorstIncumbent(Edges, Ctx, *Settings, NoneMatched), 0);
+
+	TArray<bool> WorstMatched{true, false};
+	TestEqual(TEXT("An entry confirmed this sweep is not eligible for displacement"),
+	          FAsyncCastManager::FindWorstIncumbent(Edges, Ctx, *Settings, WorstMatched), 1);
+
+	TArray<bool> AllMatched{true, true};
+	TestEqual(TEXT("Nothing is displaced when every entry was confirmed"),
+	          FAsyncCastManager::FindWorstIncumbent(Edges, Ctx, *Settings, AllMatched), INDEX_NONE);
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	Accumulate_EmptyArray,
 	"SpatialAudioRay.Async.Accumulate.EmptyArray",

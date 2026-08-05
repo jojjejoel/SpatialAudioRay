@@ -84,46 +84,45 @@ void FAsyncCastManager::AccumulateRefineProbes(USpatialAudioComponent& Component
 	Component.Finalize.WeightedDistSum = WeightedDistSum;
 }
 
-float FAsyncCastManager::RankScore(const USpatialAudioComponent& Component, const USpatialAudioSettings& Settings,
+float FAsyncCastManager::RankScore(const FCacheMergeContext& Ctx, const USpatialAudioSettings& Settings,
                                    const float PathDist, const FVector& Point) {
-	const float MaxRay = FMath::Max(Component.MaxRayDistance, 1.f);
+	const float MaxRay = FMath::Max(Ctx.MaxRayDistance, 1.f);
 	return (1.f / (1.f + Settings.CandidateDistanceFalloff * PathDist / MaxRay))
 		/ (1.f + Settings.ListenerDistanceFalloff
-			* FVector::Dist(Component.AsyncListenerPos, Point) / MaxRay);
+			* FVector::Dist(Ctx.ListenerPos, Point) / MaxRay);
 }
 
-bool FAsyncCastManager::OutranksIncumbent(const USpatialAudioComponent& Component,
-                                          const USpatialAudioSettings& Settings,
+bool FAsyncCastManager::OutranksIncumbent(const FCacheMergeContext& Ctx, const USpatialAudioSettings& Settings,
                                           const FStoredLoSPath& Found, const FCachedEdgePoint& Incumbent) {
 	if (Incumbent.bRelayed) {
 		return true;
 	}
-	return RankScore(Component, Settings, Found.PathDist, Found.LoSOrigin)
-		> RankScore(Component, Settings, Incumbent.EffectivePathDist(), Incumbent.EffectivePoint()) * 1.01f;
+	return RankScore(Ctx, Settings, Found.PathDist, Found.LoSOrigin)
+		> RankScore(Ctx, Settings, Incumbent.EffectivePathDist(), Incumbent.EffectivePoint()) * 1.01f;
 }
 
-void FAsyncCastManager::WriteEntry(const USpatialAudioComponent& Component, FCachedEdgePoint& Edge,
+void FAsyncCastManager::WriteEntry(const FCacheMergeContext& Ctx, FCachedEdgePoint& Edge,
                                    const FStoredLoSPath& Found) {
 	Edge.EdgePoint = Found.LoSOrigin;
 	Edge.GeomDist = Found.LoSCumulativeDistance;
 	Edge.PathDist = Found.PathDist;
 	Edge.ShortestPath = Found.ShortestPath;
 	Edge.ShortestPathSegmentVerified = Found.ShortestPathSegmentVerified;
-	Edge.CapturedSourcePos = Component.AsyncSourcePos;
-	Edge.CapturedListenerPos = Component.AsyncListenerPos;
+	Edge.CapturedSourcePos = Ctx.SourcePos;
+	Edge.CapturedListenerPos = Ctx.ListenerPos;
 	Edge.bPhase0Pending = false;
 	Edge.bEvicting = false;
 	Edge.ClearRelay();
-	Edge.LastLoSListenerPos = Component.AsyncListenerPos;
+	Edge.LastLoSListenerPos = Ctx.ListenerPos;
 	Edge.bHasLastLoSListenerPos = true;
 }
 
-int32 FAsyncCastManager::FindMergeCandidate(const USpatialAudioComponent& Component, const FVector& Point,
+int32 FAsyncCastManager::FindMergeCandidate(const TArray<FCachedEdgePoint>& Edges, const FVector& Point,
                                             const float MergeRadiusSq) {
 	int32 BestIdx = INDEX_NONE;
 	float BestDistSq = MergeRadiusSq;
-	for (int32 i = 0; i < Component.CachedEdgePoints.Num(); ++i) {
-		const float DistSq = FVector::DistSquared(Component.CachedEdgePoints[i].EdgePoint, Point);
+	for (int32 i = 0; i < Edges.Num(); ++i) {
+		const float DistSq = FVector::DistSquared(Edges[i].EdgePoint, Point);
 		if (DistSq < BestDistSq) {
 			BestDistSq = DistSq;
 			BestIdx = i;
@@ -132,85 +131,92 @@ int32 FAsyncCastManager::FindMergeCandidate(const USpatialAudioComponent& Compon
 	return BestIdx;
 }
 
-void FAsyncCastManager::MergeIntoSameCorner(const USpatialAudioComponent& Component, FCachedEdgePoint& Edge,
+void FAsyncCastManager::MergeIntoSameCorner(const FCacheMergeContext& Ctx, FCachedEdgePoint& Edge,
                                             const FStoredLoSPath& Found) {
 	if (Edge.bRelayed || Found.PathDist < Edge.EffectivePathDist() * 0.99f) {
-		WriteEntry(Component, Edge, Found);
+		WriteEntry(Ctx, Edge, Found);
 		return;
 	}
-	Edge.CapturedSourcePos = Component.AsyncSourcePos;
-	Edge.CapturedListenerPos = Component.AsyncListenerPos;
+	Edge.CapturedSourcePos = Ctx.SourcePos;
+	Edge.CapturedListenerPos = Ctx.ListenerPos;
 }
 
-bool FAsyncCastManager::IsWorseIncumbent(const USpatialAudioComponent& Component, const USpatialAudioSettings& Settings,
+bool FAsyncCastManager::IsWorseIncumbent(const FCacheMergeContext& Ctx, const USpatialAudioSettings& Settings,
                                          const FCachedEdgePoint& Candidate, const FCachedEdgePoint& Worst) {
 	if (Candidate.bRelayed != Worst.bRelayed) {
 		return Candidate.bRelayed;
 	}
-	return RankScore(Component, Settings, Candidate.EffectivePathDist(), Candidate.EffectivePoint())
-		< RankScore(Component, Settings, Worst.EffectivePathDist(), Worst.EffectivePoint());
+	return RankScore(Ctx, Settings, Candidate.EffectivePathDist(), Candidate.EffectivePoint())
+		< RankScore(Ctx, Settings, Worst.EffectivePathDist(), Worst.EffectivePoint());
 }
 
-int32 FAsyncCastManager::FindWorstIncumbent(const USpatialAudioComponent& Component,
+int32 FAsyncCastManager::FindWorstIncumbent(const TArray<FCachedEdgePoint>& Edges, const FCacheMergeContext& Ctx,
                                             const USpatialAudioSettings& Settings,
                                             const TArray<bool>& bMatchedThisCycle) {
 	int32 WorstIdx = INDEX_NONE;
-	for (int32 i = 0; i < Component.CachedEdgePoints.Num(); ++i) {
+	for (int32 i = 0; i < Edges.Num(); ++i) {
 		if (bMatchedThisCycle[i]) {
 			continue;
 		}
-		if (WorstIdx == INDEX_NONE
-			|| IsWorseIncumbent(Component, Settings, Component.CachedEdgePoints[i],
-			                    Component.CachedEdgePoints[WorstIdx])) {
+		if (WorstIdx == INDEX_NONE || IsWorseIncumbent(Ctx, Settings, Edges[i], Edges[WorstIdx])) {
 			WorstIdx = i;
 		}
 	}
 	return WorstIdx;
 }
 
-bool FAsyncCastManager::TryDisplaceWorstIncumbent(USpatialAudioComponent& Component,
+bool FAsyncCastManager::TryDisplaceWorstIncumbent(TArray<FCachedEdgePoint>& Edges, const FCacheMergeContext& Ctx,
                                                   const USpatialAudioSettings& Settings,
                                                   const FStoredLoSPath& Found, TArray<bool>& bMatchedThisCycle) {
-	const int32 WorstIdx = FindWorstIncumbent(Component, Settings, bMatchedThisCycle);
-	if (WorstIdx == INDEX_NONE || !
-		OutranksIncumbent(Component, Settings, Found, Component.CachedEdgePoints[WorstIdx])) {
+	const int32 WorstIdx = FindWorstIncumbent(Edges, Ctx, Settings, bMatchedThisCycle);
+	if (WorstIdx == INDEX_NONE || !OutranksIncumbent(Ctx, Settings, Found, Edges[WorstIdx])) {
 		return false;
 	}
-	WriteEntry(Component, Component.CachedEdgePoints[WorstIdx], Found);
-	Component.CachedEdgePoints[WorstIdx].bNewSinceFillArm = true;
+	WriteEntry(Ctx, Edges[WorstIdx], Found);
+	Edges[WorstIdx].bNewSinceFillArm = true;
 	bMatchedThisCycle[WorstIdx] = true;
 	return true;
 }
 
-void FAsyncCastManager::MergeStoredPathsIntoCache(USpatialAudioComponent& Component,
-                                                  const USpatialAudioSettings& Settings) {
+void FAsyncCastManager::MergeStoredPaths(TArray<FCachedEdgePoint>& Edges, const TArray<FStoredLoSPath>& Found,
+                                         const FCacheMergeContext& Ctx, const USpatialAudioSettings& Settings) {
 	const float MergeRadiusSq = FMath::Square(Settings.CachedEdgeMergeRadius);
 	TArray<bool> bMatchedThisCycle;
-	bMatchedThisCycle.Init(false, Component.CachedEdgePoints.Num());
+	bMatchedThisCycle.Init(false, Edges.Num());
 
 	bool bWorstReplacedThisCycle = false;
 
-	for (const FStoredLoSPath& Found : Component.StoredLoSPaths) {
-		const int32 MergeIdx = FindMergeCandidate(Component, Found.LoSOrigin, MergeRadiusSq);
+	for (const FStoredLoSPath& Path : Found) {
+		const int32 MergeIdx = FindMergeCandidate(Edges, Path.LoSOrigin, MergeRadiusSq);
 		if (MergeIdx != INDEX_NONE) {
-			MergeIntoSameCorner(Component, Component.CachedEdgePoints[MergeIdx], Found);
+			MergeIntoSameCorner(Ctx, Edges[MergeIdx], Path);
 			bMatchedThisCycle[MergeIdx] = true;
 			continue;
 		}
 
-		if (Component.CachedEdgePoints.Num() < Settings.CachedEdgeMaxCount) {
+		if (Edges.Num() < Settings.CachedEdgeMaxCount) {
 			FCachedEdgePoint NewEdge;
-			WriteEntry(Component, NewEdge, Found);
+			WriteEntry(Ctx, NewEdge, Path);
 			NewEdge.bNewSinceFillArm = true;
-			Component.CachedEdgePoints.Add(MoveTemp(NewEdge));
+			Edges.Add(MoveTemp(NewEdge));
 			bMatchedThisCycle.Add(true);
 			continue;
 		}
 
 		if (!bWorstReplacedThisCycle) {
-			bWorstReplacedThisCycle = TryDisplaceWorstIncumbent(Component, Settings, Found, bMatchedThisCycle);
+			bWorstReplacedThisCycle = TryDisplaceWorstIncumbent(Edges, Ctx, Settings, Path, bMatchedThisCycle);
 		}
 	}
+}
+
+void FAsyncCastManager::MergeStoredPathsIntoCache(USpatialAudioComponent& Component,
+                                                  const USpatialAudioSettings& Settings) {
+	FCacheMergeContext Ctx;
+	Ctx.SourcePos = Component.AsyncSourcePos;
+	Ctx.ListenerPos = Component.AsyncListenerPos;
+	Ctx.MaxRayDistance = Component.MaxRayDistance;
+
+	MergeStoredPaths(Component.CachedEdgePoints, Component.StoredLoSPaths, Ctx, Settings);
 	Component.StoredLoSPaths.Reset();
 }
 

@@ -60,6 +60,14 @@ struct FCachedEdgePoint {
 	float EffectivePathDist() const { return PathDist + RelayDist; }
 };
 
+/** Everything the cache admission policy reads from the component, so that policy is a pure function
+ *  over data: no world, no traces, and testable by constructing the inputs directly. */
+struct FCacheMergeContext {
+	FVector SourcePos = FVector::ZeroVector;
+	FVector ListenerPos = FVector::ZeroVector;
+	float MaxRayDistance = 1.f;
+};
+
 struct FEdgeCluster {
 	FVector Centroid = FVector::ZeroVector;
 	float PathDist = 0.f;

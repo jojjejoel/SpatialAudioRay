@@ -55,6 +55,25 @@ public:
 	                                          const FVector& ListenerPos, bool bApplyBias,
 	                                          float SurfaceRoughness, float ListenerBias);
 
+	/** Cache admission policy. Pure over the arrays and FCacheMergeContext, so the rules that decide
+	 *  which diffraction edges survive a sweep can be exercised without a component or a world. */
+	static float RankScore(const FCacheMergeContext& Ctx, const USpatialAudioSettings& Settings,
+	                       float PathDist, const FVector& Point);
+	static bool OutranksIncumbent(const FCacheMergeContext& Ctx, const USpatialAudioSettings& Settings,
+	                              const FStoredLoSPath& Found, const FCachedEdgePoint& Incumbent);
+	static void WriteEntry(const FCacheMergeContext& Ctx, FCachedEdgePoint& Edge, const FStoredLoSPath& Found);
+	static int32 FindMergeCandidate(const TArray<FCachedEdgePoint>& Edges, const FVector& Point, float MergeRadiusSq);
+	static void MergeIntoSameCorner(const FCacheMergeContext& Ctx, FCachedEdgePoint& Edge, const FStoredLoSPath& Found);
+	static bool IsWorseIncumbent(const FCacheMergeContext& Ctx, const USpatialAudioSettings& Settings,
+	                             const FCachedEdgePoint& Candidate, const FCachedEdgePoint& Worst);
+	static int32 FindWorstIncumbent(const TArray<FCachedEdgePoint>& Edges, const FCacheMergeContext& Ctx,
+	                                const USpatialAudioSettings& Settings, const TArray<bool>& bMatchedThisCycle);
+	static bool TryDisplaceWorstIncumbent(TArray<FCachedEdgePoint>& Edges, const FCacheMergeContext& Ctx,
+	                                      const USpatialAudioSettings& Settings, const FStoredLoSPath& Found,
+	                                      TArray<bool>& bMatchedThisCycle);
+	static void MergeStoredPaths(TArray<FCachedEdgePoint>& Edges, const TArray<FStoredLoSPath>& Found,
+	                             const FCacheMergeContext& Ctx, const USpatialAudioSettings& Settings);
+
 private:
 	static bool TryDiscardStaleSweep(USpatialAudioComponent& Component, UWorld* World,
 	                                 const USpatialAudioSettings& Settings);
@@ -63,22 +82,6 @@ private:
 	static void MergeStoredPathsIntoCache(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings);
 	static void AdvanceIdleState(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings);
 	static void PublishSweepAudioTargets(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings);
-
-	static float RankScore(const USpatialAudioComponent& Component, const USpatialAudioSettings& Settings,
-	                       float PathDist, const FVector& Point);
-	static bool OutranksIncumbent(const USpatialAudioComponent& Component, const USpatialAudioSettings& Settings,
-	                              const FStoredLoSPath& Found, const FCachedEdgePoint& Incumbent);
-	static void WriteEntry(const USpatialAudioComponent& Component, FCachedEdgePoint& Edge,
-	                       const FStoredLoSPath& Found);
-	static int32 FindMergeCandidate(const USpatialAudioComponent& Component, const FVector& Point, float MergeRadiusSq);
-	static bool IsWorseIncumbent(const USpatialAudioComponent& Component, const USpatialAudioSettings& Settings,
-	                             const FCachedEdgePoint& Candidate, const FCachedEdgePoint& Worst);
-	static int32 FindWorstIncumbent(const USpatialAudioComponent& Component, const USpatialAudioSettings& Settings,
-	                                const TArray<bool>& bMatchedThisCycle);
-	static void MergeIntoSameCorner(const USpatialAudioComponent& Component, FCachedEdgePoint& Edge,
-	                                const FStoredLoSPath& Found);
-	static bool TryDisplaceWorstIncumbent(USpatialAudioComponent& Component, const USpatialAudioSettings& Settings,
-	                                      const FStoredLoSPath& Found, TArray<bool>& bMatchedThisCycle);
 
 	static void FinishOrDefer(FSpatialRayState& Ray, bool& bAllDone);
 

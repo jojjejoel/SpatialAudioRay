@@ -69,7 +69,7 @@ public:
 		meta = (ClampMin = "0", ClampMax = "16"))
 	int32 MaxBounces = 4;
 
-	/** Multiplier on MaxRayDistance setting the total travel budget across all bounces. Each	
+	/** Multiplier on MaxRayDistance setting the total travel budget across all bounces. Each	ntinu
 	 *  individual segment is still capped to MaxRayDistance. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Ray Budget",
 		meta = (ClampMin = "0.0"))
