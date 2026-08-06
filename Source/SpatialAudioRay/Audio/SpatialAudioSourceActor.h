@@ -25,7 +25,7 @@ public:
 	/** The raw sound wave this source plays, injected into the shared Sound Cue via its Wave
 	 *  Parameter node at runtime. Set per Blueprint subclass to vary the sound per source. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Spatial Audio")
-	USoundWave* SoundWaveOverride;
+	TObjectPtr<USoundWave> SoundWaveOverride;
 
 	/** Name of the Wave Parameter node inside the shared Sound Cue. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Spatial Audio")
@@ -37,21 +37,21 @@ public:
 
 private:
 	UPROPERTY(VisibleAnywhere)
-	USceneComponent* RootSceneComponent;
+	TObjectPtr<USceneComponent> RootSceneComponent;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components", meta=(AllowPrivateAccess="true"))
-	UAudioComponent* AudioCompSource;
+	TObjectPtr<UAudioComponent> AudioCompSource;
 
 	/** Never plays. A config template (MetaSound + attenuation) the USpatialAudioComponent
 	 *  virtual voice pool clones its runtime components from. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components", meta=(AllowPrivateAccess="true"))
-	UAudioComponent* AudioCompVirtual;
+	TObjectPtr<UAudioComponent> AudioCompVirtual;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components", meta=(AllowPrivateAccess="true"))
-	USpatialAudioComponent* SpatialComp;
+	TObjectPtr<USpatialAudioComponent> SpatialComp;
 
 	UPROPERTY(VisibleAnywhere)
-	UStaticMeshComponent* CubeMesh;
+	TObjectPtr<UStaticMeshComponent> CubeMesh;
 
 
 	UFUNCTION()

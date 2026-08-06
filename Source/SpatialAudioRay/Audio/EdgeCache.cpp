@@ -1,5 +1,6 @@
 ﻿#include "Audio/EdgeCache.h"
 
+#include "Audio/Math.h"
 #include "Audio/SpatialAudioComponent.h"
 #include "Audio/Updater.h"
 

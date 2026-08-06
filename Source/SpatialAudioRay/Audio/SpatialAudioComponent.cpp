@@ -52,23 +52,16 @@ void USpatialAudioComponent::BeginPlay() {
 	CreateVirtualVoicePool();
 	ApplyWaveParameterOverride();
 
-	if (AActor* Owner = GetOwner()) {
+	if (const AActor* Owner = GetOwner()) {
 		TargetVirtualSourceLocation = Owner->GetActorLocation();
-		TraceQueryParams.AddIgnoredActor(Owner);
 	}
-	TraceQueryParams.bTraceComplex = false;
+	RefreshTraceIgnoreList();
 
 	ReadAttenuationSettings();
 	PerformStartupLoSCheck();
 
 	FUpdater::UpdateAudioParameters(*this, 0.0f, GetSettings());
 	FAsyncCastManager::StartAsyncFullCast(*this, GetSettings());
-
-	if (USpatialAudioSubsystem* Subsystem = GetWorld()
-		                                        ? GetWorld()->GetSubsystem<USpatialAudioSubsystem>()
-		                                        : nullptr) {
-		Subsystem->Register(this);
-	}
 }
 
 void USpatialAudioComponent::EndPlay(const EEndPlayReason::Type EndPlayReason) {
@@ -466,11 +459,94 @@ void USpatialAudioComponent::UpdateTraceDiagnostics(const float DeltaTime) {
 	TraceDiag.Avg60Sec = TraceDiag.HistoryCount > 0 ? Sum60 / TraceDiag.HistoryCount : 0.f;
 }
 
+void USpatialAudioComponent::IgnoreActorAndAttachments(AActor* Actor) {
+	if (!Actor) {
+		return;
+	}
+	TraceQueryParams.AddIgnoredActor(Actor);
+	Actor->GetAttachedActors(AttachedActorScratch, true, true);
+	TraceQueryParams.AddIgnoredActors(AttachedActorScratch);
+}
+
+/** Rebuilt every tick rather than filled once at BeginPlay: equipment is a separate actor that
+ *  attaches and detaches at runtime, and a weapon held by the source blocks the rays leaving it.
+ *  The listener is ignored for the same reason, since nobody is occluded by their own body. */
+void USpatialAudioComponent::RefreshTraceIgnoreList() {
+	TraceQueryParams = FCollisionQueryParams();
+	TraceQueryParams.bTraceComplex = false;
+
+	IgnoreActorAndAttachments(GetOwner());
+
+	const UWorld* World = GetWorld();
+	const APlayerController* PC = World ? World->GetFirstPlayerController() : nullptr;
+	IgnoreActorAndAttachments(PC ? PC->GetPawn() : nullptr);
+}
+
+bool USpatialAudioComponent::IsOwnedByListener() const {
+	const UWorld* World = GetWorld();
+	const APlayerController* PC = World ? World->GetFirstPlayerController() : nullptr;
+	const APawn* Pawn = PC ? PC->GetPawn() : nullptr;
+	return Pawn && Pawn == GetOwner();
+}
+
+/** Both subsystem membership and source playback follow possession rather than component lifetime.
+ *  The pawn the listener hears from must not appear in the source list, take a share of the global
+ *  trace budget, or emit through the spatial path at all, and which pawn that is changes as the
+ *  player respawns. Applied only on transitions so a finished one-shot is never retriggered. */
+void USpatialAudioComponent::SyncListenerOwnership(const bool bOwnedByListener) {
+	if (bListenerOwnershipApplied && bOwnedByListener == bSuppressedAsListenerSource) {
+		return;
+	}
+	bListenerOwnershipApplied = true;
+	bSuppressedAsListenerSource = bOwnedByListener;
+
+	if (USpatialAudioSubsystem* Subsystem = GetWorld()
+		                                        ? GetWorld()->GetSubsystem<USpatialAudioSubsystem>()
+		                                        : nullptr) {
+		if (bOwnedByListener) {
+			Subsystem->Unregister(this);
+		}
+		else {
+			Subsystem->Register(this);
+		}
+	}
+
+	for (const TWeakObjectPtr<UAudioComponent>& Src : CachedAudioComponentSources) {
+		if (UAudioComponent* AC = Src.Get()) {
+			if (bOwnedByListener) {
+				AC->Stop();
+			}
+			else {
+				AC->Play();
+			}
+		}
+	}
+}
+
+/** Occlusion is pinned rather than simply left unwritten: the MetaSound input defaults to fully
+ *  occluded, so a source nobody drives would muffle itself. Clearing the cache covers possession
+ *  changing which pawn the listener hears from. */
+void USpatialAudioComponent::TickOwnListenerSource(const float DeltaTime,
+                                                   const USpatialAudioSettings& Settings) {
+	TargetOcclusion = 0.f;
+	CurrentOcclusion = 0.f;
+	CachedEdgePoints.Reset();
+	FUpdater::UpdateAudioParameters(*this, DeltaTime, Settings);
+}
+
 void USpatialAudioComponent::TickComponent(const float DeltaTime, const ELevelTick TickType,
                                            FActorComponentTickFunction* ThisTickFunction) {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 	TraceDiag.FrameCount = 0;
 	FMemory::Memzero(TraceDiag.BucketFrameCounts);
+
+	const bool bOwnedByListener = IsOwnedByListener();
+	SyncListenerOwnership(bOwnedByListener);
+	if (bOwnedByListener) {
+		TickOwnListenerSource(DeltaTime, GetSettings());
+		return;
+	}
+	RefreshTraceIgnoreList();
 
 	TickAsyncPipeline(GetSettings());
 

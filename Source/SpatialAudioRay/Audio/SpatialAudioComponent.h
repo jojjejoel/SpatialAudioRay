@@ -46,7 +46,7 @@ public:
 	/** Injected into the Sound Cue at BeginPlay. Requires a Wave Parameter node named
 	 *  WaveParameterName. Leave empty to keep whatever the cue already has. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Parameters")
-	USoundWave* SoundWaveOverride = nullptr;
+	TObjectPtr<USoundWave> SoundWaveOverride = nullptr;
 
 	/** Name of the Wave Parameter node in the Sound Cue that SoundWaveOverride feeds into. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spatial Audio|Parameters",
@@ -316,6 +316,16 @@ private:
 	void ApplyWaveParameterOverride() const;
 	void ReadAttenuationSettings();
 	void PerformStartupLoSCheck();
+
+	bool IsOwnedByListener() const;
+	void TickOwnListenerSource(float DeltaTime, const USpatialAudioSettings& Settings);
+	void SyncListenerOwnership(bool bOwnedByListener);
+	bool bSuppressedAsListenerSource = false;
+	bool bListenerOwnershipApplied = false;
+
+	void RefreshTraceIgnoreList();
+	void IgnoreActorAndAttachments(AActor* Actor);
+	TArray<AActor*> AttachedActorScratch;
 
 	void UpdateVelocityScaling(float DeltaTime, bool bInRange, const APawn* Pawn);
 	void UpdateStationaryIdleState(bool bInRange, const APawn* Pawn);
